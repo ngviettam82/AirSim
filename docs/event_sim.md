@@ -8,7 +8,7 @@ The AirSim event simulator uses two consecutive RGB images (converted to graysca
 
 x and y are the pixel locations of the event firing, timestamp is the global timestamp in microseconds and pol is either +1/-1 depending on whether the brightness increased or decreased. Along with this bytestream, an accumulation of events over a 2D frame is also constructed, known as an 'event image' that visualizes +1 events as red and -1 as blue pixels. An example event image is shown below:
 
-![image](https://user-images.githubusercontent.com/2274262/101719509-4b500300-3a58-11eb-9c96-d6397b66d547.png)
+![image](images/event_sim.png)
 
 An example script to run the event simulator alongside AirSim is located at https://github.com/microsoft/AirSim/blob/master/PythonClient/eventcamera_sim/test_event_sim.py. The implementation of the actual event simulation, written in Python and numba, is at https://github.com/microsoft/AirSim/blob/master/PythonClient/eventcamera_sim/event_simulator.py. The event simulator is initialized as follows, with the arguments controlling the resolution of the camera.
 
@@ -17,18 +17,19 @@ from event_simulator import *
 ev_sim = EventSimulator(W, H)
 ```
 
-The actual computation of the events is triggered through a callback function, which is executed every time a new RGB image is obtained. The first time this function is called, due to the lack of a 'previous' image, it acts as an initialization of the event sim.
+The actual computation of the events is triggered through a callback function, which is executed every time a new RGB image is obtained. The first time this function is called, due to the lack of a 'previous' image, it acts as an initialization of the event sim. 
 
 ```
 event_img, events = ev_sim.image_callback(img, ts_delta)
 ```
+The callback returns an event image as a one dimensional array of +1/-1 values, thus indicating only whether events were seen at each pixel, but not the timing/number of events. This one dimensional array can be converted into the red/blue event image as seen in the function `convert_event_img_rgb`. `events` is a numpy array of events, each of format `<x> <y> <timestamp> <pol>`.
 
 Through the callback, the event sim computes the difference between the past and the current image, and computes a stream of events which is then returned as a numpy array. This can then be appended to a file.
 
 The working of the event simulator loosely follows this set of operations:
-1. Take the difference between the log intensities of the current and previous frames. \\
-2. Iterating over all pixels, calculate the polarity for each each pixel based on a threshold of change in log intensity. \\
-3. Determine the number of events to be fired per pixel, based on extent of intensity change over the threshold. Let $N_{max}$ be the maximum number of events that can occur at a single pixel, then the total number of firings to be simulated at pixel location $u$ would be $N_e(u) = min(N_{max}, \Delta L(u)/TOL)$.
+1. Take the difference between the log intensities of the current and previous frames. 
+2. Iterating over all pixels, calculate the polarity for each each pixel based on a threshold of change in log intensity. 
+3. Determine the number of events to be fired per pixel, based on extent of intensity change over the threshold. Let $N_{max}$ be the maximum number of events that can occur at a single pixel, then the total number of firings to be simulated at pixel location $u$ would be $N_e(u) = min(N_{max}, \frac{\Delta L(u)}{TOL})$.
 4. Determine the timestamps for each interpolated event by interpolating between the amount of time that has elapsed between the captures of the previous and current images.
    
     $ t = t_{prev} + \frac{\Delta T}{N_e (u)} $
