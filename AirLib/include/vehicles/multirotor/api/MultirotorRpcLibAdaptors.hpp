@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-#ifndef air_MultirotorRpcLibAdapators_hpp
-#define air_MultirotorRpcLibAdapators_hpp
+#ifndef air_MultirotorRpcLibAdaptors_hpp
+#define air_MultirotorRpcLibAdaptors_hpp
 
 #include "common/Common.hpp"
 #include "common/CommonStructs.hpp"
-#include "api/RpcLibAdapatorsBase.hpp"
+#include "api/RpcLibAdaptorsBase.hpp"
 #include "vehicles/multirotor/api/MultirotorCommon.hpp"
 #include "vehicles/multirotor/api/MultirotorApiBase.hpp"
 #include "common/ImageCaptureBase.hpp"
@@ -18,7 +18,7 @@
 
 namespace msr { namespace airlib_rpclib {
 
-class MultirotorRpcLibAdapators : public RpcLibAdapatorsBase {
+class MultirotorRpcLibAdaptors : public RpcLibAdaptorsBase {
 public:
     struct YawMode {
         bool is_rate = true;
@@ -36,6 +36,58 @@ public:
         msr::airlib::YawMode to() const
         {
             return msr::airlib::YawMode(is_rate, yaw_or_rate);
+        }
+    };
+
+    struct RotorParameters {
+        msr::airlib::real_T thrust;
+        msr::airlib::real_T torque_scaler;
+        msr::airlib::real_T speed;
+
+        MSGPACK_DEFINE_MAP(thrust, torque_scaler, speed);
+
+        RotorParameters()
+        {}
+
+        RotorParameters(const msr::airlib::RotorParameters& s)
+        {
+            thrust = s.thrust;
+            torque_scaler = s.torque_scaler;
+            speed = s.speed;
+        }
+
+        msr::airlib::RotorParameters to() const
+        {
+            return msr::airlib::RotorParameters(thrust, torque_scaler, speed);
+        }
+    };
+
+    struct RotorStates {
+        std::vector<RotorParameters> rotors;
+        uint64_t timestamp;
+
+        MSGPACK_DEFINE_MAP(rotors, timestamp);
+
+        RotorStates()
+        {}
+
+        RotorStates(const msr::airlib::RotorStates& s)
+        {
+            for (const auto& r : s.rotors)
+            {
+                rotors.push_back(RotorParameters(r));
+            }
+            timestamp = s.timestamp;
+        }
+
+        msr::airlib::RotorStates to() const
+        {
+            std::vector<msr::airlib::RotorParameters> d;
+            for (const auto& r : rotors)
+            {
+                d.push_back(r.to());
+            }
+            return msr::airlib::RotorStates(d, timestamp);
         }
     };
 
