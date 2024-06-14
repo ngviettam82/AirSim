@@ -1,10 +1,25 @@
-clear all
-close all
+%% Example
+% This example will:
+%   -Connect to AirSim
+%   -Get/set vehicle pose
+%   -Get instance segmentation groundtruth table
+%   -Get object pose(s)
+%   -Get sensor data (imu, echo (active/passive), (gpu)LiDAR, camera (info, rgb, depth, segmentation, annotation))
+%
+% Do note that the AirSim matlab client has almost all API functions available but
+% not all are listed in this test script. For a full list see the source code fo the AirSimClient class. 
+% 
+% Do note the test script requires next to the toolboxes listed in the Prerequisites the following Matlab toolboxes:
+%   -Lidar Toolbox
+%   -Navigation Toolbox
+%   -Robotics System Toolbox
+%   -ROS Toolbox
+%   -UAV Toolbox
 
 %% Setup connection
 
 %Define client
-vehicle_name = "robot1";
+vehicle_name = "airsimvehicle";
 airSimClient = AirSimClient(IsDrone=false, ApiControl=false, IP="127.0.0.1", port=41451, vehicleName=vehicle_name);
 
 %% Groundtruth labels
@@ -18,14 +33,14 @@ groundtruthLUT = airSimClient.getInstanceSegmentationLUT();
 
 % Get poses of all objects in the scene, this takes a while for large
 % scene so it is in comment by default
-% airSimClient.getAllObjectPoses(false);
+poses = airSimClient.getAllObjectPoses(false, false);
 
 % Get vehicle pose
-vehiclePoseLocal = airSimClient.getVehiclePose;
+vehiclePoseLocal = airSimClient.getVehiclePose();
 vehiclePoseWorld = airSimClient.getObjectPose(vehicle_name, false);
 
 % Get an random object pose or choose if you know the name of one
-useChosenObject = true;
+useChosenObject = false;
 chosenObject = "Cylinder3";
 
 if useChosenObject
@@ -60,12 +75,10 @@ zlabel("Z (m)")
 title("World Plot")
 drawnow
 
-%% Set vehicle pose
-
+% Set vehicle pose
 airSimClient.setVehiclePose(airSimClient.getVehiclePose().position + [1 1 0], airSimClient.getVehiclePose().orientation)
 
-%% Get IMU sensor Data
-
+%% IMU sensor Data
 imuSensorName = "imu";
 [imuData, imuTimestamp] = airSimClient.getIMUData(imuSensorName);
 
@@ -150,24 +163,25 @@ title('GPU-Accelerated LiDAR Pointcloud')
 xlabel("X (m)")
 ylabel("Y (m)")
 zlabel("Z (m)")
-xlim([-50 50])
-ylim([-50 50])
-zlim([-50 50])
+xlim([0 10])
+ylim([-10 10])
+zlim([-10 10])
 drawnow
 
-%% Get camera info data
+%% Cameras
 
+% Get camera info
 cameraSensorName = "frontcamera";
 [intrinsics, cameraSensorPose] = airSimClient.getCameraInfo(cameraSensorName);
 
-%% Get single camera images
+% Get single camera images
 % Get images sequentially 
 
 cameraSensorName = "front_center";
 [rgbImage, rgbCameraIimestamp] = airSimClient.getCameraImage(cameraSensorName, AirSimCameraTypes.Scene);
 [segmentationImage, segmentationCameraIimestamp] = airSimClient.getCameraImage(cameraSensorName, AirSimCameraTypes.Segmentation);
 [depthImage, depthCameraIimestamp] = airSimClient.getCameraImage(cameraSensorName, AirSimCameraTypes.DepthPlanar);
-[annotationImage, annotationCameraIimestamp] = airSimClient.getCameraImage(cameraSensorName, AirSimCameraTypes.Annotation, "TextureTest");
+[annotationImage, annotationCameraIimestamp] = airSimClient.getCameraImage(cameraSensorName, AirSimCameraTypes.Annotation, "TextureTestDirect");
 figure;
 subplot(4, 1, 1);
 imshow(rgbImage)
@@ -183,14 +197,14 @@ imshow(annotationImage)
 title("Annotation Camera Image")
 drawnow
 
-%% Get synced camera images
+% Get synced camera images
 % By combining the image requests they will be synced 
 % and taken in the same frame
 
 cameraSensorName = "front_center";
 [images, cameraIimestamp] = airSimClient.getCameraImages(cameraSensorName, ...
                                                          [AirSimCameraTypes.Scene, AirSimCameraTypes.Segmentation, AirSimCameraTypes.DepthPlanar, AirSimCameraTypes.Annotation], ...
-                                                         ["", "", "", "TextureTest"]);
+                                                         ["", "", "", "GreyscaleTest"]);
 figure;
 subplot(4, 1, 1);
 imshow(images{1})
