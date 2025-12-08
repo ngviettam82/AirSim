@@ -172,6 +172,7 @@ void ASimModeBase::BeginPlay()
     loading_screen_widget_->SetVisibility(ESlateVisibility::Hidden);
 
     InitializeInstanceSegmentation();
+    InitializeInfraredCamera();
 
     InitializeAnnotation();
 }
@@ -239,6 +240,16 @@ void ASimModeBase::InitializeInstanceSegmentation()
     }
     ForceUpdateInstanceSegmentation();
     updateInstanceSegmentationAnnotation();
+}
+
+void ASimModeBase::InitializeInfraredCamera()
+{
+    // Initialize the infrared annotator using grayscale rendering
+    // This displays object segmentation IDs as grayscale values (all 3 channels the same)
+    if (getSettings().initial_instance_segmentation) {
+        infrared_annotator_ = FObjectAnnotator(FString("Infrared"), FObjectAnnotator::AnnotatorType::InstanceSegmentation, false);
+        infrared_annotator_.Initialize(this->GetLevel());
+    }
 }
 
 bool ASimModeBase::AddRGBDirectAnnotationTagToActor(FString annotation_name, AActor* actor, FColor color, bool update_annotation) {
@@ -829,6 +840,8 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 				FString key = It.Key();
 				UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 					success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					// Also update infrared annotator with the same object ID
+					infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
 				}, true);
 				changes++;
 			}
@@ -841,6 +854,8 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		FString key = mesh_name.c_str();
 		UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 			success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			// Also update infrared annotator with the same object ID
+			infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
 		}, true);
         if(update_annotation)updateInstanceSegmentationAnnotation();
         return success;

@@ -151,6 +151,9 @@ void APIPCamera::PostInitializeComponents()
     FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowFlags);
     captures_[Utils::toNumeric(ImageType::Segmentation)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 
+    FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Infrared)]->ShowFlags);
+    captures_[Utils::toNumeric(ImageType::Infrared)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetLighting(true);
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetMaterials(false);
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetPostProcessing(false);
@@ -534,8 +537,10 @@ void APIPCamera::setDistortionParam(const std::string& param_name, float value)
 }
 
 void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
-    if(!only_hide)
+    if(!only_hide) {
         captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowOnlyComponents = ComponentList;
+        captures_[Utils::toNumeric(ImageType::Infrared)]->ShowOnlyComponents = ComponentList;
+    }
     APlayerController* controller = this->GetWorld()->GetFirstPlayerController();
     for(TWeakObjectPtr<UPrimitiveComponent> component : ComponentList) {
         captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(component);
@@ -682,6 +687,9 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
             case ImageType::Scene:
             case ImageType::Infrared:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
+                if (image_type == Utils::toNumeric(ImageType::Infrared)) {
+                    render_targets_[image_type]->TargetGamma = 1;
+                }
                 break;
             case ImageType::Lighting:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
