@@ -7,7 +7,7 @@ import sys
 def set_cone_segmentation_ids():
     """
     Sets the segmentation ID to 40 for BP_fountain_off_C_1 components.
-    Also lists all instance segmentation objects and scene objects.
+    Also lists all instance segmentation objects.
     """
     
     # Connect to the AirSim simulator
@@ -30,23 +30,6 @@ def set_cone_segmentation_ids():
             print("No instance segmentation objects found")
         
         print(f"\nTotal instance segmentation objects: {len(seg_objects)}")
-        
-        # Get list of all scene objects
-        print("\n" + "=" * 80)
-        print("Listing all Scene Objects:")
-        print("-" * 80)
-        scene_objects = client.simListSceneObjects()
-        
-        if scene_objects:
-            for i, obj in enumerate(scene_objects, 1):
-                print(f"{i:2d}. {obj}")
-        else:
-            print("No scene objects found")
-        
-        print(f"\nTotal scene objects: {len(scene_objects)}")
-        
-        print("\n" + "=" * 80)
-        print("Setting Segmentation IDs:")
         print("=" * 80)
         
         if not seg_objects:
