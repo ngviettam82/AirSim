@@ -37,7 +37,7 @@ def set_cone_segmentation_ids():
             return
         
         # Find all fountain components
-        fountain_components = [obj for obj in seg_objects if 'BP_fountain_off_C_1' in obj]
+        fountain_components = [obj for obj in seg_objects if 'Cone' in obj]
         
         if not fountain_components:
             print("No fountain components found for BP_fountain_off_C_1")
