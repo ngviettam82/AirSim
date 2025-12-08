@@ -1316,6 +1316,10 @@ TArray<FColor> FObjectAnnotator::GetColorMap(){
 	return ColorGenerator_.GetColorMap();
 }
 
+int32 FObjectAnnotator::GetIndexFromColor(FColor color) {
+	return ColorGenerator_.GetIndexForColor(color);
+}
+
 
 void FObjectAnnotator::EndPlay() {
 

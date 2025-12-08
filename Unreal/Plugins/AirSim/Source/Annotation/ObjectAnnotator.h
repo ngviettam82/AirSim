@@ -80,6 +80,7 @@ public:
 	static void SetViewForAnnotationRender(FEngineShowFlags& show_flags);
 
 	TArray<FColor> GetColorMap();
+	int32 GetIndexFromColor(FColor color);
 
 	bool IsDirect();
 	FObjectAnnotator::AnnotatorType GetType();
