@@ -539,7 +539,7 @@ void APIPCamera::setDistortionParam(const std::string& param_name, float value)
 void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
     if(!only_hide) {
         captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowOnlyComponents = ComponentList;
-        captures_[Utils::toNumeric(ImageType::Infrared)]->ShowOnlyComponents = ComponentList;
+        // Note: Infrared ShowOnlyComponents are set separately via updateInfraredAnnotation
     }
     APlayerController* controller = this->GetWorld()->GetFirstPlayerController();
     for(TWeakObjectPtr<UPrimitiveComponent> component : ComponentList) {
@@ -547,6 +547,10 @@ void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPri
         captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(component);
         controller->HiddenPrimitiveComponents.AddUnique(component);
 	}
+}
+
+void APIPCamera::updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList) {
+    captures_[Utils::toNumeric(ImageType::Infrared)]->ShowOnlyComponents = ComponentList;
 }
 
 void APIPCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, FString annotation_name, bool only_hide) {

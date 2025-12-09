@@ -37,7 +37,7 @@ def set_cone_segmentation_ids():
             return
         
         # Find all fountain components
-        fountain_components = [obj for obj in seg_objects if 'Cone' in obj]
+        fountain_components = [obj for obj in seg_objects if 'Cone_0' in obj]
         
         if not fountain_components:
             print("No fountain components found for BP_fountain_off_C_1")
@@ -60,7 +60,7 @@ def set_cone_segmentation_ids():
         # Set segmentation ID for each component
         for comp_name in fountain_components:
             try:
-                success = client.simSetSegmentationObjectID(comp_name, 40, is_name_regex=False)
+                success = client.simSetSegmentationObjectID(comp_name, 200, is_name_regex=False)
                 
                 if success:
                     print(f"[OK] {comp_name}")

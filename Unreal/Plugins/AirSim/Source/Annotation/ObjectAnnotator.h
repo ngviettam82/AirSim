@@ -38,7 +38,8 @@ public:
 		RGB = 0,
 		Greyscale = 1,
 		Texture = 2,
-		InstanceSegmentation = 3
+		InstanceSegmentation = 3,
+		Infrared = 4
 	};
 
 	FObjectAnnotator();
@@ -50,6 +51,7 @@ public:
 	void InitializeRGB(ULevel* level);
 	void InitializeGreyscale(ULevel* level);
 	void InitializeTexture(ULevel* level);
+	void InitializeInfrared(ULevel* level);
 
 	bool DeleteActor(AActor* actor);
 
