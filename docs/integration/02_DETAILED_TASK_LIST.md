@@ -1,15 +1,15 @@
-# ProjectAirSim Integration - Detailed Task List
+# Cosys-AirSim Dual-Mode Integration - Detailed Task List
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Date:** January 2025  
 **Status:** Active Task Tracking  
-**Total Tasks:** 500+ granular tasks
+**Total Tasks:** 600+ granular tasks (Simple Mode + Advanced Mode)
 
 ---
 
 ## Document Overview
 
-This document provides a **granular, actionable task breakdown** for all 25 ProjectAirSim features. Each task includes:
+This document provides a **granular, actionable task breakdown** for the dual-mode architecture integration. Each task includes:
 - **Task ID:** Unique identifier
 - **Description:** Clear action item
 - **Assignee:** Developer responsible (can be "TBD")
@@ -17,6 +17,11 @@ This document provides a **granular, actionable task breakdown** for all 25 Proj
 - **Dependencies:** Prerequisite tasks
 - **Acceptance Criteria:** Definition of done
 - **Status:** Not Started / In Progress / Completed / Blocked
+- **Mode:** Simple / Advanced / Both
+
+**Dual-Mode Architecture:**
+- **Simple Mode (Default):** Enhanced MultirotorParams, full inertia tensors, single rigid body
+- **Advanced Mode (Optional):** Robot/Link/Joint class hierarchy, multi-body articulated systems
 
 **Related Documents:**
 - `00_MASTER_TECHNICAL_SPECIFICATION.md` - Technical specifications
@@ -36,7 +41,7 @@ This document provides a **granular, actionable task breakdown** for all 25 Proj
 
 ---
 
-## Tier 1: Critical Sensors (Weeks 1-4)
+## Phase 1: Simple Mode Foundation (Weeks 1-7)
 
 ### Battery Sensor (Week 1)
 
@@ -1197,6 +1202,330 @@ This document provides a **granular, actionable task breakdown** for all 25 Proj
 | **Status** | [⬜/🔄/✅/🚫/⚠️] |
 ```
 
+---
+
+## Phase 3: Advanced Mode Architecture (Weeks 13-18)
+
+### Robot Class Implementation (Weeks 13-14)
+
+#### T50.1: Robot Core Class
+
+| Task ID | T50.1.1 |
+|---------|---------|
+| **Description** | Create `Robot.hpp` with container class for links, joints, sensors, actuators |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | Phase 2 complete |
+| **Acceptance Criteria** | - Class compiles<br>- Container methods for links/joints<br>- FK method interface defined |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T50.1.2 |
+|---------|---------|
+| **Description** | Implement forward kinematics (FK) algorithm for Robot |
+| **Assignee** | TBD |
+| **Effort** | 12 hours |
+| **Dependencies** | T50.1.1, T51.1.1 (Links), T52.1.1 (Joints) |
+| **Acceptance Criteria** | - FK traverses joint tree<br>- Computes link poses correctly<br>- Validated against known robot configs |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T50.1.3 |
+|---------|---------|
+| **Description** | Implement sensor attachment to arbitrary links in Robot |
+| **Assignee** | TBD |
+| **Effort** | 6 hours |
+| **Dependencies** | T50.1.1 |
+| **Acceptance Criteria** | - Sensors attach to named links<br>- Sensor poses computed via FK<br>- Multiple sensors per link supported |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T50.1.4 |
+|---------|---------|
+| **Description** | Implement actuator attachment to joints/links in Robot |
+| **Assignee** | TBD |
+| **Effort** | 6 hours |
+| **Dependencies** | T50.1.1 |
+| **Acceptance Criteria** | - Actuators attach to joints/links<br>- Force/torque application integrated<br>- Multiple actuators per joint supported |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+#### T51.1: Link Class Implementation
+
+| Task ID | T51.1.1 |
+|---------|---------|
+| **Description** | Create `Link.hpp` with InertialProperties, CollisionGeometry, VisualGeometry |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | None |
+| **Acceptance Criteria** | - Class compiles<br>- Inertial properties (mass, COM, inertia tensor)<br>- Collision/visual geometry data structures |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T51.1.2 |
+|---------|---------|
+| **Description** | Implement Link physics methods (compute forces, torques, center of mass offset) |
+| **Assignee** | TBD |
+| **Effort** | 10 hours |
+| **Dependencies** | T51.1.1 |
+| **Acceptance Criteria** | - COM offset affects dynamics<br>- Inertia tensor applied correctly<br>- Drag/lift forces computed |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T51.1.3 |
+|---------|---------|
+| **Description** | Implement Link collision detection and geometry queries |
+| **Assignee** | TBD |
+| **Effort** | 12 hours |
+| **Dependencies** | T51.1.1 |
+| **Acceptance Criteria** | - Collision geometry integrated with physics engine<br>- Bounding boxes computed<br>- Collision events detected |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+#### T52.1: Joint Class Implementation
+
+| Task ID | T52.1.1 |
+|---------|---------|
+| **Description** | Create `Joint.hpp` with 4 joint types (Fixed, Revolute, Continuous, Prismatic) |
+| **Assignee** | TBD |
+| **Effort** | 10 hours |
+| **Dependencies** | T51.1.1 (Links) |
+| **Acceptance Criteria** | - Base Joint class defined<br>- 4 derived types implemented<br>- Joint parameters (axis, limits, damping) |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T52.1.2 |
+|---------|---------|
+| **Description** | Implement joint angle/position limits and constraint enforcement |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | T52.1.1 |
+| **Acceptance Criteria** | - Angle limits respected for Revolute<br>- Position limits respected for Prismatic<br>- Constraint forces computed |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T52.1.3 |
+|---------|---------|
+| **Description** | Implement joint damping and friction models |
+| **Assignee** | TBD |
+| **Effort** | 6 hours |
+| **Dependencies** | T52.1.1 |
+| **Acceptance Criteria** | - Damping torque/force applied<br>- Static/dynamic friction models<br>- Configurable parameters |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+#### T53.1: RobotParser Implementation (Weeks 15-16)
+
+| Task ID | T53.1.1 |
+|---------|---------|
+| **Description** | Create `RobotParser.hpp` for JSON configuration parsing |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | T50.1.1, T51.1.1, T52.1.1 |
+| **Acceptance Criteria** | - Class compiles<br>- Parses Robot JSON structure<br>- Creates Robot object from config |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T53.1.2 |
+|---------|---------|
+| **Description** | Implement Link parsing (inertial properties, collision, visual geometry) |
+| **Assignee** | TBD |
+| **Effort** | 10 hours |
+| **Dependencies** | T53.1.1 |
+| **Acceptance Criteria** | - Parses mass, COM, inertia tensor<br>- Parses collision geometry (box, sphere, cylinder)<br>- Creates Link objects |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T53.1.3 |
+|---------|---------|
+| **Description** | Implement Joint parsing (types, axes, limits, damping) |
+| **Assignee** | TBD |
+| **Effort** | 10 hours |
+| **Dependencies** | T53.1.1 |
+| **Acceptance Criteria** | - Parses all 4 joint types<br>- Parses axis, limits, damping<br>- Creates Joint objects |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T53.1.4 |
+|---------|---------|
+| **Description** | Implement mode detection ("PhysicsMode": "Simple" vs "Advanced") |
+| **Assignee** | TBD |
+| **Effort** | 4 hours |
+| **Dependencies** | T53.1.1 |
+| **Acceptance Criteria** | - Detects PhysicsMode field<br>- Defaults to Simple if not specified<br>- Routes to appropriate parser |
+| **Status** | ⬜ Not Started |
+| **Mode** | Both |
+
+| Task ID | T53.1.5 |
+|---------|---------|
+| **Description** | Add JSON schema validation and error reporting |
+| **Assignee** | TBD |
+| **Effort** | 6 hours |
+| **Dependencies** | T53.1.1 |
+| **Acceptance Criteria** | - Validates required fields<br>- Clear error messages<br>- Schema violations detected |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+#### T54.1: Multi-Body Physics Integration (Weeks 17-18)
+
+| Task ID | T54.1.1 |
+|---------|---------|
+| **Description** | Integrate Robot/Link/Joint with PhysicsBody for multi-body physics |
+| **Assignee** | TBD |
+| **Effort** | 16 hours |
+| **Dependencies** | T50.1.2 (FK), T51.1.2 (Link physics), T52.1.2 (Joint constraints) |
+| **Acceptance Criteria** | - PhysicsBody updates multi-body systems<br>- Joint constraints solved each timestep<br>- Link forces/torques accumulated |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T54.1.2 |
+|---------|---------|
+| **Description** | Implement multi-body collision detection and response |
+| **Assignee** | TBD |
+| **Effort** | 14 hours |
+| **Dependencies** | T51.1.3 (Link collision), T54.1.1 |
+| **Acceptance Criteria** | - Collisions between links detected<br>- Collisions with environment detected<br>- Collision response forces applied |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T54.1.3 |
+|---------|---------|
+| **Description** | Implement joint constraint solver (iterative or direct method) |
+| **Assignee** | TBD |
+| **Effort** | 20 hours |
+| **Dependencies** | T52.1.2 (Joint limits), T54.1.1 |
+| **Acceptance Criteria** | - Joint constraints maintained<br>- Stable under high forces<br>- Configurable solver iterations |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T54.1.4 |
+|---------|---------|
+| **Description** | Add mode-aware PhysicsBody update (Simple vs Advanced) |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | T54.1.1 |
+| **Acceptance Criteria** | - PhysicsBody detects mode<br>- Simple mode: single rigid body update<br>- Advanced mode: multi-body update with FK and constraints |
+| **Status** | ⬜ Not Started |
+| **Mode** | Both |
+
+---
+
+## Phase 4: Advanced Mode Completion (Weeks 19-23)
+
+### Advanced Actuators (Weeks 19-20)
+
+#### T55.1: ServoActuator Implementation
+
+| Task ID | T55.1.1 |
+|---------|---------|
+| **Description** | Create `ServoActuator.hpp` for angular position control |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | Phase 3 complete |
+| **Acceptance Criteria** | - Servo class compiles<br>- PID controller for position<br>- Angle limits enforced |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+| Task ID | T55.1.2 |
+|---------|---------|
+| **Description** | Implement PID control for ServoActuator |
+| **Assignee** | TBD |
+| **Effort** | 6 hours |
+| **Dependencies** | T55.1.1 |
+| **Acceptance Criteria** | - PID gains configurable<br>- Position tracking accurate<br>- Smooth motion |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+#### T56.1: LinearActuator Implementation
+
+| Task ID | T56.1.1 |
+|---------|---------|
+| **Description** | Create `LinearActuator.hpp` for prismatic joint control |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | T52.1.1 (Prismatic joints) |
+| **Acceptance Criteria** | - Linear actuator class compiles<br>- Force/position control modes<br>- Position limits enforced |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+#### T57.1: CompliantActuator Implementation
+
+| Task ID | T57.1.1 |
+|---------|---------|
+| **Description** | Create `CompliantActuator.hpp` with spring-damper model |
+| **Assignee** | TBD |
+| **Effort** | 10 hours |
+| **Dependencies** | Phase 3 complete |
+| **Acceptance Criteria** | - Spring-damper dynamics implemented<br>- Stiffness and damping configurable<br>- Stable under load |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+---
+
+## Phase 5: Integration & Testing (Weeks 24-26)
+
+### Mode Integration Testing (Week 24)
+
+#### T58.1: Mode Switching Tests
+
+| Task ID | T58.1.1 |
+|---------|---------|
+| **Description** | Create tests for switching between Simple and Advanced mode vehicles |
+| **Assignee** | TBD |
+| **Effort** | 8 hours |
+| **Dependencies** | Phase 4 complete |
+| **Acceptance Criteria** | - Load Simple config, then Advanced config<br>- No memory leaks<br>- Both modes functional |
+| **Status** | ⬜ Not Started |
+| **Mode** | Both |
+
+| Task ID | T58.1.2 |
+|---------|---------|
+| **Description** | Create mixed-mode scenario tests (Simple + Advanced vehicles in same simulation) |
+| **Assignee** | TBD |
+| **Effort** | 10 hours |
+| **Dependencies** | T58.1.1 |
+| **Acceptance Criteria** | - Multiple vehicles with different modes<br>- No interference between modes<br>- Performance acceptable |
+| **Status** | ⬜ Not Started |
+| **Mode** | Both |
+
+#### T59.1: Performance Comparison Tests
+
+| Task ID | T59.1.1 |
+|---------|---------|
+| **Description** | Benchmark Simple mode vs baseline (existing Cosys-AirSim) |
+| **Assignee** | TBD |
+| **Effort** | 6 hours |
+| **Dependencies** | Phase 2 complete |
+| **Acceptance Criteria** | - <5% performance overhead<br>- Memory usage comparable<br>- Framerate maintained |
+| **Status** | ⬜ Not Started |
+| **Mode** | Simple |
+
+| Task ID | T59.1.2 |
+|---------|---------|
+| **Description** | Benchmark Advanced mode vs Simple mode for equivalent configurations |
+| **Assignee** | TBD |
+| **Effort** | 6 hours |
+| **Dependencies** | Phase 4 complete |
+| **Acceptance Criteria** | - <15% overhead vs Simple<br>- Scales with joint/link count<br>- Acceptable for real-time simulation |
+| **Status** | ⬜ Not Started |
+| **Mode** | Advanced |
+
+---
+
+## Appendix A: Task Template
+
+```markdown
+| Task ID | [TXX.Y.Z] |
+|---------|---------|
+| **Description** | [What needs to be done] |
+| **Assignee** | [Developer name or TBD] |
+| **Effort** | [Hours estimate] |
+| **Dependencies** | [Comma-separated task IDs] |
+| **Acceptance Criteria** | [Bullet list of done conditions] |
+| **Status** | [⬜/🔄/✅/🚫/⚠️] |
+| **Mode** | [Simple/Advanced/Both] |
+```
+
 ### Appendix B: Acceptance Criteria Checklist
 
 Every task should meet:
@@ -1222,8 +1551,9 @@ Every task should meet:
 
 ---
 
-**Document Status:** ACTIVE TASK TRACKING  
+**Document Status:** ACTIVE TASK TRACKING - Dual-Mode Architecture  
 **Last Updated:** January 2025  
+**Total Tasks:** ~600 (300 Simple Mode + 250 Advanced Mode + 50 Integration)
 **Next Review:** Weekly (every Friday)  
 **Maintained By:** Integration Team Lead  
 **Version Control:** Git repository `docs/integration/`  

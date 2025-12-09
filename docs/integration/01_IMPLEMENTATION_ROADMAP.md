@@ -1,15 +1,15 @@
-# ProjectAirSim Integration - Implementation Roadmap
+# ProjectAirSim Integration - Implementation Roadmap (Dual-Mode)
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Date:** January 2025  
-**Status:** Active Development Plan  
-**Total Duration:** 33 weeks (8 months)
+**Status:** Active Development Plan - Dual-Mode Architecture  
+**Total Duration:** 30-35 weeks (~7-8 months)
 
 ---
 
 ## Document Overview
 
-This roadmap provides a **week-by-week implementation plan** for integrating 25 critical ProjectAirSim features into Cosys-AirSim. The plan is organized into 7 tiers with clear milestones, dependencies, and deliverables.
+This roadmap provides a **week-by-week implementation plan** for integrating ProjectAirSim features into Cosys-AirSim with **dual-mode architecture support** (Simple + Advanced modes). The plan is organized into phases with clear milestones, dependencies, and deliverables.
 
 **Related Documents:**
 - `00_MASTER_TECHNICAL_SPECIFICATION.md` - Technical specifications
@@ -21,276 +21,274 @@ This roadmap provides a **week-by-week implementation plan** for integrating 25 
 
 ## Executive Summary
 
-### Timeline Overview
+### Timeline Overview - Dual-Mode Implementation
 
 ```
-Tier 1: Critical Sensors         Weeks 1-4    (4 weeks)
-Tier 2: Robot Architecture       Weeks 5-7    (3 weeks)
-Tier 3: Essential Sensors        Weeks 8-11   (4 weeks)
-Tier 4: Utility Sensors          Weeks 12-14  (3 weeks)
-Tier 5: World APIs               Weeks 15-18  (4 weeks)
-Tier 6: Advanced Features        Weeks 19-23  (5 weeks)
-Tier 7: Extended Capabilities    Weeks 24-33  (10 weeks)
+Phase 1: Simple Mode Foundation       Weeks 1-7    (7 weeks)
+Phase 2: Simple Mode Completion       Weeks 8-12   (5 weeks)
+Phase 3: Advanced Mode Architecture   Weeks 13-18  (6 weeks)
+Phase 4: Advanced Mode Completion     Weeks 19-23  (5 weeks)
+Phase 5: Integration & Testing        Weeks 24-26  (3 weeks)
+Phase 6: Documentation & Release      Weeks 27-30  (4 weeks)
+Buffer: Risk Mitigation              Weeks 31-35  (5 weeks)
 ```
+
+### Dual-Mode Architecture
+
+**Simple Mode (Default):**
+- Enhanced vehicle physics with full inertia tensors
+- New sensors (Battery, Airspeed, Radar)
+- Enhanced existing sensors (GPS, IMU, Magnetometer, Barometer)
+- Actuators (RotorActuator, Gimbal)
+- World APIs (Clock control, Weather)
+- **Effort:** 10-12 weeks
+
+**Advanced Mode (Optional):**
+- Robot/Link/Joint class hierarchy
+- Multi-body articulated systems
+- Forward kinematics and joint constraints
+- Per-Link collision geometry
+- Link-attached actuators and sensors
+- **Effort:** 9-11 weeks
 
 ### Resource Allocation
 
-- **C++ Development:** 60% of effort (robot framework, sensors, actuators)
-- **Python Client:** 20% of effort (API bindings, examples)
-- **Testing & QA:** 15% of effort (unit, integration, system tests)
-- **Documentation:** 5% of effort (user guides, API docs)
+- **C++ Development:** 65% of effort (both modes, robot framework, sensors, actuators)
+- **Python Client:** 15% of effort (API bindings, examples)
+- **Testing & QA:** 15% of effort (unit, integration, system tests for both modes)
+- **Documentation:** 5% of effort (user guides, API docs, migration guide)
 
 ### Critical Path
 
 ```
-Battery Sensor → Airspeed → Radar → Robot Framework → World APIs → Trajectories
+Vehicle Physics Enhancement → New Sensors → Actuators → Simple Mode Complete
+    ↓
+Robot/Link/Joint Classes → Multi-body Physics → Advanced Mode Complete
+    ↓
+Mode Integration → Testing → Documentation → Release
 ```
 
 ---
 
-## Tier 1: Critical Sensors (Weeks 1-4)
+## Phase 1: Simple Mode Foundation (Weeks 1-7)
 
-**Goal:** Implement immediate-value sensors with high user demand
+**Goal:** Implement core Simple mode enhancements - vehicle physics, new sensors, sensor enhancements
 
 **Priority:** HIGHEST  
-**Effort:** 4 weeks  
+**Effort:** 7 weeks  
 **Team Size:** 2 developers
 
-### Week 1: Battery Sensor
+### Weeks 1-2: Vehicle Physics Enhancement (Simple Mode)
 
 **Deliverables:**
-- ✅ `BatteryBase.hpp` - Base class with data structures
-- ✅ `BatterySimple.cpp` - Linear and nonlinear discharge models
-- ✅ Python API: `get_battery_data()`, `set_battery_remaining()`, `set_battery_drain_rate()`
-- ✅ Unit tests (10+ test cases)
-- ✅ Example: `battery_simulation_example.py`
-
-**Tasks:**
-1. Define `BatteryData` struct (voltage, current, SOC, capacity, temperature)
-2. Implement `BatteryParams` (discharge modes, rates, capacity)
-3. Create linear discharge model (constant drain)
-4. Create nonlinear discharge model (realistic curve)
-5. Add sensor to vehicle configuration
-6. Implement C++ API methods
-7. Create Python bindings
-8. Write unit tests
-9. Create user example
-10. Update documentation
-
-**Dependencies:** None  
-**Risk:** LOW
-
-### Week 2: Airspeed Sensor
-
-**Deliverables:**
-- ✅ `AirspeedBase.hpp` - Base class with data structures
-- ✅ `AirspeedSimple.cpp` - True and indicated airspeed calculation
-- ✅ Python API: `get_airspeed_data()`
-- ✅ Unit tests (8+ test cases)
-- ✅ Example: `airspeed_fixed_wing_example.py`
-
-**Tasks:**
-1. Define `AirspeedData` struct (true/indicated airspeed, pressure, temperature)
-2. Implement pressure-based airspeed calculation
-3. Add noise and offset parameters
-4. Integrate with vehicle kinematics
-5. Add sensor to vehicle configuration
-6. Implement C++ API methods
-7. Create Python bindings
-8. Write unit tests (including noise validation)
-9. Create fixed-wing example
-10. Update documentation
-
-**Dependencies:** None  
-**Risk:** LOW
-
-### Week 3: Radar Sensor (Part 1 - Detection)
-
-**Deliverables:**
-- ✅ `RadarBase.hpp` - Base class with data structures
-- ✅ `RadarSimple.cpp` - Basic detection implementation
-- ✅ `RadarDetection` struct (range, velocity, azimuth, elevation, RCS)
-- ✅ Detection algorithm (ray-based)
-- ✅ Unit tests (12+ test cases)
-
-**Tasks:**
-1. Define `RadarDetection` and `RadarTrack` structs
-2. Implement `RadarParams` (FOV, range, resolution)
-3. Create ray-based detection algorithm
-4. Calculate RCS for objects
-5. Implement Doppler velocity calculation
-6. Add noise models (range, velocity, angle)
-7. Integrate with scene query system
-8. Write unit tests
-9. Performance benchmarking
-10. Documentation
-
-**Dependencies:** None  
-**Risk:** MEDIUM (complex physics simulation)
-
-### Week 4: Radar Sensor (Part 2 - Tracking) + Clock Control
-
-**Deliverables:**
-- ✅ Kalman filter tracking implementation
-- ✅ `RadarTrack` management (creation, updates, deletion)
-- ✅ Python API: `get_radar_data()`
-- ✅ Example: `radar_tracking_example.py`
-- ✅ `ClockControl.hpp` - Basic time control
-- ✅ Python API: `get_sim_time()`, `pause()`, `resume()`
-
-**Tasks (Radar):**
-1. Implement Kalman filter for track prediction
-2. Create track association algorithm
-3. Add track lifecycle management
-4. Implement tracking parameters (threshold, max tracks)
-5. Create Python bindings
-6. Write integration tests
-7. Create tracking example
-8. Documentation
-
-**Tasks (Clock):**
-1. Define `ClockControl` class
-2. Implement basic time queries
-3. Implement pause/resume
-4. Create Python bindings
-5. Unit tests
-6. Documentation
-
-**Dependencies:** Week 3 (Radar Part 1)  
-**Risk:** MEDIUM (tracking algorithm complexity)
-
-**Tier 1 Milestone:** ✅ All critical sensors operational, basic clock control working
-
----
-
-## Tier 2: Robot Architecture Framework (Weeks 5-7)
-
-**Goal:** Establish foundation for generic robot support
-
-**Priority:** CRITICAL (FOUNDATION)  
-**Effort:** 3 weeks  
-**Team Size:** 3 developers
-
-### Week 5: Core Robot Classes
-
-**Deliverables:**
-- ✅ `Robot.hpp` - Base robot class
-- ✅ `Link.hpp` - Physical link representation
-- ✅ `Joint.hpp` - Joint types (fixed, revolute, continuous)
-- ✅ `TransformTree.hpp` - Coordinate frame management
-- ✅ Unit tests (20+ test cases)
-
-**Tasks:**
-1. Define `Robot` class interface
-2. Implement `Link` class (inertial, collision, visual)
-3. Implement `Joint` class (types, limits, damping)
-4. Create transform tree for FK/IK
-5. Add inertia tensor calculations
-6. Implement aerodynamics (drag)
-7. Write unit tests (link dynamics, joint kinematics)
-8. Documentation
-9. Create simple robot example (2-link arm)
-10. Performance testing
-
-**Dependencies:** None  
-**Risk:** HIGH (core architecture, many dependencies)
-
-### Week 6: JSONC Configuration System
-
-**Deliverables:**
-- ✅ `ConfigJson.hpp` - JSONC parser
-- ✅ Robot configuration loader
-- ✅ Example configs: `robot_quadrotor.jsonc`, `robot_fixedwing.jsonc`
+- ✅ Enhanced `MultirotorParams` with InertialParams struct
+- ✅ PhysicsMode enum (Simple, Advanced)
+- ✅ `PhysicsBody` with full inertia tensor support
+- ✅ Center of mass offset calculations
+- ✅ Aerodynamic drag coefficients
+- ✅ Configuration parsing for new inertial fields
 - ✅ Unit tests (15+ test cases)
-- ✅ Migration guide for JSON→JSONC
+- ✅ Example: `enhanced_physics_example.py`
 
 **Tasks:**
-1. Implement comment stripping algorithm
-2. Integrate nlohmann/json parser
-3. Create `RobotConfigLoader` class
-4. Parse links from JSONC
-5. Parse joints from JSONC
-6. Parse controller from JSONC
-7. Add validation and error reporting
-8. Write unit tests (with various comment styles)
-9. Create example configurations
-10. Write migration guide
-
-**Dependencies:** Week 5 (Robot classes)  
-**Risk:** MEDIUM (parsing edge cases)
-
-### Week 7: Actuator Base Framework
-
-**Deliverables:**
-- ✅ `Actuator.hpp` - Base actuator class
-- ✅ `Rotor.hpp` - Rotor actuator (thrust/torque)
-- ✅ Actuator force/torque application
-- ✅ Unit tests (12+ test cases)
-- ✅ Example: `simple_quadrotor_robot.jsonc` (using rotors)
-
-**Tasks:**
-1. Define `Actuator` base class
-2. Implement `Rotor` actuator
-3. Create thrust/torque calculation
-4. Implement motor time constant
-5. Add actuator configuration parsing
-6. Integrate actuators with links
-7. Apply forces to physics engine
-8. Write unit tests
-9. Create quadrotor example
-10. Documentation
-
-**Dependencies:** Week 5 (Robot), Week 6 (JSONC)  
-**Risk:** MEDIUM (physics integration)
-
-**Tier 2 Milestone:** ✅ Generic robot framework operational, can load JSONC configs, basic actuators working
-
----
-
-## Tier 3: Essential Sensors (Weeks 8-11)
-
-**Goal:** Enhanced sensors with ProjectAirSim capabilities
-
-**Priority:** HIGH  
-**Effort:** 4 weeks  
-**Team Size:** 2 developers
-
-### Week 8: Enhanced Barometer
-
-**Deliverables:**
-- ✅ Enhanced `BarometerBase.hpp` - Add temperature, pressure altitude
-- ✅ Temperature coefficient modeling
-- ✅ Pressure-altitude conversion
-- ✅ Python API updates
-- ✅ Unit tests (8+ test cases)
-- ✅ Example: `barometer_altitude_estimation.py`
-
-**Tasks:**
-1. Add temperature field to `BarometerData`
-2. Implement temperature-dependent pressure calculation
-3. Add pressure altitude conversion
-4. Implement ISA (International Standard Atmosphere) model
-5. Add configuration parameters (temp coefficient, noise)
-6. Update Python bindings
-7. Write unit tests
-8. Create altitude estimation example
-9. Documentation
-10. Validate against real sensor data
+1. Add InertialParams struct to MultirotorParams.hpp
+2. Implement PhysicsMode enum
+3. Add inertia_matrix_, center_of_mass_, drag fields to PhysicsBody
+4. Implement setInertiaMatrix(), setCenterOfMass() methods
+5. Update torque calculations to use full inertia tensor
+6. Add JSON parsing for Inertial configuration section
+7. Write unit tests for inertia rotations
+8. Create example configuration
+9. Update documentation
 
 **Dependencies:** None  
 **Risk:** LOW
 
-### Week 9: Enhanced GPS
+### Weeks 3-4: New Sensors - Battery, Airspeed
 
 **Deliverables:**
-- ✅ Enhanced `GpsBase.hpp` - Add EPH, EPV, fix type, satellites
-- ✅ GPS accuracy simulation
-- ✅ Fix loss simulation
-- ✅ Python API updates
-- ✅ Unit tests (10+ test cases)
-- ✅ Example: `gps_accuracy_visualization.py`
+- ✅ `BatteryBase.hpp` + `BatterySimple.cpp` - Battery sensor
+- ✅ `AirspeedBase.hpp` + `AirspeedSimple.cpp` - Airspeed sensor
+- ✅ Python APIs for both sensors
+- ✅ Unit tests (18+ test cases total)
+- ✅ Examples: `battery_example.py`, `airspeed_example.py`
 
 **Tasks:**
+1. Implement Battery sensor (linear + nonlinear discharge)
+2. Implement Airspeed sensor (TAS + IAS calculations)
+3. Add sensors to vehicle configuration
+4. Create C++ API methods
+5. Create Python bindings
+6. Write unit tests
+7. Create examples
+8. Update documentation
+
+**Dependencies:** Weeks 1-2 complete  
+**Risk:** LOW
+
+### Weeks 5-6: Radar Sensor + Sensor Enhancements
+
+**Deliverables:**
+- ✅ `RadarBase.hpp` + `RadarSimple.cpp` - Radar with tracking
+- ✅ Enhanced GPS (EPH, EPV, fix type, satellites)
+- ✅ Enhanced IMU (bias simulation, temperature)
+- ✅ Enhanced Magnetometer (declination, bias)
+- ✅ Enhanced Barometer (QNH/QFE)
+- ✅ Python APIs for all
+- ✅ Unit tests (35+ test cases)
+- ✅ Examples for enhanced sensors
+
+**Tasks:**
+1. Implement Radar detection and tracking
+2. Extend GPS with accuracy fields
+3. Extend IMU with bias methods
+4. Extend Magnetometer with declination
+5. Extend Barometer with pressure references
+6. Update all APIs
+7. Write comprehensive tests
+8. Update documentation
+
+**Dependencies:** Weeks 3-4 complete  
+**Risk:** MEDIUM (Radar tracking complexity)
+
+### Week 7: Simple Mode Testing + Documentation
+
+**Deliverables:**
+- ✅ Complete test suite for Simple mode (50+ tests)
+- ✅ Integration tests for all sensors
+- ✅ System tests (full simulations)
+- ✅ Performance benchmarks
+- ✅ User documentation updated
+- ✅ API reference complete
+- ✅ Example code repository
+
+**Tasks:**
+1. Write comprehensive unit tests
+2. Create integration test scenarios
+3. Run system tests in Unreal
+4. Benchmark performance
+5. Update API documentation
+6. Create user guide sections
+7. Validate backward compatibility
+8. Code review and fixes
+
+**Dependencies:** Weeks 5-6 complete  
+**Risk:** LOW
+
+---
+
+## Phase 2: Simple Mode Completion (Weeks 8-12)
+
+**Goal:** Complete Simple mode with actuators, World APIs, and polish
+
+### Weeks 8-9: Actuators (Simple Mode)
+
+**Deliverables:**
+- ✅ `ActuatorBase.hpp` - Base class for actuators
+- ✅ `RotorActuator.hpp/cpp` - Enhanced rotor dynamics
+- ✅ `GimbalActuator.hpp/cpp` - Camera stabilization
+- ✅ Mode-aware attachment (PhysicsBody)
+- ✅ Python APIs for gimbal control
+- ✅ Unit tests (15+ test cases)
+- ✅ Examples: `gimbal_control_example.py`
+
+**Tasks:**
+1. Create ActuatorBase interface
+2. Implement RotorActuator with motor time constants
+3. Implement GimbalActuator with limits
+4. Add attachment to PhysicsBody
+5. Extend rotor configuration parsing
+6. Create gimbal APIs
+7. Write tests
+8. Create examples
+
+**Dependencies:** Phase 1 complete  
+**Risk:** LOW
+
+### Weeks 10-11: World APIs + Advanced Time Control
+
+**Deliverables:**
+- ✅ `WorldSimApi.hpp` - Environment control APIs
+- ✅ Weather simulation (wind, temperature, pressure)
+- ✅ Time-of-day control (sun position)
+- ✅ Object spawning and manipulation
+- ✅ Scene queries (ray casting, overlap tests)
+- ✅ Clock control enhancements (step, speed scale)
+- ✅ Python APIs for all features
+- ✅ Unit tests (25+ test cases)
+- ✅ Examples: `weather_simulation.py`, `object_spawning.py`
+
+**Tasks:**
+1. Create WorldSimApi interface
+2. Implement weather simulation (wind fields)
+3. Add time-of-day control
+4. Implement object spawning
+5. Add scene queries (collision detection)
+6. Enhance clock control (stepping, speed)
+7. Create Python bindings
+8. Write tests
+9. Create examples
+10. Update documentation
+
+**Dependencies:** Weeks 8-9 complete  
+**Risk:** MEDIUM (Unreal integration complexity)
+
+### Week 12: Simple Mode Polish + Code Review
+
+**Deliverables:**
+- ✅ Code review completed
+- ✅ Bug fixes from testing
+- ✅ Performance optimizations
+- ✅ Documentation polish
+- ✅ Backward compatibility validated
+- ✅ Release notes prepared
+- ✅ Migration guide for v1.x users
+
+**Tasks:**
+1. Conduct comprehensive code review
+2. Fix identified bugs
+3. Optimize performance bottlenecks
+4. Polish documentation
+5. Validate backward compatibility
+6. Create migration guide
+7. Prepare release notes
+8. Tag release v2.0-simple
+
+**Dependencies:** Weeks 10-11 complete  
+**Risk:** LOW
+
+**Phase 2 Milestone:** ✅ Simple Mode complete and production-ready
+
+---
+
+## Phase 3: Advanced Mode Architecture (Weeks 13-18)
+
+**Goal:** Implement Robot/Link/Joint class hierarchy
+
+### Weeks 13-14: Core Robot Classes
+
+**Deliverables:**
+- ✅ `Robot.hpp/cpp` - Robot container class
+- ✅ `Link.hpp/cpp` - Link with inertial properties
+- ✅ `Joint.hpp/cpp` - Joint types (Fixed, Revolute, Continuous, Prismatic)
+- ✅ Forward kinematics implementation
+- ✅ Unit tests (30+ test cases)
+- ✅ Simple robot examples (2-link arm)
+
+**Tasks:**
+1. Define Robot class interface
+2. Implement Link class (InertialProperties, CollisionGeometry)
+3. Implement Joint types with limits
+4. Create forward kinematics (FK) algorithm
+5. Add transform tree for coordinate frames
+6. Implement joint constraints
+7. Write comprehensive unit tests
+8. Create simple robot examples
+9. Documentation
+10. Performance benchmarking
+
+**Dependencies:** Phase 2 complete  
+**Risk:** HIGH (core architecture, complex FK)
 1. Add EPH/EPV fields to `GpsData`
 2. Add fix type enumeration (No fix, 2D, 3D, DGPS, RTK)
 3. Add satellite count tracking

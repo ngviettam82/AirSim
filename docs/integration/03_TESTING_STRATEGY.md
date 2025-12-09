@@ -1,15 +1,20 @@
-# ProjectAirSim Integration - Testing Strategy
+# Cosys-AirSim Dual-Mode Integration - Testing Strategy
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Date:** January 2025  
 **Status:** Active Testing Plan  
-**Coverage Goal:** >80% code coverage
+**Coverage Goal:** >80% code coverage (both modes)  
+**Total Test Count:** ~150 tests (50 Simple + 80 Advanced + 20 Integration)
 
 ---
 
 ## Document Overview
 
-This document defines the **comprehensive testing strategy** for all 25 ProjectAirSim features. It covers unit testing, integration testing, system testing, performance testing, and validation approaches.
+This document defines the **comprehensive testing strategy** for the dual-mode architecture integration. It covers unit testing, integration testing, system testing, performance testing, and validation approaches for both Simple and Advanced modes.
+
+**Dual-Mode Architecture:**
+- **Simple Mode (Default):** Enhanced MultirotorParams, full inertia tensors, single rigid body
+- **Advanced Mode (Optional):** Robot/Link/Joint class hierarchy, multi-body articulated systems
 
 **Related Documents:**
 - `00_MASTER_TECHNICAL_SPECIFICATION.md` - Technical specifications
@@ -28,6 +33,7 @@ This document defines the **comprehensive testing strategy** for all 25 ProjectA
 3. **Regression Prevention:** All bugs get test cases
 4. **Performance Aware:** Track performance metrics continuously
 5. **Backward Compatible:** Ensure existing Cosys-AirSim tests still pass
+6. **Mode-Aware Testing:** Test both Simple and Advanced modes independently and together
 
 ### Quality Gates
 
@@ -37,6 +43,7 @@ This document defines the **comprehensive testing strategy** for all 25 ProjectA
 - ✅ No memory leaks (Valgrind clean)
 - ✅ Code review approval
 - ✅ Integration tests passing
+- ✅ Mode-specific tests passing (if applicable)
 
 ---
 
@@ -1084,6 +1091,297 @@ Each feature should have:
 - Performance validation
 - Documentation review
 
+---
+
+## Advanced Mode Testing (Phase 3-4)
+
+### Robot/Link/Joint Unit Tests
+
+**Test Count:** ~30 tests
+
+#### Robot Class Tests
+
+```cpp
+TEST(RobotTest, ForwardKinematics2LinkArm) {
+    // Create 2-link planar arm
+    Robot robot = CreateTestArm();
+    robot.setJointAngle("joint1", M_PI / 4);  // 45 degrees
+    robot.setJointAngle("joint2", M_PI / 4);  // 45 degrees
+    
+    robot.updateForwardKinematics();
+    
+    Vector3r end_effector_pose = robot.getLink("end_effector")->getPose().position;
+    EXPECT_NEAR(end_effector_pose.x(), 1.414, 0.01);  // sqrt(2)
+    EXPECT_NEAR(end_effector_pose.y(), 1.414, 0.01);
+}
+
+TEST(RobotTest, SensorAttachmentToLink) {
+    Robot robot = CreateTestRobot();
+    IMUSensor imu = CreateTestIMU();
+    
+    robot.attachSensor("link2", imu, Vector3r(0.1, 0, 0));
+    
+    robot.updateForwardKinematics();
+    Vector3r imu_world_pose = robot.getSensorWorldPose("imu");
+    
+    ASSERT_TRUE(imu_world_pose.norm() > 0);  // Non-zero pose
+}
+
+TEST(RobotTest, ActuatorAttachmentToJoint) {
+    Robot robot = CreateTestRobot();
+    ServoActuator servo = CreateTestServo();
+    
+    robot.attachActuator("joint1", servo);
+    servo.setTargetAngle(M_PI / 2);
+    
+    robot.update(0.1);  // 100ms
+    
+    EXPECT_NEAR(robot.getJointAngle("joint1"), M_PI / 2, 0.1);
+}
+```
+
+#### Link Class Tests
+
+```cpp
+TEST(LinkTest, CenterOfMassOffset) {
+    Link link;
+    link.setMass(10.0);
+    link.setCenterOfMass(Vector3r(0.5, 0, 0));  // COM offset
+    
+    link.applyForce(Vector3r(0, 0, 10), Vector3r::Zero());  // Force at origin
+    
+    Vector3r torque = link.getNetTorque();
+    EXPECT_NEAR(torque.y(), 5.0, 0.01);  // Torque from COM offset
+}
+
+TEST(LinkTest, InertiaTensorRotation) {
+    Link link;
+    link.setInertia(Matrix3x3r::Identity() * 5.0);
+    
+    Vector3r angular_velocity(1, 0, 0);
+    Vector3r angular_momentum = link.computeAngularMomentum(angular_velocity);
+    
+    EXPECT_NEAR(angular_momentum.x(), 5.0, 0.01);
+}
+
+TEST(LinkTest, CollisionDetection) {
+    Link link1, link2;
+    link1.setCollisionGeometry(CollisionGeometry::Box(Vector3r(1, 1, 1)));
+    link2.setCollisionGeometry(CollisionGeometry::Sphere(0.5));
+    
+    link1.setPose(Pose(Vector3r::Zero(), Quaternionr::Identity()));
+    link2.setPose(Pose(Vector3r(0.5, 0, 0), Quaternionr::Identity()));
+    
+    ASSERT_TRUE(link1.checkCollision(link2));
+}
+```
+
+#### Joint Class Tests
+
+```cpp
+TEST(JointTest, RevoluteAngleLimits) {
+    Joint::Revolute joint;
+    joint.setLimits(-M_PI / 2, M_PI / 2);  // ±90 degrees
+    
+    joint.setAngle(M_PI);  // Try to set beyond limit
+    
+    EXPECT_NEAR(joint.getAngle(), M_PI / 2, 0.01);  // Clamped to upper limit
+}
+
+TEST(JointTest, PrismaticPositionLimits) {
+    Joint::Prismatic joint;
+    joint.setLimits(0.0, 1.0);  // 0-1 meter range
+    
+    joint.setPosition(1.5);  // Try to set beyond limit
+    
+    EXPECT_NEAR(joint.getPosition(), 1.0, 0.01);  // Clamped
+}
+
+TEST(JointTest, JointDamping) {
+    Joint::Revolute joint;
+    joint.setDamping(0.5);
+    
+    joint.setAngularVelocity(10.0);  // High velocity
+    float damping_torque = joint.computeDampingTorque();
+    
+    EXPECT_NEAR(damping_torque, -5.0, 0.01);  // Opposes motion
+}
+
+TEST(JointTest, ContinuousJointNoLimits) {
+    Joint::Continuous joint;
+    
+    joint.setAngle(3 * M_PI);  // Beyond 360 degrees
+    
+    // Should wrap or allow unlimited rotation
+    EXPECT_TRUE(std::isfinite(joint.getAngle()));
+}
+```
+
+### RobotParser Tests
+
+**Test Count:** ~25 tests
+
+```cpp
+TEST(RobotParserTest, ParseBasicRobot) {
+    std::string config = R"({
+        "PhysicsMode": "Advanced",
+        "Robot": {
+            "Links": [
+                {"name": "base", "mass": 1.0, "inertia": [1,1,1]}
+            ],
+            "Joints": [
+                {"name": "joint1", "type": "Fixed", "parent": "base"}
+            ]
+        }
+    })";
+    
+    RobotParser parser;
+    Robot robot = parser.parse(config);
+    
+    ASSERT_EQ(robot.getLinkCount(), 1);
+    ASSERT_EQ(robot.getJointCount(), 1);
+}
+
+TEST(RobotParserTest, ModeDetection) {
+    std::string simple_config = R"({"PhysicsMode": "Simple"})";
+    std::string advanced_config = R"({"PhysicsMode": "Advanced"})";
+    std::string no_mode_config = R"({})";
+    
+    RobotParser parser;
+    
+    EXPECT_EQ(parser.detectMode(simple_config), PhysicsMode::Simple);
+    EXPECT_EQ(parser.detectMode(advanced_config), PhysicsMode::Advanced);
+    EXPECT_EQ(parser.detectMode(no_mode_config), PhysicsMode::Simple);  // Default
+}
+
+TEST(RobotParserTest, ParseJointTypes) {
+    std::string config = R"({
+        "Joints": [
+            {"name": "j1", "type": "Fixed"},
+            {"name": "j2", "type": "Revolute", "axis": [0,0,1], "limits": [-1.57, 1.57]},
+            {"name": "j3", "type": "Continuous", "axis": [1,0,0]},
+            {"name": "j4", "type": "Prismatic", "axis": [0,1,0], "limits": [0, 1]}
+        ]
+    })";
+    
+    RobotParser parser;
+    auto joints = parser.parseJoints(config);
+    
+    ASSERT_EQ(joints.size(), 4);
+    EXPECT_EQ(joints[0]->getType(), JointType::Fixed);
+    EXPECT_EQ(joints[1]->getType(), JointType::Revolute);
+    EXPECT_EQ(joints[2]->getType(), JointType::Continuous);
+    EXPECT_EQ(joints[3]->getType(), JointType::Prismatic);
+}
+```
+
+### Multi-Body Physics Integration Tests
+
+**Test Count:** ~20 tests
+
+```cpp
+TEST(MultiBodyPhysicsTest, TwoLinkArmDynamics) {
+    Robot robot = CreateTwoLinkArm();
+    PhysicsBody physics_body;
+    physics_body.setRobot(robot);
+    
+    // Apply torque to first joint
+    robot.getJoint("joint1")->applyTorque(10.0);
+    
+    physics_body.update(0.01);  // 10ms timestep
+    
+    float angular_velocity = robot.getJoint("joint1")->getAngularVelocity();
+    EXPECT_GT(angular_velocity, 0);  // Should start rotating
+}
+
+TEST(MultiBodyPhysicsTest, JointConstraintMaintained) {
+    Robot robot = CreateTestRobot();
+    PhysicsBody physics_body;
+    physics_body.setRobot(robot);
+    
+    // Apply large force to link
+    robot.getLink("link2")->applyForce(Vector3r(1000, 0, 0), Vector3r::Zero());
+    
+    for (int i = 0; i < 100; i++) {
+        physics_body.update(0.01);
+    }
+    
+    // Joint should maintain constraint
+    float joint_error = robot.computeJointConstraintError("joint1");
+    EXPECT_LT(joint_error, 0.01);  // <1cm error
+}
+
+TEST(MultiBodyPhysicsTest, CollisionBetweenLinks) {
+    Robot robot = CreateSelfCollidingRobot();
+    PhysicsBody physics_body;
+    physics_body.setRobot(robot);
+    
+    robot.setJointAngle("joint1", M_PI);  // Fold robot
+    
+    physics_body.update(0.01);
+    
+    ASSERT_TRUE(physics_body.hasCollision());
+}
+```
+
+### Mode Integration Tests
+
+**Test Count:** ~20 tests
+
+```cpp
+TEST(ModeIntegrationTest, SwitchBetweenModes) {
+    // Load Simple mode vehicle
+    auto simple_vehicle = LoadConfig("simple_quadrotor.json");
+    ASSERT_EQ(simple_vehicle->getPhysicsMode(), PhysicsMode::Simple);
+    
+    // Load Advanced mode vehicle
+    auto advanced_vehicle = LoadConfig("advanced_quadrotor.json");
+    ASSERT_EQ(advanced_vehicle->getPhysicsMode(), PhysicsMode::Advanced);
+    
+    // Both should simulate correctly
+    simple_vehicle->update(0.01);
+    advanced_vehicle->update(0.01);
+    
+    ASSERT_TRUE(simple_vehicle->isStable());
+    ASSERT_TRUE(advanced_vehicle->isStable());
+}
+
+TEST(ModeIntegrationTest, MixedModeSimulation) {
+    Simulation sim;
+    
+    // Add Simple mode quadrotor
+    auto quad1 = sim.addVehicle("simple_quadrotor.json");
+    ASSERT_EQ(quad1->getPhysicsMode(), PhysicsMode::Simple);
+    
+    // Add Advanced mode robot arm
+    auto arm = sim.addVehicle("robot_arm.json");
+    ASSERT_EQ(arm->getPhysicsMode(), PhysicsMode::Advanced);
+    
+    // Run simulation
+    for (int i = 0; i < 1000; i++) {
+        sim.update(0.01);
+    }
+    
+    // Both should function correctly
+    ASSERT_TRUE(quad1->isActive());
+    ASSERT_TRUE(arm->isActive());
+}
+
+TEST(ModeIntegrationTest, PerformanceComparison) {
+    auto simple_config = "simple_quadrotor.json";
+    auto advanced_config = "advanced_quadrotor.json";  // Equivalent config
+    
+    auto simple_time = BenchmarkSimulation(simple_config, 10000);  // 10k steps
+    auto advanced_time = BenchmarkSimulation(advanced_config, 10000);
+    
+    float overhead = (advanced_time - simple_time) / simple_time;
+    
+    EXPECT_LT(overhead, 0.15);  // <15% overhead for Advanced mode
+}
+```
+
+---
+
 ### Appendix C: Bug Severity Definitions
 
 **Critical:**
@@ -1109,6 +1407,27 @@ Each feature should have:
 - **SLA:** Backlog
 
 ---
+
+## Dual-Mode Test Summary
+
+| Mode | Unit Tests | Integration Tests | System Tests | Performance Tests | Total |
+|------|------------|-------------------|--------------|-------------------|-------|
+| **Simple** | 35 | 10 | 3 | 2 | **50** |
+| **Advanced** | 55 | 15 | 6 | 4 | **80** |
+| **Integration** | - | 15 | 3 | 2 | **20** |
+| **TOTAL** | **90** | **40** | **12** | **8** | **150** |
+
+**Coverage Goals:**
+- Simple Mode: >85%
+- Advanced Mode: >80%
+- Integration: >75%
+- Overall: >80%
+
+---
+
+**Document Status:** ACTIVE TESTING PLAN - Dual-Mode Architecture  
+**Last Updated:** January 2025  
+**Next Review:** End of Phase 1 (Week 7)
 
 **Document Status:** ACTIVE TESTING PLAN  
 **Last Updated:** January 2025  

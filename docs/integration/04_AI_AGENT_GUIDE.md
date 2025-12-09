@@ -1,6 +1,6 @@
-# ProjectAirSim Integration - AI Agent Implementation Guide
+# Cosys-AirSim Dual-Mode Integration - AI Agent Implementation Guide
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Date:** January 2025  
 **Status:** AI-Assisted Development Guide  
 **Target Audience:** AI agents, automated code generators, human developers using AI assistance
@@ -9,7 +9,11 @@
 
 ## Document Overview
 
-This guide provides **step-by-step instructions for AI agents** to implement all 25 ProjectAirSim features. It includes prompts, code templates, workflows, and validation steps optimized for AI-assisted development.
+This guide provides **step-by-step instructions for AI agents** to implement the dual-mode architecture integration. It includes prompts, code templates, workflows, and validation steps optimized for AI-assisted development.
+
+**Dual-Mode Architecture:**
+- **Simple Mode (Default):** Enhanced MultirotorParams, full inertia tensors, single rigid body
+- **Advanced Mode (Optional):** Robot/Link/Joint class hierarchy, multi-body articulated systems
 
 **Related Documents:**
 - `00_MASTER_TECHNICAL_SPECIFICATION.md` - Technical specifications
@@ -25,26 +29,33 @@ This guide provides **step-by-step instructions for AI agents** to implement all
 
 ```
 1. READ specifications from master tech spec
-2. RESEARCH similar implementations in existing codebase
-3. GENERATE code following existing patterns
-4. TEST generated code with unit tests
-5. INTEGRATE with existing systems
-6. VALIDATE against acceptance criteria
-7. DOCUMENT changes
+2. DETERMINE mode (Simple vs Advanced) for the feature
+3. RESEARCH similar implementations in existing codebase
+4. GENERATE code following existing patterns
+5. TEST generated code with unit tests (mode-aware)
+6. INTEGRATE with existing systems
+7. VALIDATE against acceptance criteria (mode-specific)
+8. DOCUMENT changes
 ```
 
 ### Task Execution Loop
 
 ```python
-for task in tier_tasks:
+for task in phase_tasks:
     # Phase 1: Understanding
     specifications = read_spec(task.feature)
+    mode = determine_mode(task)  # Simple, Advanced, or Both
     existing_code = search_codebase(task.related_classes)
     patterns = identify_patterns(existing_code)
     
     # Phase 2: Implementation
-    code = generate_code(specifications, patterns)
-    tests = generate_tests(specifications, code)
+    if mode == "Simple" or mode == "Both":
+        code_simple = generate_code(specifications, patterns, mode="Simple")
+        tests_simple = generate_tests(specifications, code_simple, mode="Simple")
+    
+    if mode == "Advanced" or mode == "Both":
+        code_advanced = generate_code(specifications, patterns, mode="Advanced")
+        tests_advanced = generate_tests(specifications, code_advanced, mode="Advanced")
     
     # Phase 3: Validation
     compile_result = compile(code)
@@ -59,45 +70,492 @@ for task in tier_tasks:
 
 ---
 
-## Tier 1: Critical Sensors - AI Implementation Guide
+## Phase 1: Simple Mode Foundation - AI Implementation Guide
 
-### Feature: Battery Sensor (Week 1)
+### Feature: Vehicle Physics Enhancement (Weeks 1-2)
 
-#### Step 1: Understand the Specification
+#### Step 1: Understand the Dual-Mode Architecture
 
 **AI Prompt:**
 ```
-Read the Battery Sensor specification from section 2.3.3 of the master technical specification.
+Read section 2.1 of the master technical specification on Dual-Mode Vehicle Architecture.
 Extract:
-1. Data structure: BatteryData fields
-2. Parameters: BatteryParams fields
-3. Discharge modes: Linear, Nonlinear
-4. Control APIs: setRemaining, setDrainRate, setHealthStatus
+1. Simple Mode: InertialParams struct, PhysicsBody enhancements
+2. Advanced Mode: Robot/Link/Joint class hierarchy
+3. Configuration parsing: "PhysicsMode" field detection
+4. Mode-aware PhysicsBody updates
 
-Summarize the key requirements.
+Summarize the key differences between modes and how they coexist.
 ```
 
 **Expected AI Response:**
-- BatteryData contains voltage, current, SOC, capacity, temperature, health status
-- Two discharge modes required: Linear (constant rate) and Nonlinear (exponential)
-- Must support runtime control of SOC and drain rate
-- Update frequency configurable
+- Simple Mode extends existing MultirotorParams with InertialParams struct
+- Advanced Mode uses separate Robot/Link/Joint architecture
+- Configuration parser detects "PhysicsMode": "Simple" or "Advanced" (defaults to Simple)
+- PhysicsBody has mode-aware update() method that dispatches to appropriate physics solver
 
-#### Step 2: Research Existing Patterns
+#### Step 2: Implement Simple Mode Inertial Properties
 
 **AI Prompt:**
 ```
-Search the Cosys-AirSim codebase for existing sensor implementations.
-Find files matching: AirLib/include/sensors/*/.*Base.hpp
+Generate C++ code for InertialParams struct based on section 2.1.2:
+- Fields: mass, center_of_mass (Vector3r), inertia_tensor (Matrix3x3r), drag_coefficient
+- Must integrate with existing MultirotorParams
+- Add to AirLib/include/vehicles/multirotor/MultirotorParams.hpp
 
-Analyze the pattern:
-1. How do sensors inherit from SensorBase?
-2. How are sensor parameters structured?
-3. How is getData() implemented?
-4. How is update() called?
-
-Show me an example from BarometerBase or GpsBase.
+Show the complete struct definition with documentation comments.
 ```
+
+**Expected AI Output:**
+```cpp
+/// Inertial properties for Simple Mode physics
+struct InertialParams {
+    real_T mass = 1.0f;                              ///< Mass in kg
+    Vector3r center_of_mass = Vector3r::Zero();      ///< COM offset from origin (m)
+    Matrix3x3r inertia_tensor = Matrix3x3r::Identity(); ///< 3x3 inertia tensor (kg·m²)
+    real_T drag_coefficient = 0.01f;                 ///< Aerodynamic drag coefficient
+    
+    /// Default constructor
+    InertialParams() = default;
+    
+    /// Constructor with parameters
+    InertialParams(real_T m, const Vector3r& com, const Matrix3x3r& inertia, real_T drag)
+        : mass(m), center_of_mass(com), inertia_tensor(inertia), drag_coefficient(drag) {}
+};
+```
+
+#### Step 3: Enhance PhysicsBody for Mode Awareness
+
+**AI Prompt:**
+```
+Modify PhysicsBody to support both Simple and Advanced modes:
+1. Add `PhysicsMode` enum (Simple, Advanced)
+2. Add mode detection in constructor
+3. Create mode-aware update() method that dispatches to:
+   - updateSimpleMode() for single rigid body
+   - updateAdvancedMode() for multi-body with FK and constraints
+4. File: AirLib/include/physics/PhysicsBody.hpp
+
+Show the key changes to PhysicsBody class.
+```
+
+**Expected AI Output:**
+```cpp
+enum class PhysicsMode {
+    Simple,    ///< Single rigid body with enhanced inertia
+    Advanced   ///< Multi-body articulated system with Robot/Link/Joint
+};
+
+class PhysicsBody {
+public:
+    PhysicsBody(PhysicsMode mode = PhysicsMode::Simple);
+    
+    void update(real_T dt);
+    void setInertiaMatrix(const Matrix3x3r& inertia);
+    void setCenterOfMass(const Vector3r& com);
+    void setRobot(const Robot& robot);  ///< For Advanced mode
+    
+    PhysicsMode getMode() const { return mode_; }
+    
+private:
+    void updateSimpleMode(real_T dt);
+    void updateAdvancedMode(real_T dt);
+    
+    PhysicsMode mode_;
+    Matrix3x3r inertia_tensor_;
+    Vector3r center_of_mass_;
+    std::unique_ptr<Robot> robot_;  ///< Only used in Advanced mode
+};
+```
+
+---
+
+## Phase 3: Advanced Mode Architecture - AI Implementation Guide
+
+### Feature: Robot/Link/Joint Classes (Weeks 13-14)
+
+#### Step 1: Understand Multi-Body Architecture
+
+**AI Prompt:**
+```
+Read section 2.1.3 of the master technical specification on Advanced Mode architecture.
+Extract:
+1. Robot class: Container for links, joints, sensors, actuators
+2. Link class: InertialProperties, CollisionGeometry, VisualGeometry
+3. Joint class: 4 types (Fixed, Revolute, Continuous, Prismatic)
+4. Forward kinematics: Transform tree computation
+
+Explain how these classes interact and how FK propagates through the system.
+```
+
+**Expected AI Response:**
+- Robot class manages a collection of Links connected by Joints
+- Each Joint defines parent-child link relationship
+- Forward kinematics traverses joint tree from base link
+- Each joint computes child link pose relative to parent link
+- Sensors/actuators attach to links and inherit their world poses via FK
+
+#### Step 2: Implement Robot Class
+
+**AI Prompt:**
+```
+Generate C++ code for Robot class based on section 2.1.3.1:
+- Container methods: addLink(), addJoint(), attachSensor(), attachActuator()
+- FK method: updateForwardKinematics()
+- Query methods: getLink(name), getJoint(name), getLinkWorldPose(name)
+- File: AirLib/include/vehicles/robot/Robot.hpp
+
+Show the complete class definition.
+```
+
+**Expected AI Output:**
+```cpp
+#pragma once
+
+#include "common/Common.hpp"
+#include "Link.hpp"
+#include "Joint.hpp"
+#include <map>
+#include <vector>
+#include <memory>
+
+namespace msr { namespace airlib {
+
+class Robot {
+public:
+    Robot(const std::string& name = "robot");
+    
+    // Link management
+    void addLink(std::shared_ptr<Link> link);
+    std::shared_ptr<Link> getLink(const std::string& name) const;
+    size_t getLinkCount() const { return links_.size(); }
+    
+    // Joint management
+    void addJoint(std::shared_ptr<Joint> joint);
+    std::shared_ptr<Joint> getJoint(const std::string& name) const;
+    size_t getJointCount() const { return joints_.size(); }
+    
+    // Forward kinematics
+    void updateForwardKinematics();
+    Pose getLinkWorldPose(const std::string& link_name) const;
+    
+    // Sensor/actuator attachment
+    void attachSensor(const std::string& link_name, SensorBase* sensor, const Vector3r& offset = Vector3r::Zero());
+    void attachActuator(const std::string& joint_name, ActuatorBase* actuator);
+    
+    // Physics update
+    void update(real_T dt);
+    
+    // Configuration
+    void setJointAngle(const std::string& joint_name, real_T angle);
+    real_T getJointAngle(const std::string& joint_name) const;
+    
+private:
+    std::string name_;
+    std::map<std::string, std::shared_ptr<Link>> links_;
+    std::map<std::string, std::shared_ptr<Joint>> joints_;
+    std::map<std::string, Pose> link_world_poses_;  ///< Cached FK results
+    
+    void computeForwardKinematicsRecursive(const std::string& link_name, const Pose& parent_pose);
+};
+
+}} // namespace
+```
+
+#### Step 3: Implement Link Class
+
+**AI Prompt:**
+```
+Generate C++ code for Link class based on section 2.1.3.2:
+- InertialProperties: mass, center_of_mass, inertia_tensor
+- CollisionGeometry: box, sphere, cylinder
+- Physics methods: applyForce(), applyTorque(), computeAngularMomentum()
+- File: AirLib/include/vehicles/robot/Link.hpp
+
+Show the complete class definition.
+```
+
+**Expected AI Output:**
+```cpp
+#pragma once
+
+#include "common/Common.hpp"
+#include "CollisionGeometry.hpp"
+#include <string>
+
+namespace msr { namespace airlib {
+
+class Link {
+public:
+    struct InertialProperties {
+        real_T mass = 1.0f;
+        Vector3r center_of_mass = Vector3r::Zero();
+        Matrix3x3r inertia_tensor = Matrix3x3r::Identity();
+    };
+    
+    Link(const std::string& name);
+    
+    // Properties
+    void setName(const std::string& name) { name_ = name; }
+    std::string getName() const { return name_; }
+    
+    void setMass(real_T mass) { inertial_.mass = mass; }
+    real_T getMass() const { return inertial_.mass; }
+    
+    void setCenterOfMass(const Vector3r& com) { inertial_.center_of_mass = com; }
+    Vector3r getCenterOfMass() const { return inertial_.center_of_mass; }
+    
+    void setInertia(const Matrix3x3r& inertia) { inertial_.inertia_tensor = inertia; }
+    Matrix3x3r getInertia() const { return inertial_.inertia_tensor; }
+    
+    // Collision
+    void setCollisionGeometry(const CollisionGeometry& geom) { collision_geometry_ = geom; }
+    bool checkCollision(const Link& other) const;
+    
+    // Physics
+    void applyForce(const Vector3r& force, const Vector3r& application_point);
+    void applyTorque(const Vector3r& torque);
+    Vector3r computeAngularMomentum(const Vector3r& angular_velocity) const;
+    
+    // Pose
+    void setPose(const Pose& pose) { pose_ = pose; }
+    Pose getPose() const { return pose_; }
+    
+private:
+    std::string name_;
+    InertialProperties inertial_;
+    CollisionGeometry collision_geometry_;
+    Pose pose_;
+    
+    Vector3r accumulated_force_ = Vector3r::Zero();
+    Vector3r accumulated_torque_ = Vector3r::Zero();
+};
+
+}} // namespace
+```
+
+#### Step 4: Implement Joint Classes
+
+**AI Prompt:**
+```
+Generate C++ code for Joint class hierarchy based on section 2.1.3.3:
+- Base Joint class with parent/child links, axis, limits, damping
+- Derived classes: FixedJoint, RevoluteJoint, ContinuousJoint, PrismaticJoint
+- Methods: computeChildPose(), applyConstraintForces(), enforceLimit()
+- File: AirLib/include/vehicles/robot/Joint.hpp
+
+Show the complete class hierarchy.
+```
+
+**Expected AI Output:**
+```cpp
+#pragma once
+
+#include "common/Common.hpp"
+#include "Link.hpp"
+#include <memory>
+
+namespace msr { namespace airlib {
+
+enum class JointType {
+    Fixed,
+    Revolute,
+    Continuous,
+    Prismatic
+};
+
+class Joint {
+public:
+    Joint(const std::string& name, std::shared_ptr<Link> parent, std::shared_ptr<Link> child);
+    virtual ~Joint() = default;
+    
+    // Configuration
+    std::string getName() const { return name_; }
+    JointType getType() const { return type_; }
+    
+    void setAxis(const Vector3r& axis) { axis_ = axis.normalized(); }
+    Vector3r getAxis() const { return axis_; }
+    
+    void setDamping(real_T damping) { damping_ = damping; }
+    real_T getDamping() const { return damping_; }
+    
+    // Kinematics
+    virtual Pose computeChildPose(const Pose& parent_pose) const = 0;
+    virtual void update(real_T dt) = 0;
+    
+    // Dynamics
+    virtual real_T computeDampingTorque() const { return -damping_ * getVelocity(); }
+    virtual void applyTorque(real_T torque) { applied_torque_ += torque; }
+    
+    // State
+    virtual real_T getPosition() const = 0;
+    virtual real_T getVelocity() const = 0;
+    
+protected:
+    std::string name_;
+    JointType type_;
+    std::shared_ptr<Link> parent_link_;
+    std::shared_ptr<Link> child_link_;
+    Vector3r axis_ = Vector3r(0, 0, 1);  ///< Joint axis in parent frame
+    real_T damping_ = 0.0f;
+    real_T applied_torque_ = 0.0f;
+};
+
+class FixedJoint : public Joint {
+public:
+    FixedJoint(const std::string& name, std::shared_ptr<Link> parent, std::shared_ptr<Link> child);
+    
+    Pose computeChildPose(const Pose& parent_pose) const override;
+    void update(real_T dt) override {}
+    
+    real_T getPosition() const override { return 0.0f; }
+    real_T getVelocity() const override { return 0.0f; }
+    
+private:
+    Pose fixed_transform_;  ///< Fixed offset from parent to child
+};
+
+class RevoluteJoint : public Joint {
+public:
+    RevoluteJoint(const std::string& name, std::shared_ptr<Link> parent, std::shared_ptr<Link> child);
+    
+    Pose computeChildPose(const Pose& parent_pose) const override;
+    void update(real_T dt) override;
+    
+    void setLimits(real_T lower, real_T upper) { lower_limit_ = lower; upper_limit_ = upper; }
+    void setAngle(real_T angle);
+    real_T getAngle() const { return angle_; }
+    void setAngularVelocity(real_T velocity) { angular_velocity_ = velocity; }
+    real_T getAngularVelocity() const { return angular_velocity_; }
+    
+    real_T getPosition() const override { return angle_; }
+    real_T getVelocity() const override { return angular_velocity_; }
+    
+private:
+    real_T angle_ = 0.0f;
+    real_T angular_velocity_ = 0.0f;
+    real_T lower_limit_ = -M_PI;
+    real_T upper_limit_ = M_PI;
+    
+    void enforceLimit();
+};
+
+class ContinuousJoint : public RevoluteJoint {
+public:
+    ContinuousJoint(const std::string& name, std::shared_ptr<Link> parent, std::shared_ptr<Link> child);
+    
+    // No angle limits for continuous joints
+    void setAngle(real_T angle);  // Can rotate beyond ±180 degrees
+};
+
+class PrismaticJoint : public Joint {
+public:
+    PrismaticJoint(const std::string& name, std::shared_ptr<Link> parent, std::shared_ptr<Link> child);
+    
+    Pose computeChildPose(const Pose& parent_pose) const override;
+    void update(real_T dt) override;
+    
+    void setLimits(real_T lower, real_T upper) { lower_limit_ = lower; upper_limit_ = upper; }
+    void setPosition(real_T position);
+    real_T getLinearPosition() const { return position_; }
+    void setVelocity(real_T velocity) { velocity_ = velocity; }
+    real_T getLinearVelocity() const { return velocity_; }
+    
+    real_T getPosition() const override { return position_; }
+    real_T getVelocity() const override { return velocity_; }
+    
+private:
+    real_T position_ = 0.0f;
+    real_T velocity_ = 0.0f;
+    real_T lower_limit_ = 0.0f;
+    real_T upper_limit_ = 1.0f;
+    
+    void enforceLimit();
+};
+
+}} // namespace
+```
+
+---
+
+## Mode-Aware Testing Guidelines for AI Agents
+
+### Simple Mode Test Generation
+
+**AI Prompt:**
+```
+Generate unit tests for Simple Mode inertial physics:
+1. Test InertialParams struct initialization
+2. Test PhysicsBody with custom inertia tensor
+3. Test center of mass offset affecting torque
+4. Use Google Test framework
+
+File: AirLibUnitTests/InertialPhysicsTests.cpp
+```
+
+### Advanced Mode Test Generation
+
+**AI Prompt:**
+```
+Generate unit tests for Advanced Mode Robot/Link/Joint:
+1. Test 2-link arm forward kinematics
+2. Test joint angle limits enforcement
+3. Test sensor attachment to arbitrary link
+4. Test multi-body collision detection
+5. Use Google Test framework
+
+File: AirLibUnitTests/RobotArchitectureTests.cpp
+```
+
+### Mode Integration Test Generation
+
+**AI Prompt:**
+```
+Generate integration tests for dual-mode coexistence:
+1. Load Simple mode config, verify mode detection
+2. Load Advanced mode config, verify mode detection
+3. Run mixed-mode simulation (Simple + Advanced vehicles)
+4. Compare performance overhead
+5. Use Google Test framework
+
+File: AirLibUnitTests/ModeIntegrationTests.cpp
+```
+
+---
+
+## Validation Checklist for AI Agents
+
+After generating code, validate:
+
+**Simple Mode:**
+- [ ] InertialParams struct compiles
+- [ ] PhysicsBody has setInertiaMatrix(), set CenterOfMass()
+- [ ] Configuration parser defaults to Simple mode
+- [ ] Unit tests pass (>85% coverage)
+- [ ] Performance <5% overhead vs baseline
+
+**Advanced Mode:**
+- [ ] Robot/Link/Joint classes compile
+- [ ] Forward kinematics produces correct transforms
+- [ ] Joint limits enforced correctly
+- [ ] RobotParser detects "PhysicsMode": "Advanced"
+- [ ] Multi-body physics integrates with PhysicsBody
+- [ ] Unit tests pass (>80% coverage)
+- [ ] Performance <15% overhead vs Simple mode
+
+**Integration:**
+- [ ] Both modes can coexist in same codebase
+- [ ] No mode interference in mixed simulations
+- [ ] Mode switching works correctly
+- [ ] Backward compatibility maintained (default to Simple)
+
+---
+
+**Document Status:** ACTIVE AI AGENT GUIDE - Dual-Mode Architecture  
+**Last Updated:** January 2025  
+**Next Review:** End of Phase 1 (Week 7)
+
+
 
 **Expected AI Response:**
 ```cpp
