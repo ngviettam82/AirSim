@@ -289,7 +289,8 @@ bool FObjectAnnotator::SetComponentRGBColorByIndex(FString component_id, uint32 
 		FColor color;
 		// For Infrared type, use grayscale representation (R=G=B=ID)
 		if (type_ == AnnotatorType::Infrared) {
-			uint8 id_value = static_cast<uint8>(color_index % 256);
+			static constexpr uint8 MAX_GRAYSCALE_ID = 255;
+			uint8 id_value = static_cast<uint8>(color_index % (MAX_GRAYSCALE_ID + 1));
 			color = FColor(id_value, id_value, id_value, 255);
 		}
 		else {
@@ -881,6 +882,8 @@ FString FObjectAnnotator::GetComponentTexturePath(FString component_id)
 void FObjectAnnotator::InitializeInfrared(ULevel* InLevel)
 {
 	// Infrared camera displays object ID as grayscale (R=G=B=ID)
+	// Note: Object IDs wrap around at 256 (0-255 range for uint8 grayscale)
+	static constexpr uint8 MAX_GRAYSCALE_ID = 255;
 	uint32 color_index = 0;
 	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level infrared annotation."), *name_);
 	for (AActor* actor : InLevel->Actors)
@@ -895,7 +898,7 @@ void FObjectAnnotator::InitializeInfrared(ULevel* InLevel)
 					name_to_component_map_.Emplace(it.Key(), it.Value());
 					component_to_name_map_.Emplace(it.Value(), it.Key());
 					// For infrared, use the object ID as grayscale (R=G=B)
-					uint8 id_value = static_cast<uint8>(color_index % 256);
+					uint8 id_value = static_cast<uint8>(color_index % (MAX_GRAYSCALE_ID + 1));
 					FColor new_color = FColor(id_value, id_value, id_value, 255);
 					name_to_color_index_map_.Emplace(it.Key(), color_index);
 					FString color_string = FString::FromInt(new_color.R) + "," + FString::FromInt(new_color.G) + "," + FString::FromInt(new_color.B);

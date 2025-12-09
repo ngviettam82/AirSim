@@ -779,9 +779,6 @@ void APIPCamera::updateCaptureComponentSetting(USceneCaptureComponent2D* capture
 //CinemAirSim
 void APIPCamera::updateCameraSetting(UCineCameraComponent* camera, const CaptureSetting& setting, const NedTransform& ned_transform)
 {
-    //if (!std::isnan(setting.target_gamma))
-    //    camera-> = setting.target_gamma;
-
     camera->SetProjectionMode(static_cast<ECameraProjectionMode::Type>(setting.projection_mode));
 
     if (!std::isnan(setting.fov_degrees))
@@ -971,7 +968,7 @@ void APIPCamera::setNoiseMaterial(int image_type, UObject* outer, FPostProcessSe
 
 	if (settings.LensDistortionEnable) {
 
-		UMaterialInstanceDynamic* lens_distortion_material_;
+		UMaterialInstanceDynamic* lens_distortion_material_ = nullptr;
 
 		if (settings.LensDistortionInvert) {
 			lens_distortion_material_ = UMaterialInstanceDynamic::Create(lens_distortion_invert_material_static_, outer);

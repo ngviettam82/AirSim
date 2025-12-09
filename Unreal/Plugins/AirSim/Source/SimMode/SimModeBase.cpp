@@ -842,7 +842,9 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 				UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 					success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
 					// Also update infrared annotator with the same object ID
-					infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					if (infrared_annotator_.GetType() == FObjectAnnotator::AnnotatorType::Infrared) {
+						infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					}
 				}, true);
 				changes++;
 			}
@@ -856,7 +858,9 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 			success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
 			// Also update infrared annotator with the same object ID
-			infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			if (infrared_annotator_.GetType() == FObjectAnnotator::AnnotatorType::Infrared) {
+				infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			}
 		}, true);
         if(update_annotation)updateInstanceSegmentationAnnotation();
         return success;
