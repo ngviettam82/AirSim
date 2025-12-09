@@ -77,7 +77,7 @@ public:
 
 public:
     // Sensor type for registration
-    static constexpr int SensorType = 8;
+    static constexpr int SensorType = 12;
 };
 
 }} // namespace

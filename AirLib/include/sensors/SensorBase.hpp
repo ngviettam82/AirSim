@@ -35,7 +35,8 @@ namespace airlib
             GPULidar = 8,
             SensorTemplate = 9,
             MarlocUwb = 10,
-            Wifi = 11
+            Wifi = 11,
+            Battery = 12
         };
 
         SensorBase(const std::string& sensor_name = "")

@@ -6,6 +6,7 @@
 
 #include "sensors/battery/BatterySensorBase.hpp"
 #include "common/Common.hpp"
+#include "common/AirSimSettings.hpp"
 
 namespace msr { namespace airlib {
 
@@ -16,6 +17,28 @@ public:
     {
         // Initialize with default config
         config_ = BatteryConfig();
+        resetBattery();
+    }
+
+    BatterySensorSimple(const AirSimSettings::BatterySetting& setting)
+        : BatterySensorBase(setting.sensor_name)
+    {
+        // Initialize from settings
+        config_.capacity_mah = setting.capacity_mah;
+        config_.nominal_voltage = setting.voltage;
+        config_.max_voltage = setting.max_voltage;
+        config_.min_voltage = setting.min_voltage;
+        config_.internal_resistance = setting.internal_resistance;
+        config_.critical_percentage = setting.critical_percentage;
+        
+        if (setting.simulation_mode == "Linear") {
+            config_.simulation_mode = SimulationMode::Linear;
+        } else if (setting.simulation_mode == "VoltageBased") {
+            config_.simulation_mode = SimulationMode::VoltageBased;
+        } else if (setting.simulation_mode == "PhysicsBased") {
+            config_.simulation_mode = SimulationMode::PhysicsBased;
+        }
+        
         resetBattery();
     }
 

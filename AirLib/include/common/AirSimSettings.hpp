@@ -376,6 +376,17 @@ namespace airlib
         struct WifiSetting : SensorSetting
         {
         };
+
+        struct BatterySetting : SensorSetting
+        {
+            float capacity_mah = 5000.0f;
+            float voltage = 14.8f;
+            float max_voltage = 16.8f;
+            float min_voltage = 12.0f;
+            float internal_resistance = 0.05f;
+            float critical_percentage = 20.0f;
+            std::string simulation_mode = "Linear";
+        };
         
         struct LightSetting {
             //required
@@ -1808,6 +1819,9 @@ namespace airlib
                 break;
             case SensorBase::SensorType::Wifi:
                 sensor_setting = std::unique_ptr<SensorSetting>(new MarLocUwbSetting());
+                break;
+            case SensorBase::SensorType::Battery:
+                sensor_setting = std::unique_ptr<SensorSetting>(new BatterySetting());
                 break;
             default:
                 throw std::invalid_argument("Unexpected sensor type");
