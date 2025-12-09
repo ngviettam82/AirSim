@@ -151,6 +151,9 @@ void APIPCamera::PostInitializeComponents()
     FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowFlags);
     captures_[Utils::toNumeric(ImageType::Segmentation)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 
+    FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Infrared)]->ShowFlags);
+    captures_[Utils::toNumeric(ImageType::Infrared)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetLighting(true);
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetMaterials(false);
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetPostProcessing(false);
@@ -534,14 +537,20 @@ void APIPCamera::setDistortionParam(const std::string& param_name, float value)
 }
 
 void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
-    if(!only_hide)
+    if(!only_hide) {
         captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowOnlyComponents = ComponentList;
+        // Note: Infrared ShowOnlyComponents are set separately via updateInfraredAnnotation
+    }
     APlayerController* controller = this->GetWorld()->GetFirstPlayerController();
     for(TWeakObjectPtr<UPrimitiveComponent> component : ComponentList) {
         captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(component);
         captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(component);
         controller->HiddenPrimitiveComponents.AddUnique(component);
 	}
+}
+
+void APIPCamera::updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList) {
+    captures_[Utils::toNumeric(ImageType::Infrared)]->ShowOnlyComponents = ComponentList;
 }
 
 void APIPCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, FString annotation_name, bool only_hide) {
@@ -682,12 +691,17 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
             case ImageType::Scene:
             case ImageType::Infrared:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
+                if (image_type == Utils::toNumeric(ImageType::Infrared)) {
+                    render_targets_[image_type]->TargetGamma = 1;
+                }
                 break;
             case ImageType::Lighting:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
+                break;
             case ImageType::Segmentation:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
                 render_targets_[image_type]->TargetGamma = 1;
+                break;
             case ImageType::SurfaceNormals:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], true, pixel_format, capture_setting, ned_transform, true);
                 break;
@@ -765,9 +779,6 @@ void APIPCamera::updateCaptureComponentSetting(USceneCaptureComponent2D* capture
 //CinemAirSim
 void APIPCamera::updateCameraSetting(UCineCameraComponent* camera, const CaptureSetting& setting, const NedTransform& ned_transform)
 {
-    //if (!std::isnan(setting.target_gamma))
-    //    camera-> = setting.target_gamma;
-
     camera->SetProjectionMode(static_cast<ECameraProjectionMode::Type>(setting.projection_mode));
 
     if (!std::isnan(setting.fov_degrees))
@@ -957,7 +968,7 @@ void APIPCamera::setNoiseMaterial(int image_type, UObject* outer, FPostProcessSe
 
 	if (settings.LensDistortionEnable) {
 
-		UMaterialInstanceDynamic* lens_distortion_material_;
+		UMaterialInstanceDynamic* lens_distortion_material_ = nullptr;
 
 		if (settings.LensDistortionInvert) {
 			lens_distortion_material_ = UMaterialInstanceDynamic::Create(lens_distortion_invert_material_static_, outer);

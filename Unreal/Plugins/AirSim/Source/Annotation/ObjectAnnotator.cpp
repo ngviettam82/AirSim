@@ -46,6 +46,9 @@ void FObjectAnnotator::Initialize(ULevel* level) {
 	case AnnotatorType::InstanceSegmentation:
 		InitializeInstanceSegmentation(level);
 		break;
+	case AnnotatorType::Infrared:
+		InitializeInfrared(level);
+		break;
 	}
 }
 
@@ -283,7 +286,16 @@ bool FObjectAnnotator::SetComponentRGBColorByIndex(FString component_id, uint32 
 {
 	if (name_to_component_map_.Contains(component_id))
 	{
-		FColor color = ColorGenerator_.GetColorFromColorMap(color_index);
+		FColor color;
+		// For Infrared type, use grayscale representation (R=G=B=ID)
+		if (type_ == AnnotatorType::Infrared) {
+			static constexpr uint8 MAX_GRAYSCALE_ID = 255;
+			uint8 id_value = static_cast<uint8>(color_index % (MAX_GRAYSCALE_ID + 1));
+			color = FColor(id_value, id_value, id_value, 255);
+		}
+		else {
+			color = ColorGenerator_.GetColorFromColorMap(color_index);
+		}
 		UMeshComponent* component = name_to_component_map_[component_id];
 		if (UpdatePaintRGBComponent(component, color, component_id))
 		{
@@ -484,6 +496,8 @@ bool FObjectAnnotator::AnnotateNewActor(AActor* actor)
 		return AnnotateNewActorGreyscale(actor);
 	case AnnotatorType::Texture:
 		return AnnotateNewActorTexture(actor);
+	case AnnotatorType::Infrared:
+		return AnnotateNewActorInstanceSegmentation(actor);
 	case AnnotatorType::InstanceSegmentation:
 		return AnnotateNewActorInstanceSegmentation(actor);
 	}
@@ -863,6 +877,42 @@ FString FObjectAnnotator::GetComponentTexturePath(FString component_id)
 	{
 		return FString(TEXT(""));
 	}
+}
+
+void FObjectAnnotator::InitializeInfrared(ULevel* InLevel)
+{
+	// Infrared camera displays object ID as grayscale (R=G=B=ID)
+	// Note: Object IDs wrap around at 256 (0-255 range for uint8 grayscale)
+	static constexpr uint8 MAX_GRAYSCALE_ID = 255;
+	uint32 color_index = 0;
+	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level infrared annotation."), *name_);
+	for (AActor* actor : InLevel->Actors)
+	{
+		if (actor && IsPaintable(actor))
+		{
+			TMap<FString, UMeshComponent*> paintable_components_meshes;
+			getPaintableComponentMeshes(actor, &paintable_components_meshes);
+			for (auto it = paintable_components_meshes.CreateConstIterator(); it; ++it)
+			{
+				if(!it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere")) {
+					name_to_component_map_.Emplace(it.Key(), it.Value());
+					component_to_name_map_.Emplace(it.Value(), it.Key());
+					// For infrared, use the object ID as grayscale (R=G=B)
+					uint8 id_value = static_cast<uint8>(color_index % (MAX_GRAYSCALE_ID + 1));
+					FColor new_color = FColor(id_value, id_value, id_value, 255);
+					name_to_color_index_map_.Emplace(it.Key(), color_index);
+					FString color_string = FString::FromInt(new_color.R) + "," + FString::FromInt(new_color.G) + "," + FString::FromInt(new_color.B);
+					color_to_name_map_.Emplace(color_string, it.Key());
+					gammacorrected_color_to_name_map_.Emplace(color_string, it.Key());
+					name_to_gammacorrected_color_map_.Emplace(it.Key(), color_string);
+					check(PaintRGBComponent(it.Value(), new_color, it.Key()));
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new infrared annotated object %s with ID # %i (Grayscale: %i)"), *name_, *it.Key(), color_index, id_value);
+					color_index++;
+				}
+			}
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level infrared annotation."), *name_);
 }
 
 void FObjectAnnotator::InitializeInstanceSegmentation(ULevel* InLevel)
@@ -1314,6 +1364,10 @@ TMap<FString, float> FObjectAnnotator::GetComponentToValueMap() {
 
 TArray<FColor> FObjectAnnotator::GetColorMap(){
 	return ColorGenerator_.GetColorMap();
+}
+
+int32 FObjectAnnotator::GetIndexFromColor(FColor color) {
+	return ColorGenerator_.GetIndexForColor(color);
 }
 
 

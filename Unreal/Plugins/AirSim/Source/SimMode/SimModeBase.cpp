@@ -172,6 +172,7 @@ void ASimModeBase::BeginPlay()
     loading_screen_widget_->SetVisibility(ESlateVisibility::Hidden);
 
     InitializeInstanceSegmentation();
+    InitializeInfraredCamera();
 
     InitializeAnnotation();
 }
@@ -237,6 +238,17 @@ void ASimModeBase::InitializeInstanceSegmentation()
     if (getSettings().initial_instance_segmentation) {
         instance_segmentation_annotator_.Initialize(this->GetLevel());
     }
+}
+
+void ASimModeBase::InitializeInfraredCamera()
+{
+    // Initialize the infrared annotator using grayscale rendering
+    // This displays object segmentation IDs as grayscale values (all 3 channels the same)
+    if (getSettings().initial_instance_segmentation) {
+        infrared_annotator_ = FObjectAnnotator(FString("Infrared"), FObjectAnnotator::AnnotatorType::Infrared, false);
+        infrared_annotator_.Initialize(this->GetLevel());
+    }
+    // Now that both annotators are initialized, update and sync them
     ForceUpdateInstanceSegmentation();
     updateInstanceSegmentationAnnotation();
 }
@@ -829,6 +841,10 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 				FString key = It.Key();
 				UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 					success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					// Also update infrared annotator with the same object ID
+					if (infrared_annotator_.GetType() == FObjectAnnotator::AnnotatorType::Infrared) {
+						infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					}
 				}, true);
 				changes++;
 			}
@@ -841,6 +857,10 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		FString key = mesh_name.c_str();
 		UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 			success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			// Also update infrared annotator with the same object ID
+			if (infrared_annotator_.GetType() == FObjectAnnotator::AnnotatorType::Infrared) {
+				infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			}
 		}, true);
         if(update_annotation)updateInstanceSegmentationAnnotation();
         return success;
@@ -1205,6 +1225,7 @@ bool ASimModeBase::DeleteActorFromInstanceSegmentation(AActor* Actor, bool updat
 
 void ASimModeBase::ForceUpdateInstanceSegmentation() {
 	instance_segmentation_annotator_.UpdateAnnotationComponents(this->GetWorld());
+	infrared_annotator_.UpdateAnnotationComponents(this->GetWorld());
     updateInstanceSegmentationAnnotation();
 }
 
@@ -1248,6 +1269,7 @@ void ASimModeBase::ForceUpdateAnnotation(FString annotation_name) {
 
 void ASimModeBase::updateInstanceSegmentationAnnotation() {
     TArray<TWeakObjectPtr<UPrimitiveComponent>> current_segmentation_components = instance_segmentation_annotator_.GetAnnotationComponents();
+    TArray<TWeakObjectPtr<UPrimitiveComponent>> current_infrared_components = infrared_annotator_.GetAnnotationComponents();
 
     TArray<AActor*> cameras_found;
     UAirBlueprintLib::RunCommandOnGameThread([this, &cameras_found]() {
@@ -1257,6 +1279,7 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
         for (auto camera_actor : cameras_found) {
             APIPCamera* cur_camera = static_cast<APIPCamera*>(camera_actor);
             cur_camera->updateInstanceSegmentationAnnotation(current_segmentation_components);
+            cur_camera->updateInfraredAnnotation(current_infrared_components);
         }
     }
     TArray<AActor*> lidar_cameras_found;
@@ -1271,14 +1294,22 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
         }
     }
     if (CameraDirector != nullptr) {
-        if(CameraDirector->getFpvCamera() != nullptr)
+        if(CameraDirector->getFpvCamera() != nullptr) {
 			CameraDirector->getFpvCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-        if (CameraDirector->getExternalCamera() != nullptr)
+            CameraDirector->getFpvCamera()->updateInfraredAnnotation(current_infrared_components);
+        }
+        if (CameraDirector->getExternalCamera() != nullptr) {
             CameraDirector->getExternalCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-        if (CameraDirector->getBackupCamera() != nullptr)
+            CameraDirector->getExternalCamera()->updateInfraredAnnotation(current_infrared_components);
+        }
+        if (CameraDirector->getBackupCamera() != nullptr) {
             CameraDirector->getBackupCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-        if (CameraDirector->getFrontCamera() != nullptr)
+            CameraDirector->getBackupCamera()->updateInfraredAnnotation(current_infrared_components);
+        }
+        if (CameraDirector->getFrontCamera() != nullptr) {
             CameraDirector->getFrontCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
+            CameraDirector->getFrontCamera()->updateInfraredAnnotation(current_infrared_components);
+        }
     }
 }
 
