@@ -1140,13 +1140,10 @@ void APIPCamera::onViewModeChanged(bool nodisplay)
         }
         else
         {
-            if (Utils::toEnum<ImageType>(image_type) != ImageType::Scene)
-            {
-                USceneCaptureComponent2D* capture = getCaptureComponent(static_cast<ImageType>(image_type), false);
-                if (capture) {
-                    setCaptureUpdate(capture, nodisplay);
-                }
-            }           
+            USceneCaptureComponent2D* capture = getCaptureComponent(static_cast<ImageType>(image_type), false);
+            if (capture) {
+                setCaptureUpdate(capture, nodisplay);
+            }
         }                
     }
 }
