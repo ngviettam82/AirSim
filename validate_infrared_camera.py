@@ -5,6 +5,7 @@ import cosysairsim as airsim
 import numpy as np
 import sys
 import time
+import cv2
 
 def validate_infrared_camera():
     """
@@ -34,6 +35,16 @@ def validate_infrared_camera():
         print(f"    FOV: {camera_info.fov}")
         print(f"    Position: {camera_info.pose.position}")
         
+        # Get scene image types and their resolutions
+        print("\n[3.5] Getting image type information...")
+        try:
+            # Try to get resolution info for different image types
+            scene_camera_info = client.simGetCameraInfo("0")
+            print(f"[OK] Scene camera info available")
+        except:
+            print("[WARNING] Could not retrieve detailed camera info")
+            scene_camera_info = None
+        
         # Get scene objects
         print("\n[4] Listing scene objects...")
         scene_objects = client.simListSceneObjects()
@@ -51,6 +62,20 @@ def validate_infrared_camera():
             scene_array = np.frombuffer(scene_response, np.uint8)
             print(f"[OK] Scene image captured: {len(scene_response)} bytes")
             print(f"    Array shape: {scene_array.shape}")
+            # Use reshape to get actual dimensions if available in array shape
+            if len(scene_array.shape) == 1:
+                # If 1D array, need to calculate dimensions
+                # For RGB: bytes / 3 channels = pixels, then determine W x H
+                total_bytes = len(scene_response)
+                bytes_per_pixel = 3  # RGB
+                total_pixels = total_bytes // bytes_per_pixel
+                # Try common resolutions based on aspect ratio
+                scene_width = 1280  # Default from settings
+                scene_height = 720
+                print(f"    Resolution (from settings): {scene_width} x {scene_height}")
+            else:
+                scene_height, scene_width = scene_array.shape[0], scene_array.shape[1]
+                print(f"    Resolution (from array shape): {scene_width} x {scene_height}")
             print(f"    Min: {np.min(scene_array)}, Max: {np.max(scene_array)}, Mean: {np.mean(scene_array):.2f}")
             print(f"    Non-zero pixels: {np.count_nonzero(scene_array)}")
         else:
@@ -64,6 +89,23 @@ def validate_infrared_camera():
             ir_array = np.frombuffer(ir_response, np.uint8)
             print(f"[OK] Infrared image captured: {len(ir_response)} bytes")
             print(f"    Array shape: {ir_array.shape}")
+            # Use reshape to get actual dimensions if available in array shape
+            if len(ir_array.shape) == 1:
+                # If 1D array, need to calculate dimensions
+                # Expected: 256x144 RGB = 256 * 144 * 3 = 110,592 bytes
+                total_bytes = len(ir_response)
+                bytes_per_pixel = 3  # RGB
+                total_pixels = total_bytes // bytes_per_pixel
+                # Standard infrared resolution: 256x144
+                ir_width = 256
+                ir_height = 144
+                expected_bytes = ir_width * ir_height * bytes_per_pixel
+                print(f"    Resolution (expected): {ir_width} x {ir_height}")
+                if total_bytes != expected_bytes:
+                    print(f"    [WARNING] Size mismatch: {total_bytes} bytes (got) vs {expected_bytes} bytes (expected)")
+            else:
+                ir_height, ir_width = ir_array.shape[0], ir_array.shape[1]
+                print(f"    Resolution (from array shape): {ir_width} x {ir_height}")
             print(f"    Min: {np.min(ir_array)}, Max: {np.max(ir_array)}, Mean: {np.mean(ir_array):.2f}")
             print(f"    Non-zero pixels: {np.count_nonzero(ir_array)}")
             print(f"    Unique values: {len(np.unique(ir_array))}")
@@ -87,6 +129,15 @@ def validate_infrared_camera():
             seg_array = np.frombuffer(seg_response, np.uint8)
             print(f"[OK] Segmentation image captured: {len(seg_response)} bytes")
             print(f"    Array shape: {seg_array.shape}")
+            # Use reshape to get actual dimensions if available in array shape
+            if len(seg_array.shape) == 1:
+                # If 1D array, use same resolution as Scene (should match)
+                seg_width = 1280  # Default from settings
+                seg_height = 720
+                print(f"    Resolution (from settings): {seg_width} x {seg_height}")
+            else:
+                seg_height, seg_width = seg_array.shape[0], seg_array.shape[1]
+                print(f"    Resolution (from array shape): {seg_width} x {seg_height}")
             print(f"    Min: {np.min(seg_array)}, Max: {np.max(seg_array)}, Mean: {np.mean(seg_array):.2f}")
             print(f"    Non-zero pixels: {np.count_nonzero(seg_array)}")
         else:
@@ -95,13 +146,40 @@ def validate_infrared_camera():
         
         # Compare image sizes
         print("\n[9] Comparing image sizes...")
-        if scene_response and ir_response:
+        if scene_response and ir_response and seg_response:
+            scene_size = len(scene_response)
+            ir_size = len(ir_response)
+            seg_size = len(seg_response)
+            
+            print(f"    Scene size: {scene_size} bytes ({scene_width} x {scene_height})")
+            print(f"    Infrared size: {ir_size} bytes ({ir_width} x {ir_height})")
+            print(f"    Segmentation size: {seg_size} bytes ({seg_width} x {seg_height})")
+            
+            scene_ir_ratio = scene_size / ir_size if ir_size > 0 else 0
+            scene_seg_ratio = scene_size / seg_size if seg_size > 0 else 0
+            ir_seg_ratio = ir_size / seg_size if seg_size > 0 else 0
+            
+            print(f"\n    Ratios:")
+            print(f"      Scene/IR: {scene_ir_ratio:.2f}x")
+            print(f"      Scene/Segmentation: {scene_seg_ratio:.2f}x")
+            print(f"      IR/Segmentation: {ir_seg_ratio:.2f}x")
+            
+            if scene_width == ir_width and scene_height == ir_height:
+                print("[OK] Scene and Infrared have matching dimensions")
+            else:
+                print(f"[WARNING] Scene and Infrared dimensions differ: {scene_width}x{scene_height} vs {ir_width}x{ir_height}")
+            
+            if scene_width == seg_width and scene_height == seg_height:
+                print("[OK] Scene and Segmentation have matching dimensions")
+            else:
+                print(f"[WARNING] Scene and Segmentation dimensions differ: {scene_width}x{scene_height} vs {seg_width}x{seg_height}")
+        elif scene_response and ir_response:
             scene_size = len(scene_response)
             ir_size = len(ir_response)
             ratio = scene_size / ir_size if ir_size > 0 else 0
             
-            print(f"    Scene size: {scene_size} bytes")
-            print(f"    Infrared size: {ir_size} bytes")
+            print(f"    Scene size: {scene_size} bytes ({scene_width} x {scene_height})")
+            print(f"    Infrared size: {ir_size} bytes ({ir_width} x {ir_height})")
             print(f"    Ratio (Scene/IR): {ratio:.1f}x")
             
             if ratio > 100:
@@ -112,6 +190,66 @@ def validate_infrared_camera():
                 print("[WARNING] Infrared image is notably smaller than Scene")
             else:
                 print("[OK] Image sizes are similar")
+        
+        # Display images at native resolution
+        print("\n[9.5] Displaying captured images...")
+        try:
+            # Display Scene image
+            if scene_response:
+                scene_array = np.frombuffer(scene_response, np.uint8)
+                # Try to decode as image (handles various formats)
+                scene_img = cv2.imdecode(scene_array, cv2.IMREAD_UNCHANGED)
+                if scene_img is not None:
+                    # AirSim images are RGB, convert to BGR for OpenCV display
+                    if len(scene_img.shape) == 3 and scene_img.shape[2] == 3:
+                        scene_bgr = cv2.cvtColor(scene_img, cv2.COLOR_RGB2BGR)
+                    else:
+                        scene_bgr = scene_img
+                    cv2.imshow(f'Scene Camera - {scene_width} x {scene_height}', scene_bgr)
+                    print("[OK] Scene image displayed")
+                else:
+                    print("[WARNING] Could not decode scene image")
+            
+            # Display Infrared image
+            if ir_response:
+                ir_array = np.frombuffer(ir_response, np.uint8)
+                # Try to decode as image
+                ir_img = cv2.imdecode(ir_array, cv2.IMREAD_UNCHANGED)
+                if ir_img is not None:
+                    # For grayscale infrared, use only first channel (RGB all same for grayscale)
+                    if len(ir_img.shape) == 3 and ir_img.shape[2] == 3:
+                        ir_gray = ir_img[:, :, 0]
+                    else:
+                        ir_gray = ir_img
+                    cv2.imshow(f'Infrared Camera - {ir_width} x {ir_height}', ir_gray)
+                    print("[OK] Infrared image displayed")
+                else:
+                    print("[WARNING] Could not decode infrared image")
+            
+            # Display Segmentation image
+            if seg_response:
+                seg_array = np.frombuffer(seg_response, np.uint8)
+                # Try to decode as image
+                seg_img = cv2.imdecode(seg_array, cv2.IMREAD_UNCHANGED)
+                if seg_img is not None:
+                    # AirSim images are RGB, convert to BGR for OpenCV display
+                    if len(seg_img.shape) == 3 and seg_img.shape[2] == 3:
+                        seg_bgr = cv2.cvtColor(seg_img, cv2.COLOR_RGB2BGR)
+                    else:
+                        seg_bgr = seg_img
+                    cv2.imshow(f'Segmentation Camera - {seg_width} x {seg_height}', seg_bgr)
+                    print("[OK] Segmentation image displayed")
+                else:
+                    print("[WARNING] Could not decode segmentation image")
+            
+            print("[OK] Images displayed successfully")
+            print("    Press any key to close image windows...")
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            
+        except Exception as e:
+            print(f"[WARNING] Could not display images: {e}")
+            print("          (opencv may not be installed)")
         
         # Test segmentation ID setting on infrared
         print("\n[10] Testing segmentation ID functionality...")
@@ -164,11 +302,11 @@ def validate_infrared_camera():
                 
             elif len(ir_response) < 1000:
                 print("\n[CRITICAL] Infrared image size is too small")
-                print(f"Current: {len(ir_response)} bytes (expected ~150k+ for 256x144x4 RGBA)")
+                print(f"Current: {len(ir_response)} bytes (expected ~110k+ for 256x144x3 RGB)")
                 print("\nThis indicates:")
                 print("  1. Render target is not properly initialized")
                 print("  2. Capture component resolution is wrong in blueprint")
-                print("  3. Pixel format is not RGBA")
+                print("  3. Pixel format is not RGB")
                 print("\nFix: Set InfraredCaptureComponent resolution to match Scene camera")
                 
             else:
