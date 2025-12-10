@@ -5,7 +5,7 @@ project(GazeboDrone)
 set(AIRSIM_ROOT ..)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 11)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
 
 find_package(gazebo REQUIRED)
@@ -19,7 +19,10 @@ include_directories(
 
 link_directories(
     ${GAZEBO_LIBRARY_DIRS}
-    ../../build_release/output/lib
+    ${AIRSIM_ROOT}/build_release/output/lib
+    ${AIRSIM_ROOT}/AirLib/lib
+    ${AIRSIM_ROOT}/AirLib/deps/rpclib/lib
+    ${AIRSIM_ROOT}/AirLib/deps/MavLinkCom/lib
 )
 
 list(APPEND CMAKE_CXX_FLAGS "${GAZEBO_CXX_FLAGS}")
@@ -32,5 +35,7 @@ target_link_libraries(
     pthread
     AirLib
     rpc
+    tbb
+    stdc++fs
 )
 
