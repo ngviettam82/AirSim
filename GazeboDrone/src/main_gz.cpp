@@ -31,6 +31,8 @@ int main(int argc, char** argv)
     int rpc_port = 41451;
     std::string topic = "/pose/local/info"; // default; many gz setups use /model/<name>/pose
     std::string vehicle_name = "";
+    std::string gz_model = "";  // Gazebo model name to filter from Pose_V
+    std::string airsim_vehicle = "";  // AirSim vehicle name to update
     bool verbose = false;
     int message_throttle = MESSAGE_THROTTLE;
 
@@ -40,12 +42,29 @@ int main(int argc, char** argv)
         else if (a == "--rpc_port" && i + 1 < argc) rpc_port = std::stoi(argv[++i]);
     else if (a == "--topic" && i + 1 < argc) topic = argv[++i];
     else if (a == "--vehicle" && i + 1 < argc) vehicle_name = argv[++i];
+    else if (a == "--gz_model" && i + 1 < argc) gz_model = argv[++i];
+    else if (a == "--airsim_vehicle" && i + 1 < argc) airsim_vehicle = argv[++i];
     else if (a == "--verbose") verbose = true;
     else if (a == "--throttle" && i + 1 < argc) message_throttle = std::stoi(argv[++i]);
         else if (a == "--help") {
-            std::cout << "Usage: GazeboDrone_gz [--rpc_host HOST] [--rpc_port PORT] [--topic TOPIC] [--vehicle NAME]\n";
+            std::cout << "Usage: GazeboDrone_gz [--rpc_host HOST] [--rpc_port PORT] [--topic TOPIC]\n";
+            std::cout << "  --vehicle NAME          : (legacy) both Gazebo model and AirSim vehicle name\n";
+            std::cout << "  --gz_model NAME         : Gazebo model name to filter from Pose_V\n";
+            std::cout << "  --airsim_vehicle NAME   : AirSim vehicle name to update\n";
+            std::cout << "  --throttle MS           : Update throttle in milliseconds\n";
+            std::cout << "  --verbose               : Enable verbose output\n";
             return 0;
         }
+    }
+    
+    // If new parameters are used, they override --vehicle
+    if (!gz_model.empty() || !airsim_vehicle.empty()) {
+        if (gz_model.empty()) gz_model = airsim_vehicle;
+        if (airsim_vehicle.empty()) airsim_vehicle = gz_model;
+    } else if (!vehicle_name.empty()) {
+        // Legacy mode: --vehicle sets both
+        gz_model = vehicle_name;
+        airsim_vehicle = vehicle_name;
     }
 
     // Create RPC client. MultirotorRpcLibClient doesn't currently accept host/port in this header
@@ -77,10 +96,10 @@ int main(int argc, char** argv)
         Vector3r pos((real_T)x, (real_T)-y, (real_T)-z);
         Quaternionr ori((real_T)ow, (real_T)ox, (real_T)-oy, (real_T)-oz);
         try {
-            // If the user didn't pass a vehicle name, prefer the name from the Pose_V entry
+            // Use airsim_vehicle if set, otherwise fall back to selected_name
             std::string target;
-            if (!vehicle_name.empty()) {
-                target = vehicle_name;
+            if (!airsim_vehicle.empty()) {
+                target = airsim_vehicle;
             } else {
                 std::lock_guard<std::mutex> lk(selected_name_m);
                 target = selected_name;
@@ -116,10 +135,10 @@ int main(int argc, char** argv)
         Vector3r pos((real_T)x, (real_T)-y, (real_T)-z);
         Quaternionr ori((real_T)ow, (real_T)ox, (real_T)-oy, (real_T)-oz);
         try {
-            if (vehicle_name.empty())
+            if (airsim_vehicle.empty())
                 client.simSetVehiclePose(Pose(pos, ori), true);
             else
-                client.simSetVehiclePose(Pose(pos, ori), true, vehicle_name);
+                client.simSetVehiclePose(Pose(pos, ori), true, airsim_vehicle);
             if (verbose) std::cout << "simSetVehiclePose succeeded" << std::endl;
         } catch (const std::exception &e) {
             std::cerr << "simSetVehiclePose exception: " << e.what() << std::endl;
@@ -135,14 +154,14 @@ int main(int argc, char** argv)
         if (_pv.pose_size() <= 0) return;
 
         // Choose which pose in the Pose_V to use:
-        // 1) If vehicle_name provided, match by substring
+        // 1) If gz_model provided, match by substring
         // 2) Otherwise pick the first pose with a non-zero position (likely the model)
         int selected = -1;
-        if (!vehicle_name.empty()) {
+        if (!gz_model.empty()) {
             for (int i = 0; i < _pv.pose_size(); ++i) {
                 const auto &pp = _pv.pose(i);
                 try {
-                    if (pp.name().find(vehicle_name) != std::string::npos) { selected = i; break; }
+                    if (pp.name().find(gz_model) != std::string::npos) { selected = i; break; }
                 } catch (...) {}
             }
         }
@@ -176,10 +195,10 @@ int main(int argc, char** argv)
         Vector3r pos((real_T)x, (real_T)-y, (real_T)-z);
         Quaternionr ori((real_T)ow, (real_T)ox, (real_T)-oy, (real_T)-oz);
         try {
-            if (vehicle_name.empty())
+            if (airsim_vehicle.empty())
                 client.simSetVehiclePose(Pose(pos, ori), true);
             else
-                client.simSetVehiclePose(Pose(pos, ori), true, vehicle_name);
+                client.simSetVehiclePose(Pose(pos, ori), true, airsim_vehicle);
             if (verbose) std::cout << "simSetVehiclePose succeeded" << std::endl;
         } catch (const std::exception &e) {
             std::cerr << "simSetVehiclePose exception: " << e.what() << std::endl;

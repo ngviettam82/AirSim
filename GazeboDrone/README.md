@@ -111,22 +111,47 @@ Create or update `~/Documents/AirSim/settings.json`:
 3. **Run the bridge in a new terminal:**
    ```bash
    cd GazeboDrone/build
-   ./GazeboDrone_gz --rpc_host localhost --rpc_port 41451 --topic /world/default/pose/info --vehicle "" --throttle 10
+   ./GazeboDrone_gz --rpc_host localhost --rpc_port 41451 --topic /world/default/pose/info --gz_model "x500" --airsim_vehicle "Drone1" --throttle 10
    ```
 
    **Parameters:**
    - `--rpc_host`: IP address of Cosys-AirSim (use the Windows host IP if running in WSL)
    - `--rpc_port`: RPC port (default 41451)
    - `--topic`: Gazebo Ignition pose topic (default: `/world/default/pose/info`)
-   - `--vehicle`: Vehicle name in AirSim (empty string for first vehicle)
+   - `--gz_model`: Gazebo model name to filter from Pose_V topic (e.g., "x500_1", "x500_2")
+   - `--airsim_vehicle`: AirSim vehicle name to update (must match name in settings.json)
+   - `--vehicle`: (Legacy) Sets both gz_model and airsim_vehicle to the same value
    - `--throttle`: Update throttle in milliseconds (default 10ms)
+   - `--verbose`: Enable verbose output for debugging
 
    **Example for WSL (Cosys-AirSim on Windows):**
    ```bash
-   ./GazeboDrone_gz --rpc_host 10.5.9.45 --rpc_port 41451 --topic /world/default/pose/info --vehicle "" --throttle 10
+   ./GazeboDrone_gz --rpc_host 10.5.9.45 --rpc_port 41451 --topic /world/default/pose/info --gz_model "x500" --airsim_vehicle "Drone1" --throttle 10
    ```
 
    Replace `10.5.9.45` with your Windows host IP address.
+
+   **Example for Multiple Vehicles:**
+   
+   Run separate bridge instances for each vehicle:
+   
+   Terminal 1 (x500_1 → Drone1):
+   ```bash
+   ./GazeboDrone_gz --rpc_host 10.5.9.45 --rpc_port 41451 --topic /world/default/pose/info --gz_model "x500_1" --airsim_vehicle "Drone1" --throttle 10
+   ```
+   
+   Terminal 2 (x500_2 → Drone2):
+   ```bash
+   ./GazeboDrone_gz --rpc_host 10.5.9.45 --rpc_port 41451 --topic /world/default/pose/info --gz_model "x500_2" --airsim_vehicle "Drone2" --throttle 10
+   ```
+   
+   Make sure your `settings.json` has both vehicles configured:
+   ```json
+   "Vehicles": {
+     "Drone1": { "VehicleType": "SimpleFlight" },
+     "Drone2": { "VehicleType": "SimpleFlight" }
+   }
+   ```
 
 ## Documentation
 
