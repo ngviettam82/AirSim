@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.12.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 2.8 FATAL_ERROR)
 
 project(GazeboDrone)
 
 set(AIRSIM_ROOT ..)
 
 if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 11)
 endif()
 
 find_package(gazebo REQUIRED)
@@ -19,10 +19,7 @@ include_directories(
 
 link_directories(
     ${GAZEBO_LIBRARY_DIRS}
-    ${AIRSIM_ROOT}/build_release/output/lib
-    ${AIRSIM_ROOT}/AirLib/lib
-    ${AIRSIM_ROOT}/AirLib/deps/rpclib/lib
-    ${AIRSIM_ROOT}/AirLib/deps/MavLinkCom/lib
+    ../../build_release/output/lib
 )
 
 list(APPEND CMAKE_CXX_FLAGS "${GAZEBO_CXX_FLAGS}")
@@ -35,9 +32,8 @@ target_link_libraries(
     pthread
     AirLib
     rpc
-    tbb
-    stdc++fs
-)
+ tbb)
+
 
 # Optionally build the Ignition / gz (new Gazebo) variant. This attempts to find
 # a matching pkg-config package for gz/ignition transport (package name may
@@ -47,7 +43,7 @@ option(BUILD_GZ "Build Gazebo (gz) bridge" ON)
 if(BUILD_GZ)
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
-        set(_pkg_names gz-transport gz-transport8 gz-transport9 gz-transport13 ignition-transport3 ignition-transport4 ignition-transport5 ignition-transport6 ignition-transport7 ignition-transport8)
+        set(_pkg_names gz-transport gz-transport8 gz-transport9 gz-transport13 ignition-transport3 ignition-transport4 ignition-transport5 ignition-transport6 ignition-transport7)
         set(_found_pkg "")
         foreach(_pkg ${_pkg_names})
             pkg_check_modules(_GZ ${_pkg} QUIET)
@@ -64,17 +60,16 @@ if(BUILD_GZ)
             include_directories(${_GZ_INCLUDE_DIRS})
             link_directories(${_GZ_LIBRARY_DIRS})
 
-            add_executable(GazeboDrone_gz src/main_gz.cpp)
-            # gz transport headers (gz 13) require C++17
-            set_target_properties(GazeboDrone_gz PROPERTIES
-                CXX_STANDARD 17
-                CXX_STANDARD_REQUIRED ON
-            )
-            target_link_libraries(GazeboDrone_gz ${_GZ_LIBRARIES} pthread AirLib rpc tbb stdc++fs)
+                    add_executable(GazeboDrone_gz src/main_gz.cpp)
+                    # gz transport headers (gz 13) require C++17
+                    set_target_properties(GazeboDrone_gz PROPERTIES
+                        CXX_STANDARD 17
+                        CXX_STANDARD_REQUIRED ON
+                    )
+                    target_link_libraries(GazeboDrone_gz ${_GZ_LIBRARIES} pthread AirLib rpc tbb)
         endif()
     else()
         message(WARNING "pkg-config not found; cannot detect gz transport package. Skipping build of GazeboDrone_gz.")
     endif()
 endif()
-
 
