@@ -119,6 +119,7 @@ ipch/
 *.psess
 *.vsp
 *.vspx
+.github
 
 # TFS 2012 Local Workspace
 $tf/
