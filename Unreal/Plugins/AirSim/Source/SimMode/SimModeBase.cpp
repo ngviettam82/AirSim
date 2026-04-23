@@ -833,20 +833,17 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 				changes++;
 			}
 		}
-        if(update_annotation && changes > 0)updateInstanceSegmentationAnnotation();
-        return changes > 0;
+	        if(update_annotation && changes > 0)updateInstanceSegmentationAnnotation();
+	        return changes > 0;
 	}
-	else if (instance_segmentation_annotator_.GetNameToComponentMap().Contains(mesh_name.c_str())) {
+	else {
 		bool success;
 		FString key = mesh_name.c_str();
 		UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 			success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
 		}, true);
-        if(update_annotation)updateInstanceSegmentationAnnotation();
-        return success;
-	}
-	else {
-		return false;
+	        if(success && update_annotation)updateInstanceSegmentationAnnotation();
+	        return success;
 	}
 }
 
