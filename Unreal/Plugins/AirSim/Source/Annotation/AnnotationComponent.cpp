@@ -71,18 +71,7 @@ public:
 
 FPrimitiveViewRelevance FStaticAnnotationSceneProxy::GetViewRelevance(const FSceneView * View) const
 {
-	if (View->Family->EngineShowFlags.Materials)
-	{
-		FPrimitiveViewRelevance ViewRelevance;
-		ViewRelevance.bDrawRelevance = 0; 
-		// This will make the AnnotationComponent gets ignored if the Materials flag is on
-		// Which means it won't affect regulary rendering.
-		return ViewRelevance;
-	}
-	else
-	{
-		return FStaticMeshSceneProxy::GetViewRelevance(View);
-	}
+	return FStaticMeshSceneProxy::GetViewRelevance(View);
 }
 
 
@@ -169,16 +158,7 @@ void FSkeletalAnnotationSceneProxy::GetDynamicMeshElements(
 
 FPrimitiveViewRelevance FSkeletalAnnotationSceneProxy::GetViewRelevance(const FSceneView * View) const
 {
-	if (View->Family->EngineShowFlags.Materials)
-	{
-		FPrimitiveViewRelevance ViewRelevance;
-		ViewRelevance.bDrawRelevance = 0; // This will make it gets ignored, when materials flag is enabled.
-		return ViewRelevance;
-	}
-	else
-	{
-		return FSkeletalMeshSceneProxy::GetViewRelevance(View);
-	}
+	return FSkeletalMeshSceneProxy::GetViewRelevance(View);
 }
 
 // FString MeterialPath = TEXT("MaterialInstanceConstant'/UnrealCV/AnnotationColor_Inst.AnnotationColor_Inst'");

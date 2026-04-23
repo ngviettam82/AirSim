@@ -7,6 +7,7 @@
 #include <string>
 #include "Components/MeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "UObject/ObjectMacros.h"
 #include "Components/StaticMeshComponent.h"
 #include <Engine/StaticMesh.h>
@@ -105,11 +106,22 @@ private:
 
 	bool PaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
 	bool UpdatePaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
+	bool PaintInstancedSegmentationComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
+	bool UpdatePaintInstancedSegmentationComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
+	bool PopulateGeneratedInstanceComponent(UInstancedStaticMeshComponent* generated_component, UInstancedStaticMeshComponent* source_component) const;
+	bool UpdateGeneratedMeshColor(UStaticMeshComponent* component, const FColor& color) const;
 
 	bool PaintTextureComponent(UMeshComponent* component, const FString& texture_path, const FString& component_name);
 	bool UpdatePaintTextureComponent(UMeshComponent* component, const FString& texture_path, const FString& component_name);
 
-	bool DeleteComponent(UMeshComponent* component);
+	bool DeleteComponent(UMeshComponent* component, const FString& component_name);
+	bool IsGeneratedAnnotationClone(const UMeshComponent* component) const;
+	uint32 GetNextAvailableColorIndex() const;
+	uint32 GetOrCreateLabelColorIndex(const FString& component_name, UMeshComponent* component);
+	FString GetLabelKey(const FString& component_name, UMeshComponent* component) const;
+	void UpdateColorMappings(const FString& component_name, uint32 color_index);
+	void RemoveTrackedComponent(const FString& component_name);
+	void GetComponentIdsForColorUpdate(const FString& component_id, TArray<FString>& component_ids) const;
 
 	void getPaintableComponentMeshes(AActor* actor, TMap<FString, UMeshComponent*>* paintable_components_meshes);
 	void getPaintableComponentMeshesAndTags(AActor* actor, TMap<FString, UMeshComponent*>* paintable_components_meshes, TMap<FString, TArray<FName>>* paintable_components_tags);
@@ -123,6 +135,9 @@ private:
 	TMap<FString, FString> color_to_name_map_;
 	TMap<FString, FString> gammacorrected_color_to_name_map_;
 	TMap<FString, UMeshComponent*> name_to_component_map_;
+	TMap<FString, UMeshComponent*> name_to_generated_component_map_;
+	TMap<FString, FString> name_to_label_key_map_;
+	TMap<FString, uint32> label_to_color_index_map_;
 	TMap<UMeshComponent*, FString> component_to_name_map_;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> annotation_component_list_;
 };
