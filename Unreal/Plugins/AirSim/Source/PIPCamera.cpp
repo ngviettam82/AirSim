@@ -579,6 +579,33 @@ void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPri
     updateAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], ComponentList, only_hide);
 }
 
+void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& SegmentationComponentList,
+                                                                 const TArray<TWeakObjectPtr<UPrimitiveComponent> >& InfraredComponentList,
+                                                                 bool only_hide)
+{
+    if (!only_hide) {
+        if (captures_[Utils::toNumeric(ImageType::Segmentation)] != nullptr) {
+            captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowOnlyComponents = SegmentationComponentList;
+        }
+        if (captures_[Utils::toNumeric(ImageType::Infrared)] != nullptr) {
+            captures_[Utils::toNumeric(ImageType::Infrared)]->ShowOnlyComponents = InfraredComponentList;
+        }
+    }
+
+    TArray<TWeakObjectPtr<UPrimitiveComponent> > hidden_components = SegmentationComponentList;
+    hidden_components.Reserve(SegmentationComponentList.Num() + InfraredComponentList.Num());
+    for (const TWeakObjectPtr<UPrimitiveComponent>& component : InfraredComponentList) {
+        hidden_components.AddUnique(component);
+    }
+
+    if (captures_[Utils::toNumeric(ImageType::Scene)] != nullptr) {
+        captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents = hidden_components;
+    }
+    if (captures_[Utils::toNumeric(ImageType::Lighting)] != nullptr) {
+        captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents = hidden_components;
+    }
+}
+
 void APIPCamera::updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
     updateAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], ComponentList, only_hide);
 }
