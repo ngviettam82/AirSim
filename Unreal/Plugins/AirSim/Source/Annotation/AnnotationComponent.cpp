@@ -71,6 +71,10 @@ public:
 
 FPrimitiveViewRelevance FStaticAnnotationSceneProxy::GetViewRelevance(const FSceneView * View) const
 {
+	if (!View || !View->bIsSceneCapture)
+	{
+		return FPrimitiveViewRelevance();
+	}
 	return FStaticMeshSceneProxy::GetViewRelevance(View);
 }
 
@@ -158,6 +162,10 @@ void FSkeletalAnnotationSceneProxy::GetDynamicMeshElements(
 
 FPrimitiveViewRelevance FSkeletalAnnotationSceneProxy::GetViewRelevance(const FSceneView * View) const
 {
+	if (!View || !View->bIsSceneCapture)
+	{
+		return FPrimitiveViewRelevance();
+	}
 	return FSkeletalMeshSceneProxy::GetViewRelevance(View);
 }
 

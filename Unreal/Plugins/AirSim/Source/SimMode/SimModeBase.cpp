@@ -822,23 +822,28 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 	if (is_name_regex) {
 		std::regex name_regex;
 		name_regex.assign(mesh_name, std::regex_constants::icase);
-		int changes = 0;
+        TArray<FString> matching_keys;
 		for (auto It = instance_segmentation_annotator_.GetNameToComponentMap().CreateConstIterator(); It; ++It)
 		{
 			if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-				bool success = false;
-				FString key = It.Key();
-				UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
-					const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
-					const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
-					success = segmentation_success || infrared_success;
-				}, true);
-				if (success) {
-					changes++;
-				}
+                matching_keys.Add(It.Key());
 			}
 		}
-	        if(update_annotation && changes > 0)updateInstanceSegmentationAnnotation();
+
+        int changes = 0;
+        if (matching_keys.Num() > 0) {
+            UAirBlueprintLib::RunCommandOnGameThread([this, matching_keys, object_id, &changes]() {
+                for (const FString& key : matching_keys) {
+                    const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+                    const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+                    if (segmentation_success || infrared_success) {
+                        ++changes;
+                    }
+                }
+            }, true);
+        }
+
+	        if(update_annotation && changes > 0)requestInstanceSegmentationRefresh();
 	        return changes > 0;
 	}
 	else {
@@ -849,7 +854,7 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 			const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
 			success = segmentation_success || infrared_success;
 		}, true);
-	        if(success && update_annotation)updateInstanceSegmentationAnnotation();
+	        if(success && update_annotation)requestInstanceSegmentationRefresh();
 	        return success;
 	}
 }
@@ -1197,7 +1202,7 @@ bool ASimModeBase::AddNewActorToInstanceSegmentation(AActor* Actor, bool update_
    
 	bool success = instance_segmentation_annotator_.AnnotateNewActor(Actor);
     success = infrared_annotator_.AnnotateNewActor(Actor) || success;
-    if(success && update_annotation)updateInstanceSegmentationAnnotation();        
+    if(success && update_annotation)requestInstanceSegmentationRefresh();
     return success;
 }
 
@@ -1205,14 +1210,61 @@ bool ASimModeBase::DeleteActorFromInstanceSegmentation(AActor* Actor, bool updat
 
     bool success = instance_segmentation_annotator_.DeleteActor(Actor);
     success = infrared_annotator_.DeleteActor(Actor) || success;
-    if (success && update_annotation)updateInstanceSegmentationAnnotation();
+    if (success && update_annotation)requestInstanceSegmentationRefresh();
     return success;
 }
 
 void ASimModeBase::ForceUpdateInstanceSegmentation() {
 	instance_segmentation_annotator_.UpdateAnnotationComponents(this->GetWorld());
     infrared_annotator_.UpdateAnnotationComponents(this->GetWorld());
-    updateInstanceSegmentationAnnotation();
+    requestInstanceSegmentationRefresh(true);
+}
+
+void ASimModeBase::requestInstanceSegmentationRefresh(bool force_immediate)
+{
+    UAirBlueprintLib::RunCommandOnGameThread([this, force_immediate]() {
+        if (force_immediate) {
+            instance_segmentation_refresh_pending_ = false;
+            updateInstanceSegmentationAnnotation();
+            return;
+        }
+
+        instance_segmentation_refresh_pending_ = true;
+    }, force_immediate);
+}
+
+void ASimModeBase::refreshCachedAnnotationCameras()
+{
+    cached_instance_segmentation_cameras_.Reset();
+    cached_instance_segmentation_lidar_cameras_.Reset();
+
+    TArray<AActor*> cameras_found;
+    UGameplayStatics::GetAllActorsOfClass(this, APIPCamera::StaticClass(), cameras_found);
+    for (AActor* camera_actor : cameras_found) {
+        if (APIPCamera* cur_camera = Cast<APIPCamera>(camera_actor)) {
+            cached_instance_segmentation_cameras_.Add(cur_camera);
+        }
+    }
+
+    TArray<AActor*> lidar_cameras_found;
+    UGameplayStatics::GetAllActorsOfClass(this, ALidarCamera::StaticClass(), lidar_cameras_found);
+    for (AActor* lidar_camera_actor : lidar_cameras_found) {
+        if (ALidarCamera* cur_lidar_camera = Cast<ALidarCamera>(lidar_camera_actor)) {
+            cached_instance_segmentation_lidar_cameras_.Add(cur_lidar_camera);
+        }
+    }
+
+    instance_segmentation_camera_cache_initialized_ = true;
+}
+
+void ASimModeBase::pruneCachedAnnotationCameras()
+{
+    cached_instance_segmentation_cameras_.RemoveAll([](const TWeakObjectPtr<APIPCamera>& camera) {
+        return !camera.IsValid();
+    });
+    cached_instance_segmentation_lidar_cameras_.RemoveAll([](const TWeakObjectPtr<ALidarCamera>& camera) {
+        return !camera.IsValid();
+    });
 }
 
 bool ASimModeBase::DoesAnnotationLayerExist(FString annotation_name) {
@@ -1257,44 +1309,38 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
     TArray<TWeakObjectPtr<UPrimitiveComponent>> current_segmentation_components = instance_segmentation_annotator_.GetAnnotationComponents();
     TArray<TWeakObjectPtr<UPrimitiveComponent>> current_infrared_components = infrared_annotator_.GetAnnotationComponents();
 
-    TArray<AActor*> cameras_found;
-    UAirBlueprintLib::RunCommandOnGameThread([this, &cameras_found]() {
-        UGameplayStatics::GetAllActorsOfClass(this, APIPCamera::StaticClass(), cameras_found);
-        }, true);
-    if (cameras_found.Num() >= 0) {
-        for (auto camera_actor : cameras_found) {
-            APIPCamera* cur_camera = static_cast<APIPCamera*>(camera_actor);
-            cur_camera->updateInstanceSegmentationAnnotation(current_segmentation_components);
-            cur_camera->updateInfraredAnnotation(current_infrared_components);
+    if (!instance_segmentation_camera_cache_initialized_) {
+        refreshCachedAnnotationCameras();
+    }
+    else {
+        pruneCachedAnnotationCameras();
+    }
+
+    for (const TWeakObjectPtr<APIPCamera>& camera_ptr : cached_instance_segmentation_cameras_) {
+        if (APIPCamera* cur_camera = camera_ptr.Get()) {
+            cur_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components);
         }
     }
-    TArray<AActor*> lidar_cameras_found;
-    UAirBlueprintLib::RunCommandOnGameThread([this, &lidar_cameras_found]() {
-        UGameplayStatics::GetAllActorsOfClass(this, ALidarCamera::StaticClass(), lidar_cameras_found);
-        }, true);
-    if (cameras_found.Num() >= 0) {
-        for (auto lidar_camera_actor : lidar_cameras_found) {
-            ALidarCamera* cur_lidar_camera = static_cast<ALidarCamera*>(lidar_camera_actor);
+
+    for (const TWeakObjectPtr<ALidarCamera>& lidar_camera_ptr : cached_instance_segmentation_lidar_cameras_) {
+        if (ALidarCamera* cur_lidar_camera = lidar_camera_ptr.Get()) {
             if(cur_lidar_camera->instance_segmentation_ && cur_lidar_camera->generate_groundtruth_)
                 cur_lidar_camera->updateInstanceSegmentationAnnotation(current_segmentation_components);
         }
     }
+
     if (CameraDirector != nullptr) {
         if (APIPCamera* fpv_camera = CameraDirector->getFpvCamera()) {
-			fpv_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-            fpv_camera->updateInfraredAnnotation(current_infrared_components, true);
+			fpv_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
         }
         if (APIPCamera* external_camera = CameraDirector->getExternalCamera()) {
-            external_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-            external_camera->updateInfraredAnnotation(current_infrared_components, true);
+            external_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
         }
         if (APIPCamera* backup_camera = CameraDirector->getBackupCamera()) {
-            backup_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-            backup_camera->updateInfraredAnnotation(current_infrared_components, true);
+            backup_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
         }
         if (APIPCamera* front_camera = CameraDirector->getFrontCamera()) {
-            front_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-            front_camera->updateInfraredAnnotation(current_infrared_components, true);
+            front_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
         }
     }
 }
@@ -1558,6 +1604,11 @@ void ASimModeBase::Tick(float DeltaSeconds)
     //drawLidarDebugPoints();
 
     drawDistanceSensorDebugPoints();
+
+    if (instance_segmentation_refresh_pending_) {
+        instance_segmentation_refresh_pending_ = false;
+        updateInstanceSegmentationAnnotation();
+    }
 
     Super::Tick(DeltaSeconds);
 }

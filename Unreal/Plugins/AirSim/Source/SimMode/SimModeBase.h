@@ -27,6 +27,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLevelLoaded);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnResetEvent);
 
+class ALidarCamera;
+class APIPCamera;
 
 UCLASS()
 class AIRSIM_API ASimModeBase : public AActor
@@ -334,10 +336,18 @@ private:
 
     TMap<FString, ALight*> world_lights_;
 
+    bool instance_segmentation_refresh_pending_ = false;
+    bool instance_segmentation_camera_cache_initialized_ = false;
+    TArray<TWeakObjectPtr<APIPCamera>> cached_instance_segmentation_cameras_;
+    TArray<TWeakObjectPtr<ALidarCamera>> cached_instance_segmentation_lidar_cameras_;
+
 private:
     void InitializeInstanceSegmentation();
     void InitializeAnnotation();
     void AddAnnotatorCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f);
+    void requestInstanceSegmentationRefresh(bool force_immediate = false);
+    void refreshCachedAnnotationCameras();
+    void pruneCachedAnnotationCameras();
 	void InitializeMaterialStencils();
     void initializeTimeOfDay();
     void advanceTimeOfDay();

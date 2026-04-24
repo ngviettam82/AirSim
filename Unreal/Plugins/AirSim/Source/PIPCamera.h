@@ -70,6 +70,9 @@ public:
     void setCaptureUpdate(USceneCaptureComponent2D* capture, bool nodisplay);
     void setCameraTypeUpdate(ImageType type, bool nodisplay, std::string annotation_name = "");
     void setCameraOrientation(const FRotator& rotator);
+    void updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& SegmentationComponentList,
+                                                         const TArray<TWeakObjectPtr<UPrimitiveComponent> >& InfraredComponentList,
+                                                         bool only_hide = false);
     void updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide=false);
     void updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide = false);
     bool GetAnnotationNameExist(std::string annotation_name);
