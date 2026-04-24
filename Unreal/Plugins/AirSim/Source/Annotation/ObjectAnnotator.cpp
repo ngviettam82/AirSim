@@ -149,6 +149,9 @@ void FObjectAnnotator::Initialize(ULevel* level) {
 	case AnnotatorType::InstanceSegmentation:
 		InitializeInstanceSegmentation(level);
 		break;
+	case AnnotatorType::Infrared:
+		InitializeInfrared(level);
+		break;
 	}
 }
 
@@ -396,7 +399,7 @@ bool FObjectAnnotator::SetComponentRGBColorByIndex(FString component_id, uint32 
 	GetComponentIdsForColorUpdate(component_id, component_ids);
 	if (component_ids.Num() > 0)
 	{
-		FColor color = ColorGenerator_.GetColorFromColorMap(color_index);
+		FColor color = GetAnnotationColorForIndex(color_index);
 		bool updated_any = false;
 		for (const FString& current_component_id : component_ids)
 		{
@@ -411,7 +414,7 @@ bool FObjectAnnotator::SetComponentRGBColorByIndex(FString component_id, uint32 
 			}
 			UpdateColorMappings(current_component_id, color_index);
 			updated_any = true;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted RGB annotation of object %s to new ID # %s (RGB: %s)"), *name_, *current_component_id, *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[current_component_id]);
+			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted indexed annotation of object %s to new ID # %s (Display: %s)"), *name_, *current_component_id, *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[current_component_id]);
 		}
 		return updated_any;
 	}
@@ -581,6 +584,8 @@ bool FObjectAnnotator::AnnotateNewActor(AActor* actor)
 	case AnnotatorType::Texture:
 		return AnnotateNewActorTexture(actor);
 	case AnnotatorType::InstanceSegmentation:
+		return AnnotateNewActorInstanceSegmentation(actor);
+	case AnnotatorType::Infrared:
 		return AnnotateNewActorInstanceSegmentation(actor);
 	}
 	return false;
@@ -963,9 +968,37 @@ FString FObjectAnnotator::GetComponentTexturePath(FString component_id)
 	}
 }
 
-void FObjectAnnotator::InitializeInstanceSegmentation(ULevel* InLevel)
+bool FObjectAnnotator::UsesIndexedAnnotationColors() const
 {
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level instance segmentation annotation."), *name_);
+	return type_ == AnnotatorType::InstanceSegmentation || type_ == AnnotatorType::Infrared;
+}
+
+FColor FObjectAnnotator::GetAnnotationColorForIndex(uint32 color_index) const
+{
+	if (type_ == AnnotatorType::Infrared)
+	{
+		const uint8 grayscale_value = static_cast<uint8>(color_index % 256);
+		return FColor(grayscale_value, grayscale_value, grayscale_value, 255);
+	}
+
+	return ColorGenerator_.GetColorFromColorMap(color_index);
+}
+
+FString FObjectAnnotator::GetDisplayColorString(const FColor& color) const
+{
+	if (type_ == AnnotatorType::Infrared)
+	{
+		return FString::FromInt(color.R) + "," + FString::FromInt(color.G) + "," + FString::FromInt(color.B);
+	}
+
+	return FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(color.R)) + "," +
+		FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(color.G)) + "," +
+		FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(color.B));
+}
+
+void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR* annotation_mode)
+{
+	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level %s annotation."), *name_, annotation_mode);
 	for (AActor* actor : InLevel->Actors)
 	{
 		if (actor && IsPaintable(actor))
@@ -983,15 +1016,25 @@ void FObjectAnnotator::InitializeInstanceSegmentation(ULevel* InLevel)
 					name_to_component_map_.FindOrAdd(it.Key()) = it.Value();
 					component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 					const uint32 color_index = GetOrCreateLabelColorIndex(it.Key(), it.Value());
-					FColor new_color = ColorGenerator_.GetColorFromColorMap(color_index);
+					FColor new_color = GetAnnotationColorForIndex(color_index);
 					UpdateColorMappings(it.Key(), color_index);
 					check(PaintRGBComponent(it.Value(), new_color, it.Key()));
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (RGB: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
 				}				
 			}
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level instance segmentation RGB annotation."), *name_);
+	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level %s annotation."), *name_, annotation_mode);
+}
+
+void FObjectAnnotator::InitializeInstanceSegmentation(ULevel* InLevel)
+{
+	InitializeIndexedAnnotation(InLevel, TEXT("instance segmentation"));
+}
+
+void FObjectAnnotator::InitializeInfrared(ULevel* InLevel)
+{
+	InitializeIndexedAnnotation(InLevel, TEXT("infrared"));
 }
 
 void FObjectAnnotator::InitializeRGB(ULevel* InLevel)
@@ -1254,9 +1297,9 @@ uint32 FObjectAnnotator::GetOrCreateLabelColorIndex(const FString& component_nam
 
 void FObjectAnnotator::UpdateColorMappings(const FString& component_name, uint32 color_index)
 {
-	const FColor color = ColorGenerator_.GetColorFromColorMap(color_index);
+	const FColor color = GetAnnotationColorForIndex(color_index);
 	const FString color_string = FString::FromInt(color.R) + "," + FString::FromInt(color.G) + "," + FString::FromInt(color.B);
-	const FString color_string_gammacorrected = FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(color.R)) + "," + FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(color.G)) + "," + FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(color.B));
+	const FString color_string_gammacorrected = GetDisplayColorString(color);
 
 	if (const FString* found_index_color = color_to_name_map_.FindKey(component_name))
 	{
@@ -1490,7 +1533,7 @@ bool FObjectAnnotator::UpdatePaintInstancedSegmentationComponent(UMeshComponent*
 bool FObjectAnnotator::PaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name)
 {
 	if (!component) return false;
-	if (type_ == AnnotatorType::InstanceSegmentation && Cast<UInstancedStaticMeshComponent>(component) != nullptr)
+	if (UsesIndexedAnnotationColors() && Cast<UInstancedStaticMeshComponent>(component) != nullptr)
 	{
 		return PaintInstancedSegmentationComponent(component, color, component_name);
 	}
@@ -1519,7 +1562,7 @@ bool FObjectAnnotator::PaintRGBComponent(UMeshComponent* component, const FColor
 bool FObjectAnnotator::UpdatePaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name)
 {
 	if (!component) return false;
-	if (type_ == AnnotatorType::InstanceSegmentation && Cast<UInstancedStaticMeshComponent>(component) != nullptr)
+	if (UsesIndexedAnnotationColors() && Cast<UInstancedStaticMeshComponent>(component) != nullptr)
 	{
 		return UpdatePaintInstancedSegmentationComponent(component, color, component_name);
 	}
@@ -1589,7 +1632,7 @@ bool FObjectAnnotator::UpdatePaintTextureComponent(UMeshComponent* component, co
 bool FObjectAnnotator::DeleteComponent(UMeshComponent* component, const FString& component_name)
 {
 	if (!component) return false;
-	if (type_ == AnnotatorType::InstanceSegmentation && Cast<UInstancedStaticMeshComponent>(component) != nullptr)
+	if (UsesIndexedAnnotationColors() && Cast<UInstancedStaticMeshComponent>(component) != nullptr)
 	{
 		if (UMeshComponent* generated_component = name_to_generated_component_map_.FindRef(component_name))
 		{
@@ -1720,7 +1763,7 @@ void FObjectAnnotator::UpdateAnnotationComponents(UWorld* World)
 		return !Component.IsValid();
 		});
 
-	if (type_ == AnnotatorType::InstanceSegmentation)
+	if (UsesIndexedAnnotationColors())
 	{
 		TArray<FString> stale_component_names;
 		for (const auto& component_entry : name_to_component_map_)
@@ -1733,7 +1776,7 @@ void FObjectAnnotator::UpdateAnnotationComponents(UWorld* World)
 
 			if (UInstancedStaticMeshComponent* instanced_component = Cast<UInstancedStaticMeshComponent>(component_entry.Value))
 			{
-				const FColor color = ColorGenerator_.GetColorFromColorMap(name_to_color_index_map_.FindRef(component_entry.Key));
+				const FColor color = GetAnnotationColorForIndex(name_to_color_index_map_.FindRef(component_entry.Key));
 				if (!UpdatePaintInstancedSegmentationComponent(instanced_component, color, component_entry.Key))
 				{
 					stale_component_names.Add(component_entry.Key);
@@ -1858,7 +1901,7 @@ void FObjectAnnotator::EndPlay() {
 	component_to_name_map_.Empty();
 }
 
-int32 FColorGenerator::GetChannelValue(uint32 index)
+int32 FColorGenerator::GetChannelValue(uint32 index) const
 {
 	static int32 values[256] = { 0 };
 	static bool init = false;
@@ -1889,7 +1932,7 @@ int32 FColorGenerator::GetChannelValue(uint32 index)
 	}
 }
 
-void FColorGenerator::GetColors(int32 max_val, bool enable_1, bool enable_2, bool enable_3, TArray<FColor>& color_map, TArray<int32>& ok_values)
+void FColorGenerator::GetColors(int32 max_val, bool enable_1, bool enable_2, bool enable_3, TArray<FColor>& color_map, TArray<int32>& ok_values) const
 {
 
 	for (int32 I = 0; I <= (enable_1 ? 0 : max_val - 1); I++)
@@ -1912,7 +1955,7 @@ void FColorGenerator::GetColors(int32 max_val, bool enable_1, bool enable_2, boo
 
 TArray<FColor> FColorGenerator::color_map_;
 
-FColor FColorGenerator::GetColorFromColorMap(int32 color_index)
+FColor FColorGenerator::GetColorFromColorMap(int32 color_index) const
 {
 	static TArray<int32> ok_values_;
 	int num_per_channel = 256;
@@ -1948,15 +1991,15 @@ FColor FColorGenerator::GetColorFromColorMap(int32 color_index)
 	}
 }
 
-int FColorGenerator::GetIndexForColor(FColor color) {
+int FColorGenerator::GetIndexForColor(FColor color) const {
 	return color_map_.Find(color);
 }
 
-int FColorGenerator::GetGammaCorrectedColor(int color_index) {
+int FColorGenerator::GetGammaCorrectedColor(int color_index) const {
 	return GammaCorrectionTable_[color_index];
 }
 
- TArray<FColor> FColorGenerator::GetColorMap(){
+ TArray<FColor> FColorGenerator::GetColorMap() const{
 	return color_map_;
 }
 
