@@ -90,13 +90,13 @@ namespace
 
 	UMaterialInterface* LoadAnnotationMaterial()
 	{
-		static const TCHAR* AnnotationMaterialPath = TEXT("Material'/AirSim/HUDAssets/AnnotationMaterial.AnnotationMaterial'");
+		static const TCHAR* localAnnotationMaterialPath = TEXT("Material'/AirSim/HUDAssets/AnnotationMaterial.AnnotationMaterial'");
 		static TWeakObjectPtr<UMaterialInterface> cached_annotation_material;
 		static bool instanced_usage_checked = false;
 
 		if (!cached_annotation_material.IsValid())
 		{
-			cached_annotation_material = LoadObject<UMaterialInterface>(nullptr, AnnotationMaterialPath);
+			cached_annotation_material = LoadObject<UMaterialInterface>(nullptr, localAnnotationMaterialPath);
 			instanced_usage_checked = false;
 		}
 
