@@ -71,6 +71,7 @@ public:
     void setCameraTypeUpdate(ImageType type, bool nodisplay, std::string annotation_name = "");
     void setCameraOrientation(const FRotator& rotator);
     void updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide=false);
+    void updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide = false);
     bool GetAnnotationNameExist(std::string annotation_name);
     void updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, FString annotation_name, bool only_hide = false);
     void addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f);
@@ -159,6 +160,10 @@ private: //methods
     void setNoiseMaterial(int image_type, UObject* outer, FPostProcessSettings& obj, const NoiseSetting& settings);
     void setDistortionMaterial(int image_type, UObject* outer, FPostProcessSettings& obj);
     static void updateCameraPostProcessingSetting(FPostProcessSettings& obj, const CaptureSetting& setting);
+    void updateAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
+                                 const TArray<TWeakObjectPtr<UPrimitiveComponent> >& component_list,
+                                 bool only_hide = false,
+                                 UPrimitiveComponent* extra_component = nullptr);
     //CinemAirSim
     static void updateCameraSetting(UCineCameraComponent* camera, const CaptureSetting& setting, const NedTransform& ned_transform);
     void copyCameraSettingsToAllSceneCapture(UCameraComponent* camera);

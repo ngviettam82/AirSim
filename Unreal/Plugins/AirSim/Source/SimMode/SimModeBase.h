@@ -329,6 +329,7 @@ private:
     static ASimModeBase* SIMMODE;
 
     FObjectAnnotator instance_segmentation_annotator_;
+    FObjectAnnotator infrared_annotator_;
     TMap<FString, FObjectAnnotator> annotators_;
 
     TMap<FString, ALight*> world_lights_;

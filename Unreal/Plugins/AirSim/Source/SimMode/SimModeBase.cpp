@@ -234,11 +234,12 @@ bool ASimModeBase::IsAnnotationRGBValid(FString annotation_name, FColor color) {
 
 void ASimModeBase::InitializeInstanceSegmentation()
 {
+    infrared_annotator_ = FObjectAnnotator(FString(TEXT("Infrared")), FObjectAnnotator::AnnotatorType::Infrared, false);
     if (getSettings().initial_instance_segmentation) {
         instance_segmentation_annotator_.Initialize(this->GetLevel());
+        infrared_annotator_.Initialize(this->GetLevel());
     }
     ForceUpdateInstanceSegmentation();
-    updateInstanceSegmentationAnnotation();
 }
 
 bool ASimModeBase::AddRGBDirectAnnotationTagToActor(FString annotation_name, AActor* actor, FColor color, bool update_annotation) {
@@ -825,22 +826,28 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		for (auto It = instance_segmentation_annotator_.GetNameToComponentMap().CreateConstIterator(); It; ++It)
 		{
 			if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-				bool success;
+				bool success = false;
 				FString key = It.Key();
 				UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
-					success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+					success = segmentation_success || infrared_success;
 				}, true);
-				changes++;
+				if (success) {
+					changes++;
+				}
 			}
 		}
 	        if(update_annotation && changes > 0)updateInstanceSegmentationAnnotation();
 	        return changes > 0;
 	}
 	else {
-		bool success;
+		bool success = false;
 		FString key = mesh_name.c_str();
 		UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
-			success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
+			success = segmentation_success || infrared_success;
 		}, true);
 	        if(success && update_annotation)updateInstanceSegmentationAnnotation();
 	        return success;
@@ -1189,6 +1196,7 @@ std::string ASimModeBase::GetMeshRGBAnnotationColor(const std::string& annotatio
 bool ASimModeBase::AddNewActorToInstanceSegmentation(AActor* Actor, bool update_annotation){
    
 	bool success = instance_segmentation_annotator_.AnnotateNewActor(Actor);
+    success = infrared_annotator_.AnnotateNewActor(Actor) || success;
     if(success && update_annotation)updateInstanceSegmentationAnnotation();        
     return success;
 }
@@ -1196,12 +1204,14 @@ bool ASimModeBase::AddNewActorToInstanceSegmentation(AActor* Actor, bool update_
 bool ASimModeBase::DeleteActorFromInstanceSegmentation(AActor* Actor, bool update_annotation) {
 
     bool success = instance_segmentation_annotator_.DeleteActor(Actor);
+    success = infrared_annotator_.DeleteActor(Actor) || success;
     if (success && update_annotation)updateInstanceSegmentationAnnotation();
     return success;
 }
 
 void ASimModeBase::ForceUpdateInstanceSegmentation() {
 	instance_segmentation_annotator_.UpdateAnnotationComponents(this->GetWorld());
+    infrared_annotator_.UpdateAnnotationComponents(this->GetWorld());
     updateInstanceSegmentationAnnotation();
 }
 
@@ -1245,6 +1255,7 @@ void ASimModeBase::ForceUpdateAnnotation(FString annotation_name) {
 
 void ASimModeBase::updateInstanceSegmentationAnnotation() {
     TArray<TWeakObjectPtr<UPrimitiveComponent>> current_segmentation_components = instance_segmentation_annotator_.GetAnnotationComponents();
+    TArray<TWeakObjectPtr<UPrimitiveComponent>> current_infrared_components = infrared_annotator_.GetAnnotationComponents();
 
     TArray<AActor*> cameras_found;
     UAirBlueprintLib::RunCommandOnGameThread([this, &cameras_found]() {
@@ -1254,6 +1265,7 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
         for (auto camera_actor : cameras_found) {
             APIPCamera* cur_camera = static_cast<APIPCamera*>(camera_actor);
             cur_camera->updateInstanceSegmentationAnnotation(current_segmentation_components);
+            cur_camera->updateInfraredAnnotation(current_infrared_components);
         }
     }
     TArray<AActor*> lidar_cameras_found;
@@ -1268,14 +1280,22 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
         }
     }
     if (CameraDirector != nullptr) {
-        if(CameraDirector->getFpvCamera() != nullptr)
-			CameraDirector->getFpvCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-        if (CameraDirector->getExternalCamera() != nullptr)
-            CameraDirector->getExternalCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-        if (CameraDirector->getBackupCamera() != nullptr)
-            CameraDirector->getBackupCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
-        if (CameraDirector->getFrontCamera() != nullptr)
-            CameraDirector->getFrontCamera()->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
+        if (APIPCamera* fpv_camera = CameraDirector->getFpvCamera()) {
+			fpv_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
+            fpv_camera->updateInfraredAnnotation(current_infrared_components, true);
+        }
+        if (APIPCamera* external_camera = CameraDirector->getExternalCamera()) {
+            external_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
+            external_camera->updateInfraredAnnotation(current_infrared_components, true);
+        }
+        if (APIPCamera* backup_camera = CameraDirector->getBackupCamera()) {
+            backup_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
+            backup_camera->updateInfraredAnnotation(current_infrared_components, true);
+        }
+        if (APIPCamera* front_camera = CameraDirector->getFrontCamera()) {
+            front_camera->updateInstanceSegmentationAnnotation(current_segmentation_components, true);
+            front_camera->updateInfraredAnnotation(current_infrared_components, true);
+        }
     }
 }
 

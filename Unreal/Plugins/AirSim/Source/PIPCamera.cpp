@@ -150,6 +150,8 @@ void APIPCamera::PostInitializeComponents()
 
     FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowFlags);
     captures_[Utils::toNumeric(ImageType::Segmentation)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+    FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Infrared)]->ShowFlags);
+    captures_[Utils::toNumeric(ImageType::Infrared)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetLighting(true);
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetMaterials(false);
@@ -389,7 +391,9 @@ void APIPCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
     int camera_full_count = static_cast<int>(cameraCaptureCount());
     for (int current_camera = 0; current_camera < camera_full_count; ++current_camera) {
         //use final color for all calculations
-        if (current_camera == Utils::toNumeric(ImageType::Segmentation) || current_camera >= image_count_to_delete - 2) {
+        if (current_camera == Utils::toNumeric(ImageType::Segmentation) ||
+            current_camera == Utils::toNumeric(ImageType::Infrared) ||
+            current_camera >= image_count_to_delete - 2) {
             captures_[current_camera]->ShowOnlyComponents.Empty();
         }        
         captures_[current_camera] = nullptr;
@@ -533,30 +537,58 @@ void APIPCamera::setDistortionParam(const std::string& param_name, float value)
     distortion_param_instance_->SetScalarParameterValue(FName(param_name.c_str()), value);
 }
 
+void APIPCamera::updateAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
+                                         const TArray<TWeakObjectPtr<UPrimitiveComponent> >& component_list,
+                                         bool only_hide,
+                                         UPrimitiveComponent* extra_component)
+{
+    if (!only_hide && annotation_capture != nullptr) {
+        annotation_capture->ShowOnlyComponents = component_list;
+        if (extra_component != nullptr) {
+            annotation_capture->ShowOnlyComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
+        }
+    }
+
+    APlayerController* controller = this->GetWorld() ? this->GetWorld()->GetFirstPlayerController() : nullptr;
+    for (const TWeakObjectPtr<UPrimitiveComponent>& component : component_list) {
+        if (captures_[Utils::toNumeric(ImageType::Scene)] != nullptr) {
+            captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(component);
+        }
+        if (captures_[Utils::toNumeric(ImageType::Lighting)] != nullptr) {
+            captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(component);
+        }
+        if (controller != nullptr) {
+            controller->HiddenPrimitiveComponents.AddUnique(component);
+        }
+    }
+
+    if (extra_component != nullptr) {
+        if (captures_[Utils::toNumeric(ImageType::Scene)] != nullptr) {
+            captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
+        }
+        if (captures_[Utils::toNumeric(ImageType::Lighting)] != nullptr) {
+            captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
+        }
+        if (controller != nullptr) {
+            controller->HiddenPrimitiveComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
+        }
+    }
+}
+
 void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
-    if(!only_hide)
-        captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowOnlyComponents = ComponentList;
-    APlayerController* controller = this->GetWorld()->GetFirstPlayerController();
-    for(TWeakObjectPtr<UPrimitiveComponent> component : ComponentList) {
-        captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(component);
-        captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(component);
-        controller->HiddenPrimitiveComponents.AddUnique(component);
-	}
+    updateAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], ComponentList, only_hide);
+}
+
+void APIPCamera::updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
+    updateAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], ComponentList, only_hide);
 }
 
 void APIPCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, FString annotation_name, bool only_hide) {
-    if (!only_hide) {
-        captures_[annotator_name_to_index_map_[annotation_name]]->ShowOnlyComponents = ComponentList;
-        if (sphere_annotation_component_map_.Contains(annotation_name))
-            captures_[annotator_name_to_index_map_[annotation_name]]->ShowOnlyComponents.Add(sphere_annotation_component_map_[annotation_name]);
-    }   
-    APlayerController* controller = this->GetWorld()->GetFirstPlayerController();
-
-    for (TWeakObjectPtr<UPrimitiveComponent> component : ComponentList) {
-        captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(component);
-        captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(component);
-        controller->HiddenPrimitiveComponents.AddUnique(component);
-    }
+    updateAnnotationCapture(
+        captures_[annotator_name_to_index_map_[annotation_name]],
+        ComponentList,
+        only_hide,
+        sphere_annotation_component_map_.Contains(annotation_name) ? sphere_annotation_component_map_[annotation_name].Get() : nullptr);
 }
 
 void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance)
@@ -595,7 +627,9 @@ void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorTy
 
     render_targets_.Add(NewObject<UTextureRenderTarget2D>());
     int render_index = render_targets_.Num() - 1;
-    if (type == FObjectAnnotator::AnnotatorType::RGB || type == FObjectAnnotator::AnnotatorType::InstanceSegmentation) {
+    if (type == FObjectAnnotator::AnnotatorType::RGB ||
+        type == FObjectAnnotator::AnnotatorType::InstanceSegmentation ||
+        type == FObjectAnnotator::AnnotatorType::Infrared) {
         render_targets_[render_index]->TargetGamma = 1;
     }
 
@@ -682,12 +716,17 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
             case ImageType::Scene:
             case ImageType::Infrared:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
+                if (image_type == Utils::toNumeric(ImageType::Infrared)) {
+                    render_targets_[image_type]->TargetGamma = 1;
+                }
                 break;
             case ImageType::Lighting:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
+                break;
             case ImageType::Segmentation:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], false, pixel_format, capture_setting, ned_transform, false);
                 render_targets_[image_type]->TargetGamma = 1;
+                break;
             case ImageType::SurfaceNormals:
                 updateCaptureComponentSetting(captures_[image_type], render_targets_[image_type], true, pixel_format, capture_setting, ned_transform, true);
                 break;

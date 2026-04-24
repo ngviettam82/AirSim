@@ -18,14 +18,14 @@
 class FColorGenerator
 {
 public:
-	FColor GetColorFromColorMap(int32 ObjectIndex);
-	int GetIndexForColor(FColor color);
-	int GetGammaCorrectedColor(int color_index);
-	TArray<FColor> GetColorMap();
+	FColor GetColorFromColorMap(int32 ObjectIndex) const;
+	int GetIndexForColor(FColor color) const;
+	int GetGammaCorrectedColor(int color_index) const;
+	TArray<FColor> GetColorMap() const;
 
 private:
-	int32 GetChannelValue(uint32 Index);
-	void GetColors(int32 max_val, bool enable_1, bool enable_2, bool enable_3, TArray<FColor>& color_map, TArray<int32>& ok_values);
+	int32 GetChannelValue(uint32 Index) const;
+	void GetColors(int32 max_val, bool enable_1, bool enable_2, bool enable_3, TArray<FColor>& color_map, TArray<int32>& ok_values) const;
 	static int GammaCorrectionTable_[256];
 	static TArray<FColor> color_map_;
 };
@@ -39,7 +39,8 @@ public:
 		RGB = 0,
 		Greyscale = 1,
 		Texture = 2,
-		InstanceSegmentation = 3
+		InstanceSegmentation = 3,
+		Infrared = 4
 	};
 
 	FObjectAnnotator();
@@ -51,6 +52,7 @@ public:
 	void InitializeRGB(ULevel* level);
 	void InitializeGreyscale(ULevel* level);
 	void InitializeTexture(ULevel* level);
+	void InitializeInfrared(ULevel* level);
 
 	bool DeleteActor(AActor* actor);
 
@@ -116,6 +118,10 @@ private:
 
 	bool DeleteComponent(UMeshComponent* component, const FString& component_name);
 	bool IsGeneratedAnnotationClone(const UMeshComponent* component) const;
+	bool UsesIndexedAnnotationColors() const;
+	FColor GetAnnotationColorForIndex(uint32 color_index) const;
+	FString GetDisplayColorString(const FColor& color) const;
+	void InitializeIndexedAnnotation(ULevel* level, const TCHAR* annotation_mode);
 	uint32 GetNextAvailableColorIndex() const;
 	uint32 GetOrCreateLabelColorIndex(const FString& component_name, UMeshComponent* component);
 	FString GetLabelKey(const FString& component_name, UMeshComponent* component) const;
