@@ -827,6 +827,21 @@ class VehicleClient:
         """
         return self.client.call('simSetSegmentationObjectID', mesh_name, object_id, is_name_regex)
 
+    def simSetSegmentationObjectIDs(self, mesh_names, object_ids, is_name_regex=False):
+        """
+        Sets IDs for multiple segmentation objects in one RPC call.
+
+        Args:
+            mesh_names (list[str]): Names of the meshes.
+            object_ids (list[int]): Desired IDs for the objects.
+            is_name_regex (bool, optional): Whether each mesh name is a regex.
+
+        Returns:
+            list[bool]: Per-entry success flags in the same order as mesh_names.
+        """
+        results = self.client.call('simSetSegmentationObjectIDs', mesh_names, object_ids, is_name_regex)
+        return [bool(result) for result in results]
+
     def simGetSegmentationObjectID(self, mesh_name):
         """
         Gets the ID for the specified segmentation object.

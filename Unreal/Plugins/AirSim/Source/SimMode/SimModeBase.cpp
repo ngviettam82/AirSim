@@ -823,7 +823,8 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		std::regex name_regex;
 		name_regex.assign(mesh_name, std::regex_constants::icase);
         TArray<FString> matching_keys;
-		for (auto It = instance_segmentation_annotator_.GetNameToPrimitiveComponentMap().CreateConstIterator(); It; ++It)
+		const TMap<FString, UPrimitiveComponent*> primitive_component_map = instance_segmentation_annotator_.GetNameToPrimitiveComponentMap();
+		for (auto It = primitive_component_map.CreateConstIterator(); It; ++It)
 		{
 			if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
                 matching_keys.Add(It.Key());
@@ -857,6 +858,59 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 	        if(success && update_annotation)requestInstanceSegmentationRefresh();
 	        return success;
 	}
+}
+
+std::vector<int> ASimModeBase::SetMeshInstanceSegmentationIDs(const std::vector<std::string>& mesh_names, const std::vector<int>& object_ids, bool is_name_regex, bool update_annotation) {
+	std::vector<int> results(mesh_names.size(), 0);
+	if (mesh_names.size() != object_ids.size()) {
+		UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [InstanceSegmentation]: Batch ID update ignored because mesh_names count (%d) does not match object_ids count (%d)."), static_cast<int32>(mesh_names.size()), static_cast<int32>(object_ids.size()));
+		return results;
+	}
+
+	TArray<FString> keys;
+	TArray<int32> ids;
+	keys.Reserve(static_cast<int32>(mesh_names.size()));
+	ids.Reserve(static_cast<int32>(object_ids.size()));
+	for (size_t index = 0; index < mesh_names.size(); ++index) {
+		keys.Add(FString(mesh_names[index].c_str()));
+		ids.Add(object_ids[index]);
+	}
+
+	bool updated_any = false;
+	UAirBlueprintLib::RunCommandOnGameThread([this, keys, ids, is_name_regex, &results, &updated_any]() {
+		TMap<FString, UPrimitiveComponent*> primitive_component_map;
+		if (is_name_regex) {
+			primitive_component_map = instance_segmentation_annotator_.GetNameToPrimitiveComponentMap();
+		}
+		for (int32 index = 0; index < keys.Num(); ++index) {
+			bool success = false;
+			if (is_name_regex) {
+				std::regex name_regex;
+				name_regex.assign(TCHAR_TO_UTF8(*keys[index]), std::regex_constants::icase);
+				for (auto It = primitive_component_map.CreateConstIterator(); It; ++It)
+				{
+					if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
+						const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(It.Key(), ids[index]);
+						const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(It.Key(), ids[index]);
+						success = segmentation_success || infrared_success || success;
+					}
+				}
+			}
+			else {
+				const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(keys[index], ids[index]);
+				const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(keys[index], ids[index]);
+				success = segmentation_success || infrared_success;
+			}
+
+			if (success) {
+				results[static_cast<size_t>(index)] = 1;
+				updated_any = true;
+			}
+		}
+	}, true);
+
+	if (updated_any && update_annotation)requestInstanceSegmentationRefresh();
+	return results;
 }
 
 int ASimModeBase::GetMeshInstanceSegmentationID(const std::string& mesh_name) {

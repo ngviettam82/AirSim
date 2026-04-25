@@ -278,6 +278,10 @@ namespace airlib
             return getWorldSimApi()->setSegmentationObjectID(mesh_name, object_id, is_name_regex);
         });
 
+        pimpl_->server.bind("simSetSegmentationObjectIDs", [&](const std::vector<std::string>& mesh_names, const std::vector<int>& object_ids, bool is_name_regex) -> std::vector<int> {
+            return getWorldSimApi()->setSegmentationObjectIDs(mesh_names, object_ids, is_name_regex);
+        });
+
         pimpl_->server.bind("simGetSegmentationObjectID", [&](const std::string& mesh_name) -> int {
             return getWorldSimApi()->getSegmentationObjectID(mesh_name);
         });

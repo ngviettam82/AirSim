@@ -15,7 +15,7 @@ import numpy as np
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Randomize instance-segmentation IDs and verify that simSetSegmentationObjectID works."
+        description="Randomize instance-segmentation IDs using the batch API when available."
     )
     parser.add_argument(
         "--regex",
@@ -108,6 +108,31 @@ def write_rows(csv_path, rows):
         writer.writerows(rows)
 
 
+def set_segmentation_ids(client, object_names, object_ids):
+    set_segmentation_ids.used_batch_update = False
+    if not object_names:
+        return []
+
+    batch_setter = getattr(client, "simSetSegmentationObjectIDs", None)
+    if batch_setter is not None:
+        try:
+            results = batch_setter(object_names, object_ids, False)
+            if len(results) == len(object_names):
+                set_segmentation_ids.used_batch_update = True
+                return [bool(result) for result in results]
+            print(
+                "Batch segmentation update returned an unexpected result count "
+                f"({len(results)} for {len(object_names)} objects); falling back to single-object calls."
+            )
+        except Exception as exc:
+            print(f"Batch segmentation update failed ({exc}); falling back to single-object calls.")
+
+    return [
+        bool(client.simSetSegmentationObjectID(object_name, object_id, False))
+        for object_name, object_id in zip(object_names, object_ids)
+    ]
+
+
 def pick_random_id(rng, min_id, max_id, old_id):
     if min_id == max_id:
         return min_id
@@ -121,27 +146,34 @@ def pick_random_id(rng, min_id, max_id, old_id):
 
 
 def restore_ids(client, csv_path):
-    rows = []
+    object_names = []
+    target_ids = []
+    current_ids = []
     with open(csv_path, "r", newline="", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file)
         for row in reader:
             object_name = row["object_name"]
             target_id = int(row["old_id"])
-            current_id = client.simGetSegmentationObjectID(object_name)
-            success = client.simSetSegmentationObjectID(object_name, target_id, False)
-            readback_id = client.simGetSegmentationObjectID(object_name)
-            rows.append(
-                {
-                    "object_name": object_name,
-                    "old_id": current_id,
-                    "new_id": target_id,
-                    "readback_id": readback_id,
-                    "set_call_succeeded": success,
-                    "verified": success and readback_id == target_id,
-                    "selection_group": get_selection_group(object_name),
-                    "visible_pixel_count": "",
-                }
-            )
+            object_names.append(object_name)
+            target_ids.append(target_id)
+            current_ids.append(client.simGetSegmentationObjectID(object_name))
+
+    set_results = set_segmentation_ids(client, object_names, target_ids)
+    rows = []
+    for object_name, target_id, current_id, success in zip(object_names, target_ids, current_ids, set_results):
+        readback_id = client.simGetSegmentationObjectID(object_name)
+        rows.append(
+            {
+                "object_name": object_name,
+                "old_id": current_id,
+                "new_id": target_id,
+                "readback_id": readback_id,
+                "set_call_succeeded": success,
+                "verified": success and readback_id == target_id,
+                "selection_group": get_selection_group(object_name),
+                "visible_pixel_count": "",
+            }
+        )
     return rows
 
 
@@ -265,13 +297,22 @@ def randomize_ids(client, args):
     else:
         selected_objects = deduped_objects
 
-    rows = []
+    assignments = []
     for object_name in selected_objects:
         old_id = current_id_cache.get(object_name)
         if old_id is None:
             old_id = client.simGetSegmentationObjectID(object_name)
         new_id = pick_random_id(rng, args.id_min, args.id_max, old_id)
-        success = client.simSetSegmentationObjectID(object_name, new_id, False)
+        assignments.append((object_name, old_id, new_id))
+
+    set_results = set_segmentation_ids(
+        client,
+        [assignment[0] for assignment in assignments],
+        [assignment[2] for assignment in assignments],
+    )
+
+    rows = []
+    for (object_name, old_id, new_id), success in zip(assignments, set_results):
         readback_id = client.simGetSegmentationObjectID(object_name)
         rows.append(
             {
@@ -294,6 +335,7 @@ def randomize_ids(client, args):
         "screen_only": args.screen_only,
         "visible_id_count": len(visible_id_counts) if visible_id_counts is not None else 0,
         "image_size": image_size,
+        "used_batch_update": getattr(set_segmentation_ids, "used_batch_update", False),
     }
 
 
@@ -357,6 +399,8 @@ def main():
             f"{stats['visible_id_count']} visible segmentation IDs."
         )
     print(f"Randomized {stats['selected_count']} object IDs in range [{args.id_min}, {args.id_max}].")
+    if stats["used_batch_update"]:
+        print("Used batch segmentation ID update API.")
     if args.seed is not None:
         print(f"Random seed: {args.seed}")
 

@@ -49,6 +49,7 @@ namespace airlib
         virtual void setWeatherParameter(WeatherParameter param, float val) = 0;
 
         virtual bool setSegmentationObjectID(const std::string& mesh_name, int object_id, bool is_name_regex = false) = 0;
+        virtual std::vector<int> setSegmentationObjectIDs(const std::vector<std::string>& mesh_names, const std::vector<int>& object_ids, bool is_name_regex = false) = 0;
         virtual int getSegmentationObjectID(const std::string& mesh_name) const = 0;
 
         virtual std::vector<std::string> listAnnotationObjects(const std::string& annotation_name) const = 0;

@@ -20,7 +20,11 @@ Please see the [Image API documentation](image_apis.md#segmentation) on how to m
 
 For an example of the Instance Segmentation API, please see the script _segmentation_test.py_ (Cosys-Airsim/PythonClient/segmentation/segmentation_test.py).
 
+For many ID changes, prefer `simSetSegmentationObjectIDs(mesh_names, object_ids, is_name_regex=False)` over calling `simSetSegmentationObjectID()` in a loop. The batch API applies all ID changes in one RPC/game-thread update and requests one segmentation/infrared camera refresh at the end if anything changed. The `mesh_names` and `object_ids` lists must have the same length, and it returns a boolean result for each input name in the same order as `mesh_names`. This is important for large UE 5.5 environments with landscape or foliage annotation components.
+
 For a script that generates a full list of objects and their associated color, please see the script _segmentation_generate_list.py_ (Cosys-Airsim/PythonClient/segmentation/segmentation_generate_list.py).
+
+For a script that randomizes or restores many object IDs, please see the script _segmentation_randomize_ids.py_ (Cosys-Airsim/PythonClient/segmentation/segmentation_randomize_ids.py). It uses `simSetSegmentationObjectIDs()` when the connected simulator supports it, and falls back to the single-object API for older builds.
 
 When a new object is spawned in your environment by for example a c++ or blueprint extension you made,
 and you want it to work with the instance segmentation system, you can use the extended function `ASimModeBase::AddNewActorToInstanceSegmentation(AActor)` which is also available in blueprints.

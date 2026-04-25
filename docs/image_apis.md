@@ -261,6 +261,16 @@ success = client.simSetSegmentationObjectID("ground[\w]*", 21, True)
 
 The return value is true if at least one mesh was found using regular expression matching.
 
+When changing many object IDs, use the batch API instead of calling `simSetSegmentationObjectID()` in a loop. This applies all changes in one RPC/game-thread update and requests one segmentation/infrared refresh at the end if anything changed:
+
+```python
+object_names = ["Ground", "Wall_1", "Block_3"]
+object_ids = [20, 31, 42]
+results = client.simSetSegmentationObjectIDs(object_names, object_ids)
+```
+
+The two input lists must have the same length. The return value is a list of booleans in the same order as the input names. A `False` entry means that object was not found or could not be updated. You can also pass `True` as the third argument to treat each name as a regular expression.
+
 When wanting to retrieve the segmentation image through the API, it is recommended that you request uncompressed image using this API to ensure you get precise RGB values for segmentation image:
 ```python
 responses = client.simGetImages([airsim.ImageRequest( "front_center", airsim.ImageType.Segmentation, False, False)])
@@ -289,10 +299,10 @@ This will use an understandable naming depending on the hierarchy the object bel
 Note that this provides a different result from `simListSceneObjects()` as this one will make a simple list of all Unreal Actors in the scene, without keeping the hierarchy in mind.
 
 An extension to `simListInstanceSegmentationObjects()` is `simListInstanceSegmentationPoses(ned=True, only_visible=True)` which will retrieve the 3D object pose of each element in the same order as the first mentioned function. _only_visible_ allows you to only get the objects that are physically visible in the scene.
-Once you decide on the meshes you are interested, note down their names and use above API to set their object IDs. T
+Once you decide on the meshes you are interested, note down their names and use above API to set their object IDs.
 
 #### Changing Colors for Object IDs
-The segmentation color for each object ID is fixed by the segmentation color map returned from `simGetSegmentationColorMap()`. You can change which ID is assigned to an object with `simSetSegmentationObjectID()`, but the built-in instance segmentation API does not directly assign arbitrary RGB colors to object IDs.
+The segmentation color for each object ID is fixed by the segmentation color map returned from `simGetSegmentationColorMap()`. You can change which ID is assigned to an object with `simSetSegmentationObjectID()` or, for many objects, `simSetSegmentationObjectIDs()`, but the built-in instance segmentation API does not directly assign arbitrary RGB colors to object IDs.
 
 #### Startup Object IDs
 At the start, AirSim assigns color indexes to supported static mesh, skeletal mesh, instanced static mesh, and Landscape components. It then makes an understandable naming depending on the hierarchy the object belongs to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_, _door_window_door_38_, or _Landscape_Landscape_0_0_0_0_). Landscape component IDs are listed individually, while the owning landscape actor/proxy name can be used as a shared ID update alias. Brush components are not included by the current built-in instance segmentation path.

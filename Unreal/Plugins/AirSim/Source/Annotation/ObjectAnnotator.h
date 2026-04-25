@@ -16,6 +16,7 @@
 #include "Runtime/Engine/Classes/GameFramework/Actor.h"
 
 class ULandscapeComponent;
+class UAnnotationComponent;
 
 class FColorGenerator
 {
@@ -124,6 +125,8 @@ private:
 	bool DeleteComponent(UMeshComponent* component, const FString& component_name);
 	bool DeleteLandscapeComponent(ULandscapeComponent* component, const FString& component_name);
 	bool IsGeneratedAnnotationClone(const UMeshComponent* component) const;
+	UAnnotationComponent* FindTrackedAnnotationComponent(const FString& component_name, const USceneComponent* attach_parent = nullptr);
+	void TrackAnnotationComponent(const FString& component_name, UAnnotationComponent* component);
 	bool UsesIndexedAnnotationColors() const;
 	FColor GetAnnotationColorForIndex(uint32 color_index) const;
 	FString GetDisplayColorString(const FColor& color) const;
@@ -152,10 +155,10 @@ private:
 	TMap<FString, UMeshComponent*> name_to_component_map_;
 	TMap<FString, UMeshComponent*> name_to_generated_component_map_;
 	TMap<FString, ULandscapeComponent*> name_to_landscape_component_map_;
+	TMap<FString, UAnnotationComponent*> name_to_annotation_component_map_;
 	TMap<FString, FString> name_to_label_key_map_;
 	TMap<FString, uint32> label_to_color_index_map_;
 	TMap<UMeshComponent*, FString> component_to_name_map_;
 	TMap<ULandscapeComponent*, FString> landscape_component_to_name_map_;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> annotation_component_list_;
 };
-

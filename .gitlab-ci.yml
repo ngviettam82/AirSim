@@ -28,17 +28,7 @@ repo_checks:
     - python -m pip install --upgrade pip build mkdocs PyYAML
   script:
     - python tools/ci/check_repo_text.py
-    - |
-      python - <<'PY'
-      from pathlib import Path
-      import yaml
-
-      workflow_paths = list(Path(".github/workflows").glob("*.yml")) + [Path(".gitlab-ci.yml")]
-      for workflow in workflow_paths:
-          with workflow.open("r", encoding="utf-8") as handle:
-              yaml.safe_load(handle)
-          print(f"validated {workflow}")
-      PY
+    - python tools/ci/validate_ci_yaml.py
     - python -m compileall -q PythonClient tools/ci
     - python -m build PythonClient
     - mkdocs build --strict
@@ -69,8 +59,10 @@ build_windows:
     - when: manual
       allow_failure: true
   script:
-    - cmd.exe /d /s /c "\"%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat\" -arch=x64 && build.cmd --no-full-poly-car --Release"
-    - powershell -NoProfile -ExecutionPolicy Bypass -Command "$paths = @('AirLib\deps\rpclib\lib\x64\Release', 'AirLib\deps\MavLinkCom\lib', 'Unreal\Plugins\AirSim\Source\AirLib\deps'); foreach ($path in $paths) { if (-not (Test-Path $path)) { throw \"Missing build output: $path\" } }"
+    - |
+      cmd.exe /d /s /c "\"%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat\" -arch=x64 && build.cmd --no-full-poly-car --Release"
+    - |
+      powershell -NoProfile -ExecutionPolicy Bypass -Command "$paths = @('AirLib\deps\rpclib\lib\x64\Release', 'AirLib\deps\MavLinkCom\lib', 'Unreal\Plugins\AirSim\Source\AirLib\deps'); foreach ($path in $paths) { if (-not (Test-Path $path)) { throw \"Missing build output: $path\" } }"
 
 package_unreal_windows:
   stage: package
@@ -84,11 +76,14 @@ package_unreal_windows:
       when: manual
     - when: never
   script:
-    - cmd.exe /d /s /c "\"%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat\" -arch=x64 && build.cmd --no-full-poly-car --Release"
+    - |
+      cmd.exe /d /s /c "\"%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd.bat\" -arch=x64 && build.cmd --no-full-poly-car --Release"
     - cd Unreal\Environments\Blocks
-    - cmd.exe /d /s /c "update_from_git.bat ..\..\.."
+    - |
+      cmd.exe /d /s /c "update_from_git.bat ..\..\.."
     - cd ..\..\..
-    - powershell -NoProfile -ExecutionPolicy Bypass -Command "$batchFiles = Join-Path $env:UE_ROOT 'Engine\Build\BatchFiles'; $build = Join-Path $batchFiles 'Build.bat'; $runUat = Join-Path $batchFiles 'RunUAT.bat'; if (-not (Test-Path $build)) { throw \"Build.bat not found at $build\" }; if (-not (Test-Path $runUat)) { throw \"RunUAT.bat not found at $runUat\" }; & $build BlocksEditor Win64 Development -Project=\"$PWD\Unreal\Environments\Blocks\Blocks.uproject\" -WaitMutex -NoHotReload; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $plugin = Join-Path $PWD 'Unreal\Environments\Blocks\Plugins\AirSim\AirSim.uplugin'; if (Test-Path $env:PACKAGE_DIR) { Remove-Item -LiteralPath $env:PACKAGE_DIR -Recurse -Force }; & $runUat BuildPlugin -Plugin=\"$plugin\" -Package=\"$env:PACKAGE_DIR\" -Rocket -TargetPlatforms=\"$env:TARGET_PLATFORMS\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; if (Test-Path $env:PACKAGE_ZIP) { Remove-Item -LiteralPath $env:PACKAGE_ZIP -Force }; Compress-Archive -Path \"$env:PACKAGE_DIR\*\" -DestinationPath $env:PACKAGE_ZIP"
+    - |
+      powershell -NoProfile -ExecutionPolicy Bypass -Command "$batchFiles = Join-Path $env:UE_ROOT 'Engine\Build\BatchFiles'; $build = Join-Path $batchFiles 'Build.bat'; $runUat = Join-Path $batchFiles 'RunUAT.bat'; if (-not (Test-Path $build)) { throw \"Build.bat not found at $build\" }; if (-not (Test-Path $runUat)) { throw \"RunUAT.bat not found at $runUat\" }; & $build BlocksEditor Win64 Development -Project=\"$PWD\Unreal\Environments\Blocks\Blocks.uproject\" -WaitMutex -NoHotReload; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $plugin = Join-Path $PWD 'Unreal\Environments\Blocks\Plugins\AirSim\AirSim.uplugin'; if (Test-Path $env:PACKAGE_DIR) { Remove-Item -LiteralPath $env:PACKAGE_DIR -Recurse -Force }; & $runUat BuildPlugin -Plugin=\"$plugin\" -Package=\"$env:PACKAGE_DIR\" -Rocket -TargetPlatforms=\"$env:TARGET_PLATFORMS\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; if (Test-Path $env:PACKAGE_ZIP) { Remove-Item -LiteralPath $env:PACKAGE_ZIP -Force }; Compress-Archive -Path \"$env:PACKAGE_DIR\*\" -DestinationPath $env:PACKAGE_ZIP"
   artifacts:
     name: "AirSimPlugin-Win64-$CI_COMMIT_SHORT_SHA"
     paths:

@@ -491,6 +491,32 @@ Why keep a force-immediate option:
 - Startup and explicit force-update paths need deterministic readiness before capture.
 - `ForceUpdateInstanceSegmentation()` is expected to refresh now, not one tick later.
 
+### Batch Runtime ID Updates
+
+`simSetSegmentationObjectIDs(mesh_names, object_ids, is_regex)` now exists for bulk ID updates.
+
+Its runtime flow is:
+
+1. Python/C++ clients send all target names and IDs in one RPC call.
+2. `ASimModeBase::SetMeshInstanceSegmentationIDs()` copies the request into Unreal strings/IDs.
+3. one game-thread command updates all requested IDs.
+4. each successful entry updates both `instance_segmentation_annotator_` and `infrared_annotator_`.
+5. one refresh request is made after the batch if anything changed.
+6. the API returns one success flag per input name, in input order.
+
+Why this is needed:
+
+- The deferred-refresh flag only coalesces work until the next Unreal tick.
+- A Python loop that calls `simSetSegmentationObjectID()` once per object can still span many ticks.
+- Large landscape/foliage scenes can have many annotation components, so repeated refreshes are visible as randomization slowdown.
+- A true batch API gives the simulator an explicit "this group is finished" boundary.
+
+Why keep the single-object API:
+
+- Existing scripts and clients depend on it.
+- It is still convenient for one-off object changes.
+- Regex updates through the single-object API already batch matched objects inside one game-thread command.
+
 ### Cached Camera Lists
 
 `ASimModeBase` now caches annotation cameras:
@@ -593,6 +619,7 @@ It supports:
 - filtering by case-insensitive regex
 - limiting the number of updated objects
 - assigning random IDs in a configurable range
+- applying ID changes with `simSetSegmentationObjectIDs()` when available
 - reading back each ID with `simGetSegmentationObjectID()`
 - writing a CSV report
 - restoring original IDs from a previous CSV
@@ -641,6 +668,7 @@ python PythonClient/segmentation/segmentation_randomize_ids.py --restore PythonC
 Why this script is useful for code review:
 
 - It exercises the public API path rather than only internal C++ calls.
+- It validates the new batch ID update path used for large scenes.
 - It verifies set/readback behavior object-by-object.
 - It produces a CSV artifact that can be compared with captured segmentation/infrared images.
 - `--screen-only` validates the rendered image path, not just the object registry, by matching visible segmentation colors back to object IDs.
@@ -710,6 +738,14 @@ When a client calls `simSetSegmentationObjectID(name_or_regex, id, is_regex)`:
 6. A refresh is requested.
 7. On the next tick, cameras receive fresh show/hide lists.
 8. Future segmentation and infrared captures use the new ID.
+
+When a client calls `simSetSegmentationObjectIDs(names, ids, is_regex)`:
+
+1. the API validates that `names` and `ids` have the same length.
+2. all exact-name or regex updates run inside one game-thread command.
+3. segmentation and infrared are updated together for every successful input.
+4. the API returns one success flag per input entry.
+5. only one refresh is requested for the whole batch if anything changed.
 
 ### Image Readback
 
@@ -795,6 +831,17 @@ Reasons:
 
 Immediate refresh is still available for force-update/startup paths.
 
+### Alternative 5b: Depend Only on Deferred Refresh for Bulk Updates
+
+Rejected as the only bulk-update strategy.
+
+Reasons:
+
+- Deferred refresh only batches updates that happen before the next Unreal tick.
+- Synchronous Python/RPC loops can still span many ticks.
+- Readback checks between set calls make this more likely.
+- A batch RPC provides an explicit boundary and avoids repeated camera-list refreshes.
+
 ### Alternative 6: Rescan Cameras on Every Refresh
 
 Rejected as the default.
@@ -812,6 +859,7 @@ The tradeoff is that dynamically spawned cameras after cache initialization requ
 - `ImageType::Infrared` is now an annotation/object-ID view, not a normal rendered scene view.
 - Infrared values are grayscale IDs and alias above 255.
 - `simSetSegmentationObjectID()` updates both segmentation and infrared layers.
+- `simSetSegmentationObjectIDs()` updates many IDs in one RPC/game-thread batch and requests at most one final refresh.
 - Regex segmentation ID updates are batched into one game-thread command.
 - Instanced static meshes get generated annotation mirror components.
 - Annotation capture show flags now enable materials and instanced foliage/grass.
@@ -909,6 +957,7 @@ Expected behavior after copy:
 - Instanced static meshes render through generated instanced annotation mirrors.
 - Landscapes render through the landscape annotation scene proxy.
 - `simSetSegmentationObjectID()` updates both `InstanceSegmentation` and `Infrared`.
+- `simSetSegmentationObjectIDs()` is preferred for large randomization or restore runs.
 - Landscape randomization updates one landscape label group by default instead of repeatedly changing individual terrain components.
 
 ## Risk Areas / Review Questions
@@ -1044,6 +1093,7 @@ Expected result:
 - Generated instanced mirrors are excluded from future annotation scans.
 - Regular `UAnnotationComponent` rendering still works with `Materials=true` because visibility is scene-capture-gated.
 - `simSetSegmentationObjectID()` updates both segmentation and infrared.
+- `simSetSegmentationObjectIDs()` returns one success flag per input and refreshes at most once per batch.
 - Regex updates batch work and request only one refresh.
 - `ForceUpdateInstanceSegmentation()` still refreshes immediately.
 - Deferred refresh cannot miss updates because the pending flag is processed in `Tick()`.
