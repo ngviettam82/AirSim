@@ -9,9 +9,9 @@ Here's a sample code to get a single image from camera named "0". The returned v
 ### Python
 
 ```python
-import cosysairsim as airsim 
+import cosysairsim as airsim
 
-# for car use CarClient() 
+# for car use CarClient()
 client = airsim.MultirotorClient()
 
 png_image = client.simGetImage("0", airsim.ImageType.Scene)
@@ -23,10 +23,10 @@ png_image = client.simGetImage("0", airsim.ImageType.Scene)
 ```cpp
 #include "vehicles/multirotor/api/MultirotorRpcLibClient.hpp"
 
-int getOneImage() 
+int getOneImage()
 {
     using namespace msr::airlib;
-    
+
     // for car use CarRpcLibClient
     MultirotorRpcLibClient client;
 
@@ -42,19 +42,19 @@ The `simGetImages` API which is slightly more complex to use than `simGetImage` 
 ### Python
 
 ```python
-import cosysairsim as airsim 
+import cosysairsim as airsim
 
-# for car use CarClient() 
+# for car use CarClient()
 client = airsim.MultirotorClient()
 
 responses = client.simGetImages([
     # png format
-    airsim.ImageRequest(0, airsim.ImageType.Scene), 
+    airsim.ImageRequest(0, airsim.ImageType.Scene),
     # uncompressed RGB array bytes
     airsim.ImageRequest(1, airsim.ImageType.Scene, False, False),
     # floating point uncompressed image
     airsim.ImageRequest(1, airsim.ImageType.DepthPlanar, True)])
- 
+
  # do something with response which contains image data, pose, timestamp etc
 ```
 
@@ -67,7 +67,7 @@ responses = client.simGetImages([airsim.ImageRequest("0", airsim.ImageType.Scene
 response = responses[0]
 
 # get numpy array
-img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) 
+img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8)
 
 # reshape array to 4 channel image array H X W X 4
 img_rgb = img1d.reshape(response.height, response.width, 3)
@@ -75,8 +75,8 @@ img_rgb = img1d.reshape(response.height, response.width, 3)
 # original image is fliped vertically
 img_rgb = np.flipud(img_rgb)
 
-# write to png 
-airsim.write_png(os.path.normpath(filename + '.png'), img_rgb) 
+# write to png
+airsim.write_png(os.path.normpath(filename + '.png'), img_rgb)
 ```
 
 #### Quick Tips
@@ -93,10 +93,10 @@ airsim.write_png(os.path.normpath(filename + '.png'), img_rgb)
 ### C++
 
 ```cpp
-int getStereoAndDepthImages() 
+int getStereoAndDepthImages()
 {
     using namespace msr::airlib;
-    
+
     typedef VehicleCameraBase::ImageRequest ImageRequest;
     typedef VehicleCameraBase::ImageResponse ImageResponse;
     typedef VehicleCameraBase::ImageType ImageType;
@@ -106,13 +106,13 @@ int getStereoAndDepthImages()
     MultirotorRpcLibClient client;
 
     // get right, left and depth images. First two as png, second as float16.
-    std::vector<ImageRequest> request = { 
+    std::vector<ImageRequest> request = {
         //png format
         ImageRequest("0", ImageType::Scene),
         //uncompressed RGB array bytes
-        ImageRequest("1", ImageType::Scene, false, false),       
-        //floating point uncompressed image  
-        ImageRequest("1", ImageType::DepthPlanar, true) 
+        ImageRequest("1", ImageType::Scene, false, false),
+        //floating point uncompressed image
+        ImageRequest("1", ImageType::DepthPlanar, true)
     };
 
     const std::vector<ImageResponse>& response = client.simGetImages(request);
@@ -126,7 +126,7 @@ int getStereoAndDepthImages()
 
 ### C++
 
-For a more complete ready to run sample code please see [sample code in HelloDrone project](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloDrone/main.cpp) for multirotors or [HelloCar project](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloCar/main.cpp). 
+For a more complete ready to run sample code please see [sample code in HelloDrone project](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloDrone/main.cpp) for multirotors or [HelloCar project](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloCar/main.cpp).
 
 See also [other example code](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/Examples/DataCollection/StereoImageGenerator.hpp) that generates specified number of stereo images along with ground truth depth and disparity and saving it to [pfm format](pfm.md).
 
@@ -137,7 +137,7 @@ These are the default cameras already available in each vehicle. Apart from thes
 ### Car
 The cameras on car can be accessed by following names in API calls: `front_center`, `front_right`, `front_left`, `fpv` and `back_center`. Here FPV camera is driver's head position in the car.
 ### Multirotor
-The cameras on the drone can be accessed by following names in API calls: `front_center`, `front_right`, `front_left`, `bottom_center` and `back_center`. 
+The cameras on the drone can be accessed by following names in API calls: `front_center`, `front_right`, `front_left`, `bottom_center` and `back_center`.
 ### Computer Vision Mode
 Camera names are same as in multirotor.
 
@@ -167,7 +167,7 @@ To move around the environment using APIs you can use `simSetVehiclePose` API. T
 ## Camera APIs
 The `simGetCameraInfo` returns the FOV(in degrees), projection matrix of a camera as well as the pose which can be:
 
-* Default: The pose of the camera in the vehicle frame. 
+* Default: The pose of the camera in the vehicle frame.
 * External: If set to `External` the coordinates will be in either Unreal NED when `ExternalLocal` is `false` or Local NED (from starting position from vehicle) when `ExternalLocal` is `true`.
 
 Note that if `MoveWorldOrigin` in the settings.json is set to `true` the Unreal coordinates will be moved to be the same origin as the player start location and as such this may effect where the sensor will spawn and which coordinates are returned when `ExternalLocal` is `false`.
@@ -219,19 +219,19 @@ To change resolution, FOV etc, you can use [settings.json](settings.md). For exa
 ## What Does Pixel Values Mean in Different Image Types?
 ### Available ImageType Values
 ```cpp
-  Scene = 0, 
-  DepthPlanar = 1, 
+  Scene = 0,
+  DepthPlanar = 1,
   DepthPerspective = 2,
-  DepthVis = 3, 
+  DepthVis = 3,
   DisparityNormalized = 4,
   Segmentation = 5,
   SurfaceNormals = 6,
   Infrared = 7,
   OpticalFlow = 8,
-  OpticalFlowVis = 9
-  Lighting = 10
+  OpticalFlowVis = 9,
+  Lighting = 10,
   Annotation = 11
-```                
+```
 
 ### DepthPlanar and DepthPerspective
 You normally want to retrieve the depth image as float (i.e. set `pixels_as_float = true`) and specify `ImageType = DepthPlanar` or `ImageType = DepthPerspective` in `ImageRequest`. For `ImageType = DepthPlanar`, you get depth in camera plane, i.e., all points that are plane-parallel to the camera have same depth. For `ImageType = DepthPerspective`, you get depth from camera using a projection ray that hits that pixel. Depending on your use case, planner depth or perspective depth may be the ground truth image that you want. For example, you may be able to feed perspective depth to ROS package such as `depth_image_proc` to generate a point cloud. Or planner depth may be more compatible with estimated depth image generated by stereo algorithms such as SGM.
@@ -243,10 +243,10 @@ When you specify `ImageType = DepthVis` in `ImageRequest`, you get an image that
 You normally want to retrieve disparity image as float (i.e. set `pixels_as_float = true` and specify `ImageType = DisparityNormalized` in `ImageRequest`) in which case each pixel is `(Xl - Xr)/Xmax`, which is thereby normalized to values between 0 to 1.
 
 ### Segmentation
-When you specify `ImageType = Segmentation` in `ImageRequest`, you get an image that gives you ground truth instance segmentation of the scene. At the startup, AirSim assigns a random color index to each mesh available in environment. You can disable this by setting the main parameter `InitialInstanceSegmentation` to false in the settings.json file. The RGB values for each color index ID can be retrieved from the API.
+When you specify `ImageType = Segmentation` in `ImageRequest`, you get an image that gives you ground truth instance segmentation of supported scene geometry. At startup, AirSim assigns an object ID/color index to each supported object label found by the instance segmentation annotator. You can disable this by setting the main parameter `InitialInstanceSegmentation` to false in the settings.json file. The RGB values for each color index ID can be retrieved from the API.
 
 You can assign a specific value to a specific mesh using APIs. For example, below Python code sets the object ID for the mesh called "Ground" to 20 in Blocks environment and hence changes its color in Segmentation view to the 20th color of the instance segmentation colormap:
-Note that this will not do a check if this color is already assigned to a different object! 
+Note that this will not do a check if this color is already assigned to a different object!
 ```python
 success = client.simSetSegmentationObjectID("Ground", 20)
 ```
@@ -286,25 +286,25 @@ To get desired ground truth segmentation you will need to know the names of the 
 currentObjectList = client.simListInstanceSegmentationObjects()
 ```
 This will use an understandable naming depending on the hierarchy the object belong to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_ or _door_window_door_38_ ).
-Note that this provides a different result from `simListSceneObjects()` as this one will make a simple list of all Unreal Actors in the scene, without keeping the hierarchy in mind. 
+Note that this provides a different result from `simListSceneObjects()` as this one will make a simple list of all Unreal Actors in the scene, without keeping the hierarchy in mind.
 
-An extension to `simListInstanceSegmentationObjects()` is `simListInstanceSegmentationPoses(ned=True, only_visible=True)` which will retrieve the 3D object pose of each element in the same order as the first mentioned function. _only_visible_ allows you to only get the objects that are physically visible in the scene. 
+An extension to `simListInstanceSegmentationObjects()` is `simListInstanceSegmentationPoses(ned=True, only_visible=True)` which will retrieve the 3D object pose of each element in the same order as the first mentioned function. _only_visible_ allows you to only get the objects that are physically visible in the scene.
 Once you decide on the meshes you are interested, note down their names and use above API to set their object IDs. T
 
 #### Changing Colors for Object IDs
-At present the color for each object ID is fixed as in [this pallet](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/Unreal/Plugins/AirSim/Content/HUDAssets/seg_color_palette.png). We will be adding ability to change colors for object IDs to desired values shortly. In the meantime you can open the segmentation image in your favorite image editor and get the RGB values you are interested in.
+The segmentation color for each object ID is fixed by the segmentation color map returned from `simGetSegmentationColorMap()`. You can change which ID is assigned to an object with `simSetSegmentationObjectID()`, but the built-in instance segmentation API does not directly assign arbitrary RGB colors to object IDs.
 
 #### Startup Object IDs
-At the start, AirSim assigns color indexes to each object found in environment of type `UStaticMeshComponent` or `USkinnedMeshComponent`. It then makes an understandable naming depending on the hierarchy the object belong to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_ or _door_window_door_38_ ).
+At the start, AirSim assigns color indexes to supported static mesh, skeletal mesh, and instanced static mesh components. It then makes an understandable naming depending on the hierarchy the object belongs to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_ or _door_window_door_38_ ). Landscape and brush components are not included by the current built-in instance segmentation path.
 
 #### Getting Object ID for Mesh
 The `simGetSegmentationObjectID` API allows you get object ID for given mesh name.
 
 #### More information
-Please see the [instance segmentation documentation](instance_segmentation.md) for some more information on the segmentation system created by Cosys-Lab. 
+Please see the [instance segmentation documentation](instance_segmentation.md) for some more information on the segmentation system created by Cosys-Lab.
 
 ### Infrared
-Currently, this is just a map from object ID to grey scale 0-255. So any mesh with object ID 42 shows up with color (42, 42, 42). Please see [segmentation section](#segmentation) for more details on how to set object IDs. Typically noise setting can be applied for this image type to get slightly more realistic effect. We are still working on adding other infrared artifacts and any contributions are welcome.
+Currently, this is an annotation/object-ID view that maps object ID to grayscale value `object_id % 256`. So any supported object with object ID 42 shows up with color (42, 42, 42). Please see [segmentation section](#segmentation) for more details on how to set object IDs. Keep noise and distortion disabled when you need exact label values; enabling those post-process settings can make the output more visual but less suitable as ground truth.
 
 ### OpticalFlow and OpticalFlowVis
 These image types return information about motion perceived by the point of view of the camera. OpticalFlow returns a 2-channel image where the channels correspond to vx and vy respectively. OpticalFlowVis is similar to OpticalFlow but converts flow data to RGB for a more 'visual' output.
@@ -335,11 +335,11 @@ For example with Python, you can use the following examples for RGB and greyscal
 ```
 
 ### Lighting
-This layer only shows lighting information and as such does not include other material information (color, normal maps, PBR material parameters, ...) in the image. 
-It shows a neutral material only affected by lighting. 
-Note that objects using transparent materials may still show their full diffuse color due to engine limitations. 
-This can be useful to indicate what parts of an image are in shadow or how much light is received on certain objects by artificial or natural light sources. 
+This layer only shows lighting information and as such does not include other material information (color, normal maps, PBR material parameters, ...) in the image.
+It shows a neutral material only affected by lighting.
+Note that objects using transparent materials may still show their full diffuse color due to engine limitations.
+This can be useful to indicate what parts of an image are in shadow or how much light is received on certain objects by artificial or natural light sources.
 
 ## Lumen Lightning for Scene camera
-Unreal 5 introduces Lumen lightning. Due to the cameras using scene capture components enabling Lumen for them can be costly on performance. Settings have been added specfically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections. 
+Unreal 5 introduces Lumen lightning. Due to the cameras using scene capture components enabling Lumen for them can be costly on performance. Settings have been added specfically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
 The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lightning in the scene.

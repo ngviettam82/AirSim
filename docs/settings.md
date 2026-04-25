@@ -42,7 +42,7 @@ To choose multirotor or skid vehicle, set `"SimMode": "Multirotor"` or `"SimMode
 
 ## Available Settings and Their Defaults
 Below are complete list of settings available along with their default values. If any of the settings is missing from json file, then default value is used. Some default values are simply specified as `""` which means actual value may be chosen based on the vehicle you are using. For example, `ViewMode` setting has default value `""` which translates to `"FlyWithMe"` for drones and `"SpringArmChase"` for cars.
-Note this does not include most sensor types. 
+Note this does not include most sensor types.
 
 **WARNING:** Do not copy paste all of below in your settings.json. We strongly recommend adding only those settings that you don't want default values. Only required element is `"SettingsVersion"`.
 
@@ -100,7 +100,7 @@ Note this does not include most sensor types.
         "IgnoreMarked": false,
         "LumenGIEnable": true,
         "LumenReflectionEnable": true,
-        "LumenFinalQuality": 1, 
+        "LumenFinalQuality": 1,
         "LumenSceneDetail": 1,
         "LumenSceneLightningDetail": 1
       }
@@ -246,13 +246,13 @@ Also see [Time of Day API](apis.md#time-of-day-api).
 This setting specifies the latitude, longitude and altitude of the Player Start component placed in the Unreal environment. The vehicle's home point is computed using this transformation. Note that all coordinates exposed via APIs are using NED system in SI units which means each vehicle starts at (0, 0, 0) in NED system. Time of Day settings are computed for geographical coordinates specified in `OriginGeopoint`.
 
 ## SubWindows
-This setting determines what is shown in each of 3 subwindows which are visible when you press 1,2,3 keys. 
+This setting determines what is shown in each of 3 subwindows which are visible when you press 1,2,3 keys.
 
 * `WindowID`: Can be 0 to 2
 * `CameraName`: is any [available camera](image_apis.md#available-cameras) on the vehicle
 * `ImageType`: integer value determines what kind of image gets shown according to [ImageType enum](image_apis.md#available-imagetype-values).
 * `VehicleName`: string allows you to specify the vehicle to use the camera from, used when multiple vehicles are specified in the settings. First vehicle's camera will be used if there are any mistakes such as incorrect vehicle name, or only a single vehicle.
-* `Annotation`: string allows you to specify the annotation layer to use for the camera. This is only if using the Annotation camera type for `ImageType` (value is 10).
+* `Annotation`: string allows you to specify the annotation layer to use for the camera. This is only if using the Annotation camera type for `ImageType` (value is 11).
 
 For example, for a single car vehicle, below shows driver view, front bumper view and rear view as scene, depth and surface normals respectively.
 ```json
@@ -280,7 +280,7 @@ The recording feature allows you to record data such as position, orientation, v
 * `RecordOnMove`: specifies that do not record frame if there was vehicle's position or orientation hasn't changed.
 * `Folder`: Parent folder where timestamped subfolder with recordings are created. Absolute path of the directory must be specified. If not used, then `Documents/AirSim` folder will be used. E.g. `"Folder": "/home/<user>/Documents"`
 * `Enabled`: Whether Recording should start from the beginning itself, setting to `true` will start recording automatically when the simulation starts. By default, it's set to `false`
-* `Cameras`: this element controls which cameras are used to capture images. By default scene image from camera 0 is recorded as compressed png format. This setting is json array so you can specify multiple cameras to capture images, each with potentially different [image types](settings.md#image-capture-settings). 
+* `Cameras`: this element controls which cameras are used to capture images. By default scene image from camera 0 is recorded as compressed png format. This setting is json array so you can specify multiple cameras to capture images, each with potentially different [image types](settings.md#image-capture-settings).
     * When `PixelsAsFloat` is true, image is saved as [pfm](pfm.md) file instead of png file.
     * `VehicleName` option allows you to specify separate cameras for individual vehicles. If the `Cameras` element isn't present, `Scene` image from the default camera of each vehicle will be recorded.
     * If you don't want to record any images and just the vehicle's physics data, then specify the `Cameras` element but leave it empty, like this: `"Cameras": []`
@@ -314,47 +314,47 @@ This element specifies the settings used for the camera following the vehicle in
 The `CameraDefaults` element at root level specifies defaults used for all cameras. These defaults can be overridden for individual camera in `Cameras` element inside `Vehicles` as described later.
 
 ### Main settings
-Like other sensors the pose of the sensor in the vehicle frame can be defined by X, Y, Z, Roll, Pitch, Yaw parameters. 
+Like other sensors the pose of the sensor in the vehicle frame can be defined by X, Y, Z, Roll, Pitch, Yaw parameters.
 Furthermore there are some other settings available:
 * `DrawSensor`: Draw the physical sensor in the world on the vehicle with a 3D axes shown where the sensor is.
-* `External`: Uncouple the sensor from the vehicle. If enabled, the position and orientation will be relative to Unreal world coordinates. Note that if `MoveWorldOrigin` in the settings.json is set to `true` the Unreal coordinates will be moved to be the same origin as the player start location and as such this may effect where the sensor will spawn. 
-* `ExternalLocal`: When in external mode, if this is enabled the retrieved pose of the sensor will be in Local NED coordinates(from starting position from vehicle) and not converted Unreal NED coordinates which is default. Note that if `MoveWorldOrigin` in the settings.json is set to `true` the Unreal coordinates will be moved to be the same origin as the player start location and as such this may effect what coordinates are returned if set to `false`. 
+* `External`: Uncouple the sensor from the vehicle. If enabled, the position and orientation will be relative to Unreal world coordinates. Note that if `MoveWorldOrigin` in the settings.json is set to `true` the Unreal coordinates will be moved to be the same origin as the player start location and as such this may effect where the sensor will spawn.
+* `ExternalLocal`: When in external mode, if this is enabled the retrieved pose of the sensor will be in Local NED coordinates(from starting position from vehicle) and not converted Unreal NED coordinates which is default. Note that if `MoveWorldOrigin` in the settings.json is set to `true` the Unreal coordinates will be moved to be the same origin as the player start location and as such this may effect what coordinates are returned if set to `false`.
 
 ### Note on ImageType element
-The `ImageType` element in JSON array determines which image type that settings applies to. The valid values are described in [ImageType section](image_apis.md#available-imagetype).
+The `ImageType` element in JSON array determines which image type that settings applies to. The valid values are described in [ImageType section](image_apis.md#available-imagetype-values).
 
 For example, `CaptureSettings` element is json array so you can add settings for multiple image types easily.
 
 ### CaptureSettings
-The `CaptureSettings` in the settings.json file for either the `CameraDefaults` or specific camera settings determines how different image types such as scene, depth, disparity, surface normals and segmentation views are rendered. 
+The `CaptureSettings` in the settings.json file for either the `CameraDefaults` or specific camera settings determines how different image types such as scene, depth, disparity, surface normals and segmentation views are rendered.
 The Width, Height and FOV settings should be self-explanatory. The `ProjectionMode` decides the projection used by the capture camera and can take value "perspective" (default) or "orthographic". If projection mode is "orthographic" then `OrthoWidth` determines width of projected area captured in meters.
 
 To disable the rendering of certain objects on specific cameras or all, use the `IgnoreMarked` boolean setting. This requires to mark individual objects that have to be ignore using an Unreal Tag called _MarkedIgnore_.
 
-Unreal 5 introduces Lumen lightning. Due to the cameras using scene capture components enabling Lumen for them can be costly on performance. Settings have been added specfically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections. 
+Unreal 5 introduces Lumen lightning. Due to the cameras using scene capture components enabling Lumen for them can be costly on performance. Settings have been added specfically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
 The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lightning in the scene.
 
-`ForceUpdate` can be enabled to force a camera (only works for scene) to update the render target every frame. This is costly on performance but can solve issues with with exposure settings not applying for example. 
+`ForceUpdate` can be enabled to force a camera (only works for scene) to update the render target every frame. This is costly on performance but can solve issues with with exposure settings not applying for example.
 
 Below you can find a list of all available settings and their purpose.
-They are settings that are directly transferred to the post-processing settings of cameras of which more documentation can be found [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/post-process-effects-in-unreal-engine). 
+They are settings that are directly transferred to the post-processing settings of cameras of which more documentation can be found [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/post-process-effects-in-unreal-engine).
 
 
 #### General
 * **Width**: The width of the captured image in pixels. (Default: 256)
 * **Height**: The height of the captured image in pixels. (Default: 144)
-* **FOV_Degrees**: The horizontal field of view of the camera in degrees. 
+* **FOV_Degrees**: The horizontal field of view of the camera in degrees.
 * **ImageType**: The type of image being captured (e.g., scene, depth, etc.). (Default: 0)
 * **TargetGamma**: The gamma value applied to the captured image.
 * **IgnoreMarked**: Whether to ignore objects marked for a specific purpose (e.g., segmentation). (Default: false)
 * **ProjectionMode**: The camera's projection mode ("Perspective" or "Orthographic"). (Default: "Perspective")
-* **OrthoWidth**: The width of the orthographic view frustum. 
+* **OrthoWidth**: The width of the orthographic view frustum.
 * **ForceUpdate**: Force a camera to update the render target every frame. Costly on performance! Only works for scene camera type. (Default: false)
 
 #### Lumen Global Illumination and Reflections
 * **LumenGIEnable**: Whether Lumen Global Illumination is enabled. (Default: false)
 * **LumenReflectionEnable**: Whether Lumen Reflections are enabled. (Default: false)
-* **LumenFinalQuality**: The quality of Lumen's final gather. 
+* **LumenFinalQuality**: The quality of Lumen's final gather.
 * **LumenSceneDetail**: Controls the size of instances that can be represented in the Lumen Scene.
 * **LumenSceneLightningDetail**: The quality of Lumen Scene lighting.
 
@@ -405,7 +405,7 @@ They are settings that are directly transferred to the post-processing settings 
 * **LensFlareThreshold**: Minimum brightness for lens flares to take effect.
 
 ### NoiseSettings
-The `NoiseSettings` allows to add noise to the specified image type with a goal of simulating camera sensor noise, interference and other artifacts. By default no noise is added, i.e., `Enabled: false`. If you set `Enabled: true` then following different types of noise and interference artifacts are enabled, each can be further tuned using setting. 
+The `NoiseSettings` allows to add noise to the specified image type with a goal of simulating camera sensor noise, interference and other artifacts. By default no noise is added, i.e., `Enabled: false`. If you set `Enabled: true` then following different types of noise and interference artifacts are enabled, each can be further tuned using setting.
 Demo of camera noise and interference simulation:
 
 [![AirSim Drone Demo Video](images/camera_noise_demo.png)](https://youtu.be/1BeCEZmQyp0)
