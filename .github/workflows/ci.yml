@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repo_checks:
+    name: Repository checks
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install check dependencies
+        run: python -m pip install --upgrade pip build mkdocs PyYAML
+
+      - name: Check repository text files
+        run: python tools/ci/check_repo_text.py
+
+      - name: Validate workflow YAML
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          for workflow in Path(".github/workflows").glob("*.yml"):
+              with workflow.open("r", encoding="utf-8") as handle:
+                  yaml.safe_load(handle)
+              print(f"validated {workflow}")
+          PY
+
+      - name: Compile Python examples and client
+        run: python -m compileall -q PythonClient
+
+      - name: Build Python package
+        run: python -m build PythonClient
+
+      - name: Build documentation
+        run: mkdocs build --strict
+
+  build_linux:
+    name: AirLib Linux (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup dependencies
+        run: ./setup.sh --no-full-poly-car
+
+      - name: Build AirLib
+        run: ./build.sh
+
+      - name: Verify MavLink test binary
+        run: ./build_release/output/bin/MavLinkTest --help
+
+  build_windows:
+    name: AirLib Windows
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build AirLib
+        shell: cmd
+        run: build.cmd --no-full-poly-car --Release
+
+      - name: Verify build outputs
+        shell: pwsh
+        run: |
+          $paths = @(
+            "AirLib\deps\rpclib\lib\x64\Release",
+            "AirLib\deps\MavLinkCom\lib",
+            "Unreal\Plugins\AirSim\Source\AirLib\deps"
+          )
+          foreach ($path in $paths) {
+            if (-not (Test-Path $path)) {
+              throw "Missing build output: $path"
+            }
+          }

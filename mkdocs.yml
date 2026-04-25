@@ -89,6 +89,7 @@ nav:
     - "Object Detection": "object_detection.md"
     - "AirSim with MAVROS and PX4": 'https://youtu.be/ZonkdMcwXH4'
   - "Misc":
+    - "CI/CD": 'ci_cd.md'
     - "AirSim on Real Drones": 'custom_drone.md'
     - "pfm format": 'pfm.md'
     - "Setting up Unreal Environment": 'unreal_proj.md'
