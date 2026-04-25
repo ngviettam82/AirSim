@@ -797,6 +797,36 @@ The tradeoff is that dynamically spawned cameras after cache initialization requ
 - Annotation components now decide visibility by scene-capture status, not by the material show flag.
 - Scene/lighting captures hide the union of segmentation and infrared annotation components in the combined update path.
 
+## Landscape Gap Validation
+
+The landscape issue is not caused by camera position, detail mode, line endings, or segmentation/infrared show flags. The current code path simply never creates annotation geometry for Unreal landscape components.
+
+Validation findings:
+
+1. `FObjectAnnotator::IsPaintable()` and the paintable-component collection helpers call `actor->GetComponents<UMeshComponent>()`, so actors that only contain `ULandscapeComponent` are skipped.
+2. In Unreal Engine 5.5 source, `ULandscapeComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`.
+3. `UAnnotationComponent::CreateSceneProxy()` only has static-mesh and skeletal-mesh branches, so even a manually attached annotation component would not render a landscape proxy today.
+4. Segmentation and infrared captures use `PRM_UseShowOnlyList`; anything without a generated annotation component in that list is intentionally invisible.
+5. Segmentation and infrared use the same camera transform copy path, so supported annotation geometry should appear in the correct pixel position.
+
+Recommended lightweight implementation plan:
+
+1. Add a landscape-specific annotation component or proxy that wraps `FLandscapeComponentSceneProxy`-style rendering with a constant annotation material/color.
+2. Extend object discovery for indexed annotation modes to include `ALandscapeProxy::LandscapeComponents`.
+3. Register generated landscape annotation components into the existing segmentation and infrared component lists.
+4. Default to one label/color per landscape actor to keep memory and component count low; only add per-landscape-component labels if a dataset requires them.
+5. Avoid converting landscape to static meshes, mutating the source landscape material, or using a global capture material override because those approaches are heavy and risky in large environments.
+
+## Foliage And Brush Validation
+
+The old "foliage is unsupported" documentation is no longer precise for the built-in indexed ID path.
+
+- UE foliage painted as instanced static mesh foliage should be discovered as a mesh component because `UFoliageInstancedStaticMeshComponent` derives from `UHierarchicalInstancedStaticMeshComponent`, then `UInstancedStaticMeshComponent`, then `UStaticMeshComponent`.
+- The indexed annotation path handles `UInstancedStaticMeshComponent` by creating a generated annotation mirror and copying local instance transforms.
+- This gives one ID/color per foliage component; it does not give separate IDs per individual tree or grass instance inside that component.
+- It also does not reproduce source-material world-position-offset effects such as wind, because the annotation mirror uses the flat annotation material.
+- Brushes remain unsupported because `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, and there is no brush-specific annotation proxy.
+
 ## Risk Areas / Review Questions
 
 ### HiddenComponents Ownership
