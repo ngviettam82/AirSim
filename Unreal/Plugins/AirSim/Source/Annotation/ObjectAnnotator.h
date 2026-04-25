@@ -15,6 +15,8 @@
 #include "UObject/ScriptMacros.h"
 #include "Runtime/Engine/Classes/GameFramework/Actor.h"
 
+class ULandscapeComponent;
+
 class FColorGenerator
 {
 public:
@@ -91,6 +93,7 @@ public:
 
 	std::vector<std::string> GetAllComponentNames();
 	TMap<FString, UMeshComponent*> GetNameToComponentMap();
+	TMap<FString, UPrimitiveComponent*> GetNameToPrimitiveComponentMap();
 	TMap<FString, FString> GetColorToComponentNameMap();
 	TMap<FString, float> GetComponentToValueMap();
 	TMap<UMeshComponent*, FString> GetComponentToNameMap();
@@ -112,11 +115,14 @@ private:
 	bool UpdatePaintInstancedSegmentationComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
 	bool PopulateGeneratedInstanceComponent(UInstancedStaticMeshComponent* generated_component, UInstancedStaticMeshComponent* source_component) const;
 	bool UpdateGeneratedMeshColor(UStaticMeshComponent* component, const FColor& color) const;
+	bool PaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name);
+	bool UpdatePaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name);
 
 	bool PaintTextureComponent(UMeshComponent* component, const FString& texture_path, const FString& component_name);
 	bool UpdatePaintTextureComponent(UMeshComponent* component, const FString& texture_path, const FString& component_name);
 
 	bool DeleteComponent(UMeshComponent* component, const FString& component_name);
+	bool DeleteLandscapeComponent(ULandscapeComponent* component, const FString& component_name);
 	bool IsGeneratedAnnotationClone(const UMeshComponent* component) const;
 	bool UsesIndexedAnnotationColors() const;
 	FColor GetAnnotationColorForIndex(uint32 color_index) const;
@@ -125,12 +131,15 @@ private:
 	uint32 GetNextAvailableColorIndex() const;
 	uint32 GetOrCreateLabelColorIndex(const FString& component_name, UMeshComponent* component);
 	FString GetLabelKey(const FString& component_name, UMeshComponent* component) const;
+	FString GetLandscapeLabelKey(const FString& component_name, ULandscapeComponent* component) const;
+	uint32 GetOrCreateLandscapeLabelColorIndex(const FString& component_name, ULandscapeComponent* component);
 	void UpdateColorMappings(const FString& component_name, uint32 color_index);
 	void RemoveTrackedComponent(const FString& component_name);
 	void GetComponentIdsForColorUpdate(const FString& component_id, TArray<FString>& component_ids) const;
 
 	void getPaintableComponentMeshes(AActor* actor, TMap<FString, UMeshComponent*>* paintable_components_meshes);
 	void getPaintableComponentMeshesAndTags(AActor* actor, TMap<FString, UMeshComponent*>* paintable_components_meshes, TMap<FString, TArray<FName>>* paintable_components_tags);
+	void getPaintableLandscapeComponentsAndTags(AActor* actor, TMap<FString, ULandscapeComponent*>* paintable_landscape_components, TMap<FString, TArray<FName>>* paintable_component_tags);
 	bool IsPaintable(AActor* actor);
 
 private:
@@ -142,9 +151,11 @@ private:
 	TMap<FString, FString> gammacorrected_color_to_name_map_;
 	TMap<FString, UMeshComponent*> name_to_component_map_;
 	TMap<FString, UMeshComponent*> name_to_generated_component_map_;
+	TMap<FString, ULandscapeComponent*> name_to_landscape_component_map_;
 	TMap<FString, FString> name_to_label_key_map_;
 	TMap<FString, uint32> label_to_color_index_map_;
 	TMap<UMeshComponent*, FString> component_to_name_map_;
+	TMap<ULandscapeComponent*, FString> landscape_component_to_name_map_;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> annotation_component_list_;
 };
 

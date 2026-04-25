@@ -789,11 +789,11 @@ TMap<UMeshComponent*, FString> ASimModeBase::GetInstanceSegmentationComponentToN
 
 std::vector<msr::airlib::Pose> ASimModeBase::GetAllInstanceSegmentationMeshPoses(bool ned, bool only_visible) {
     std::vector<msr::airlib::Pose> retval;
-    TMap<FString, UMeshComponent*> nameToComponentMapTemp = instance_segmentation_annotator_.GetNameToComponentMap();
+    TMap<FString, UPrimitiveComponent*> nameToComponentMapTemp = instance_segmentation_annotator_.GetNameToPrimitiveComponentMap();
     for (auto const& element : nameToComponentMapTemp) {
         UAirBlueprintLib::RunCommandOnGameThread([ned, only_visible, &retval, element, this]() {
-            if (element.Value->HasBegunPlay() && element.Value->IsRenderStateCreated()) {
-                if (!element.Value->IsBeingDestroyed() && IsValid(element.Value)) {
+            if (IsValid(element.Value) && element.Value->HasBegunPlay() && element.Value->IsRenderStateCreated()) {
+                if (!element.Value->IsBeingDestroyed()) {
                     if (!only_visible || element.Value->GetVisibleFlag()) {
                         if (ned) {
                             retval.emplace_back(getGlobalNedTransform().toGlobalNed(FTransform(element.Value->GetComponentRotation(), element.Value->GetComponentLocation())));
@@ -823,7 +823,7 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		std::regex name_regex;
 		name_regex.assign(mesh_name, std::regex_constants::icase);
         TArray<FString> matching_keys;
-		for (auto It = instance_segmentation_annotator_.GetNameToComponentMap().CreateConstIterator(); It; ++It)
+		for (auto It = instance_segmentation_annotator_.GetNameToPrimitiveComponentMap().CreateConstIterator(); It; ++It)
 		{
 			if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
                 matching_keys.Add(It.Key());
@@ -878,11 +878,11 @@ std::vector<msr::airlib::Pose> ASimModeBase::GetAllAnnotationMeshPoses(const std
         UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Could not find annotation layer %s"), *FString(annotation_name.c_str()), *FString(annotation_name.c_str()));
         return retval;
     }
-    TMap<FString, UMeshComponent*> nameToComponentMapTemp = annotators_[FString(annotation_name.c_str())].GetNameToComponentMap();
+    TMap<FString, UPrimitiveComponent*> nameToComponentMapTemp = annotators_[FString(annotation_name.c_str())].GetNameToPrimitiveComponentMap();
     for (auto const& element : nameToComponentMapTemp) {
         UAirBlueprintLib::RunCommandOnGameThread([ned, only_visible, &retval, element, this]() {
-            if (element.Value->HasBegunPlay() && element.Value->IsRenderStateCreated()) {
-                if (!element.Value->IsBeingDestroyed() && IsValid(element.Value)) {
+            if (IsValid(element.Value) && element.Value->HasBegunPlay() && element.Value->IsRenderStateCreated()) {
+                if (!element.Value->IsBeingDestroyed()) {
                     if (!only_visible || element.Value->GetVisibleFlag()) {
                         if (ned) {
                             retval.emplace_back(getGlobalNedTransform().toGlobalNed(FTransform(element.Value->GetComponentRotation(), element.Value->GetComponentLocation())));

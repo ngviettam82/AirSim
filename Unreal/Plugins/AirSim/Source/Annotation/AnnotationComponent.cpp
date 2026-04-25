@@ -7,12 +7,18 @@
 
 #include "Runtime/CoreUObject/Public/UObject/ConstructorHelpers.h"
 #include "Runtime/Engine/Public/Materials/Material.h"
+#include "Runtime/Engine/Public/Materials/MaterialInstanceConstant.h"
 #include "Runtime/Engine/Public/Materials/MaterialInstanceDynamic.h"
 #include "Runtime/Engine/Classes/Engine/StaticMesh.h"
 #include "Runtime/Engine/Classes/Components/SkeletalMeshComponent.h"
 #include "Runtime/Launch/Resources/Version.h"
+#include "Runtime/Engine/Public/MaterialDomain.h"
 #include "Runtime/Engine/Public/MaterialShared.h"
+#include "Runtime/Engine/Public/Materials/MaterialRenderProxy.h"
 #include "Runtime/Engine/Classes/Engine/Engine.h"
+#include "LandscapeComponent.h"
+#include "LandscapeProxy.h"
+#include "LandscapeRender.h"
 #include "AirBlueprintLib.h"
 
 #if ENGINE_MAJOR_VERSION >= 5
@@ -22,6 +28,55 @@
 
 #endif
 #include "Runtime/Engine/Public/Rendering/SkeletalMeshRenderData.h"
+
+namespace
+{
+	bool PrepareLandscapeComponentForAnnotationProxy(ULandscapeComponent* LandscapeComponent)
+	{
+		if (!IsValid(LandscapeComponent))
+		{
+			return false;
+		}
+
+		ALandscapeProxy* LandscapeProxy = LandscapeComponent->GetLandscapeProxy();
+		if (!IsValid(LandscapeProxy))
+		{
+			return false;
+		}
+
+		LandscapeProxy->bUseDynamicMaterialInstance = true;
+
+		const int32 MaterialCount = LandscapeComponent->MaterialInstances.Num();
+		if (MaterialCount == 0)
+		{
+			return true;
+		}
+
+		LandscapeComponent->MaterialInstancesDynamic.SetNum(MaterialCount);
+		for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
+		{
+			if (IsValid(LandscapeComponent->MaterialInstancesDynamic[MaterialIndex]))
+			{
+				continue;
+			}
+
+			UMaterialInterface* SourceMaterial = LandscapeComponent->MaterialInstances[MaterialIndex].Get();
+			if (!IsValid(SourceMaterial))
+			{
+				SourceMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+			}
+
+			LandscapeComponent->MaterialInstancesDynamic[MaterialIndex] = UMaterialInstanceDynamic::Create(SourceMaterial, LandscapeComponent);
+			if (!IsValid(LandscapeComponent->MaterialInstancesDynamic[MaterialIndex]))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation: Failed to create dynamic landscape material for %s slot %d."), *LandscapeComponent->GetName(), MaterialIndex);
+				return false;
+			}
+		}
+
+		return true;
+	}
+}
 
 /** A proxy class to get mesh data from StaticMesh, should be used together with AnnotationCamSensor.
 Inheritance is needed because I need to access protected data
@@ -168,6 +223,98 @@ FPrimitiveViewRelevance FSkeletalAnnotationSceneProxy::GetViewRelevance(const FS
 	}
 	return FSkeletalMeshSceneProxy::GetViewRelevance(View);
 }
+
+class FLandscapeAnnotationSceneProxy : public FLandscapeComponentSceneProxy
+{
+public:
+	FLandscapeAnnotationSceneProxy(ULandscapeComponent* Component, const FLinearColor& AnnotationColor)
+		: FLandscapeComponentSceneProxy(Component)
+		, AnnotationRenderProxy(nullptr)
+	{
+		const UMaterial* AnnotationBaseMaterial = GEngine ? GEngine->LevelColorationUnlitMaterial : nullptr;
+		if (AnnotationBaseMaterial == nullptr)
+		{
+			AnnotationBaseMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
+			UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation: LevelColorationUnlitMaterial is invalid; landscape annotation may not render with the landscape vertex factory."));
+		}
+
+		AnnotationRenderProxy = new FColoredMaterialRenderProxy(AnnotationBaseMaterial->GetRenderProxy(), AnnotationColor);
+		for (FMaterialRenderProxy*& Material : AvailableMaterials)
+		{
+			Material = AnnotationRenderProxy;
+		}
+
+		const FMaterialRelevance AnnotationMaterialRelevance = AnnotationBaseMaterial->GetRelevance_Concurrent(GetScene().GetFeatureLevel());
+		MaterialRelevances.Init(AnnotationMaterialRelevance, FMath::Max(1, MaterialRelevances.Num()));
+
+		bVerifyUsedMaterials = false;
+		bCastDynamicShadow = false;
+		bCastStaticShadow = false;
+		bCastContactShadow = false;
+		bCastHiddenShadow = false;
+	}
+
+	virtual void CreateRenderThreadResources(FRHICommandListBase& RHICmdList) override
+	{
+		FLandscapeComponentSceneProxy::CreateRenderThreadResources(RHICmdList);
+		if (AnnotationRenderProxy != nullptr)
+		{
+			AnnotationRenderProxy->UpdateUniformExpressionCacheIfNeeded(RHICmdList, GetScene().GetFeatureLevel());
+		}
+	}
+
+	virtual ~FLandscapeAnnotationSceneProxy() override
+	{
+		delete AnnotationRenderProxy;
+		AnnotationRenderProxy = nullptr;
+	}
+
+	virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
+	{
+		if (!View || !View->bIsSceneCapture || !View->Family->EngineShowFlags.Landscape)
+		{
+			return FPrimitiveViewRelevance();
+		}
+
+		FPrimitiveViewRelevance Result = FLandscapeComponentSceneProxy::GetViewRelevance(View);
+		Result.bDrawRelevance = true;
+		Result.bRenderInMainPass = true;
+		Result.bRenderInDepthPass = true;
+		Result.bShadowRelevance = false;
+		Result.bRenderCustomDepth = false;
+		Result.bUsesLightingChannels = false;
+
+		if (!Result.bStaticRelevance && !Result.bDynamicRelevance)
+		{
+			Result.bStaticRelevance = true;
+		}
+
+		return Result;
+	}
+
+	virtual void GetSectionCenterAndVectors(FVector& OutSectionCenterWorldSpace, FVector& OutSectionXVectorWorldSpace, FVector& OutSectionYVectorWorldSpace) const override
+	{
+		const FBoxSphereBounds ComponentLocalBounds = GetLocalBounds();
+		const FMatrix ComponentLocalToWorld = GetLocalToWorld();
+
+		OutSectionCenterWorldSpace = ComponentLocalToWorld.TransformPosition(ComponentLocalBounds.Origin);
+		OutSectionXVectorWorldSpace = ComponentLocalToWorld.TransformVector(FVector::XAxisVector) * ComponentSizeVerts;
+		OutSectionYVectorWorldSpace = ComponentLocalToWorld.TransformVector(FVector::YAxisVector) * ComponentSizeVerts;
+	}
+
+	virtual const FPrimitiveSceneInfo* GetPrimitiveSceneInfo() const override
+	{
+		return FPrimitiveSceneProxy::GetPrimitiveSceneInfo();
+	}
+
+	virtual bool ShouldInvalidateShadows(const FSceneView& InView, float InLODValue, float InLastShadowInvalidationLODValue) const override
+	{
+		return false;
+	}
+
+private:
+	FColoredMaterialRenderProxy* AnnotationRenderProxy;
+};
 
 // FString MeterialPath = TEXT("MaterialInstanceConstant'/UnrealCV/AnnotationColor_Inst.AnnotationColor_Inst'");
 // static ConstructorHelpers::FObjectFinder<UMaterialInstanceDynamic> AnnotationMaterialObject(*MaterialPath);
@@ -384,6 +531,28 @@ FPrimitiveSceneProxy* UAnnotationComponent::CreateSceneProxy(USkeletalMeshCompon
 	}
 }
 
+FPrimitiveSceneProxy* UAnnotationComponent::CreateSceneProxy(ULandscapeComponent* LandscapeComponent)
+{
+	if (!IsValid(LandscapeComponent))
+	{
+		return nullptr;
+	}
+	if (!PrepareLandscapeComponentForAnnotationProxy(LandscapeComponent))
+	{
+		return nullptr;
+	}
+
+	const float OneOver255 = 1.0f / 255.0f;
+	const FLinearColor LinearAnnotationColor = FLinearColor(
+		AnnotationColor.R * OneOver255,
+		AnnotationColor.G * OneOver255,
+		AnnotationColor.B * OneOver255,
+		1.0f
+	);
+
+	return new FLandscapeAnnotationSceneProxy(LandscapeComponent, LinearAnnotationColor);
+}
+
 
 // TODO: This needs to be involked when the ParentComponent refresh its render state, otherwise it will crash the engine
 FPrimitiveSceneProxy* UAnnotationComponent::CreateSceneProxy()
@@ -404,6 +573,7 @@ FPrimitiveSceneProxy* UAnnotationComponent::CreateSceneProxy()
 
 	UStaticMeshComponent* StaticMeshComponent = Cast<UStaticMeshComponent>(ParentComponent);
 	USkeletalMeshComponent* SkeletalMeshComponent = Cast<USkeletalMeshComponent>(ParentComponent);
+	ULandscapeComponent* LandscapeComponent = Cast<ULandscapeComponent>(ParentComponent);
 	// UCableComponent* CableComponent = Cast<UCableComponent>(ParentComponent);
 	if (IsValid(StaticMeshComponent))
 	{
@@ -413,6 +583,10 @@ FPrimitiveSceneProxy* UAnnotationComponent::CreateSceneProxy()
 	{
 		bSkeletalMesh = true;
 		return CreateSceneProxy(SkeletalMeshComponent);
+	}
+	else if (IsValid(LandscapeComponent))
+	{
+		return CreateSceneProxy(LandscapeComponent);
 	}
 	// else if (IsValid(CableComponent))
 	// {
@@ -450,6 +624,12 @@ FBoxSphereBounds UAnnotationComponent::CalcBounds(const FTransform & LocalToWorl
 	if (IsValid(SkeletalMeshComponent))
 	{
 		return SkeletalMeshComponent->CalcBounds(LocalToWorld);
+	}
+
+	ULandscapeComponent* LandscapeComponent = Cast<ULandscapeComponent>(Parent);
+	if (IsValid(LandscapeComponent))
+	{
+		return LandscapeComponent->CalcBounds(LocalToWorld);
 	}
 
 	FBoxSphereBounds DefaultBounds;

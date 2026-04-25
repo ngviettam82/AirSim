@@ -11,6 +11,7 @@
 
 #include "AnnotationComponent.generated.h"
 
+class ULandscapeComponent;
 
 // TODO: Might need to annotate every frame if there are new actors got spawned
 /** A proxy component class to render annotation color
@@ -68,4 +69,5 @@ private:
 
 	FPrimitiveSceneProxy* CreateSceneProxy(UStaticMeshComponent* StaticMeshComponent);
 	FPrimitiveSceneProxy* CreateSceneProxy(USkeletalMeshComponent* SkeletalMeshComponent);
+	FPrimitiveSceneProxy* CreateSceneProxy(ULandscapeComponent* LandscapeComponent);
 };

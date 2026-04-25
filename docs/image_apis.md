@@ -295,7 +295,7 @@ Once you decide on the meshes you are interested, note down their names and use 
 The segmentation color for each object ID is fixed by the segmentation color map returned from `simGetSegmentationColorMap()`. You can change which ID is assigned to an object with `simSetSegmentationObjectID()`, but the built-in instance segmentation API does not directly assign arbitrary RGB colors to object IDs.
 
 #### Startup Object IDs
-At the start, AirSim assigns color indexes to supported static mesh, skeletal mesh, and instanced static mesh components. It then makes an understandable naming depending on the hierarchy the object belongs to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_ or _door_window_door_38_ ). Landscape and brush components are not included by the current built-in instance segmentation path.
+At the start, AirSim assigns color indexes to supported static mesh, skeletal mesh, instanced static mesh, and Landscape components. It then makes an understandable naming depending on the hierarchy the object belongs to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_, _door_window_door_38_, or _Landscape_Landscape_0_0_0_0_). Landscape component IDs are listed individually, while the owning landscape actor/proxy name can be used as a shared ID update alias. Brush components are not included by the current built-in instance segmentation path.
 
 #### Getting Object ID for Mesh
 The `simGetSegmentationObjectID` API allows you get object ID for given mesh name.
