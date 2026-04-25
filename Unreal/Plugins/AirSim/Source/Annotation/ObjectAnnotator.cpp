@@ -8,6 +8,8 @@
 #include "Runtime/Launch/Resources/Version.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "LandscapeComponent.h"
+#include "LandscapeProxy.h"
 #include "AnnotationComponent.h"
 #include "AirBlueprintLib.h"
 
@@ -62,6 +64,38 @@ namespace
 		return FString();
 	}
 
+	FString GetStableLandscapeLabel(ULandscapeComponent* component)
+	{
+		if (!IsValid(component))
+		{
+			return FString();
+		}
+
+		if (ALandscapeProxy* landscape_proxy = component->GetLandscapeProxy())
+		{
+			return landscape_proxy->GetName();
+		}
+
+		if (AActor* owner = component->GetOwner())
+		{
+			return owner->GetName();
+		}
+
+		return component->GetName();
+	}
+
+	FString GetLandscapeComponentId(ULandscapeComponent* component)
+	{
+		if (!IsValid(component))
+		{
+			return FString();
+		}
+
+		const FString landscape_label = GetStableLandscapeLabel(component);
+		const FIntPoint section_base = component->GetSectionBase();
+		return FString::Printf(TEXT("Landscape_%s_%s_%d_%d"), *landscape_label, *component->GetName(), section_base.X, section_base.Y);
+	}
+
 	FColor SanitizeAnnotationColor(FColor NewAnnotationColor)
 	{
 		if (NewAnnotationColor.R == 27)NewAnnotationColor.R = 26;
@@ -90,13 +124,13 @@ namespace
 
 	UMaterialInterface* LoadAnnotationMaterial()
 	{
-		static const TCHAR* AnnotationMaterialPath = TEXT("Material'/AirSim/HUDAssets/AnnotationMaterial.AnnotationMaterial'");
+		static const TCHAR* localAnnotationMaterialPath = TEXT("Material'/AirSim/HUDAssets/AnnotationMaterial.AnnotationMaterial'");
 		static TWeakObjectPtr<UMaterialInterface> cached_annotation_material;
 		static bool instanced_usage_checked = false;
 
 		if (!cached_annotation_material.IsValid())
 		{
-			cached_annotation_material = LoadObject<UMaterialInterface>(nullptr, AnnotationMaterialPath);
+			cached_annotation_material = LoadObject<UMaterialInterface>(nullptr, localAnnotationMaterialPath);
 			instanced_usage_checked = false;
 		}
 
@@ -163,14 +197,19 @@ bool FObjectAnnotator::IsPaintable(AActor* actor)
 	}
 	TArray<UMeshComponent*> paintable_components;
 	actor->GetComponents<UMeshComponent>(paintable_components);
-	if (paintable_components.Num() == 0)
-	{
-		return false;
-	}
-	else
+	if (paintable_components.Num() > 0)
 	{
 		return true;
 	}
+
+	if (UsesIndexedAnnotationColors())
+	{
+		TArray<ULandscapeComponent*> landscape_components;
+		actor->GetComponents<ULandscapeComponent>(landscape_components);
+		return landscape_components.Num() > 0;
+	}
+
+	return false;
 }
 
 void FObjectAnnotator::getPaintableComponentMeshes(AActor* actor, TMap<FString, UMeshComponent*>* paintable_components_meshes)
@@ -393,6 +432,54 @@ void FObjectAnnotator::getPaintableComponentMeshesAndTags(AActor* actor, TMap<FS
 	}
 }
 
+void FObjectAnnotator::getPaintableLandscapeComponentsAndTags(AActor* actor, TMap<FString, ULandscapeComponent*>* paintable_landscape_components, TMap<FString, TArray<FName>>* paintable_component_tags)
+{
+	if (!IsValid(actor) || paintable_landscape_components == nullptr || paintable_component_tags == nullptr)
+	{
+		return;
+	}
+
+	TArray<ULandscapeComponent*> landscape_components;
+	if (ALandscapeProxy* landscape_proxy = Cast<ALandscapeProxy>(actor))
+	{
+		for (ULandscapeComponent* landscape_component : landscape_proxy->LandscapeComponents)
+		{
+			if (IsValid(landscape_component))
+			{
+				landscape_components.Add(landscape_component);
+			}
+		}
+	}
+	else
+	{
+		actor->GetComponents<ULandscapeComponent>(landscape_components);
+	}
+
+	for (ULandscapeComponent* landscape_component : landscape_components)
+	{
+		if (!IsValid(landscape_component))
+		{
+			continue;
+		}
+
+		const FString component_name = GetLandscapeComponentId(landscape_component);
+		if (component_name.IsEmpty())
+		{
+			continue;
+		}
+
+		paintable_landscape_components->Emplace(component_name, landscape_component);
+		if (actor->Tags.Num() > 0)
+		{
+			paintable_component_tags->Emplace(component_name, actor->Tags);
+		}
+		else
+		{
+			paintable_component_tags->Emplace(component_name, landscape_component->ComponentTags);
+		}
+	}
+}
+
 bool FObjectAnnotator::SetComponentRGBColorByIndex(FString component_id, uint32 color_index)
 {
 	TArray<FString> component_ids;
@@ -403,15 +490,27 @@ bool FObjectAnnotator::SetComponentRGBColorByIndex(FString component_id, uint32 
 		bool updated_any = false;
 		for (const FString& current_component_id : component_ids)
 		{
-			UMeshComponent* const* component_ptr = name_to_component_map_.Find(current_component_id);
-			if (component_ptr == nullptr || !IsValid(*component_ptr))
+			bool updated_component = false;
+			if (UMeshComponent* const* component_ptr = name_to_component_map_.Find(current_component_id))
+			{
+				if (IsValid(*component_ptr))
+				{
+					updated_component = UpdatePaintRGBComponent(*component_ptr, color, current_component_id);
+				}
+			}
+			else if (ULandscapeComponent* const* landscape_component_ptr = name_to_landscape_component_map_.Find(current_component_id))
+			{
+				if (IsValid(*landscape_component_ptr))
+				{
+					updated_component = UpdatePaintLandscapeComponent(*landscape_component_ptr, color, current_component_id);
+				}
+			}
+
+			if (!updated_component)
 			{
 				continue;
 			}
-			if (!UpdatePaintRGBComponent(*component_ptr, color, current_component_id))
-			{
-				continue;
-			}
+
 			UpdateColorMappings(current_component_id, color_index);
 			updated_any = true;
 			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted indexed annotation of object %s to new ID # %s (Display: %s)"), *name_, *current_component_id, *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[current_component_id]);
@@ -434,15 +533,27 @@ bool FObjectAnnotator::SetComponentRGBColorByColor(FString component_id, FColor 
 		bool updated_any = false;
 		for (const FString& current_component_id : component_ids)
 		{
-			UMeshComponent* const* component_ptr = name_to_component_map_.Find(current_component_id);
-			if (component_ptr == nullptr || !IsValid(*component_ptr))
+			bool updated_component = false;
+			if (UMeshComponent* const* component_ptr = name_to_component_map_.Find(current_component_id))
+			{
+				if (IsValid(*component_ptr))
+				{
+					updated_component = UpdatePaintRGBComponent(*component_ptr, color, current_component_id);
+				}
+			}
+			else if (ULandscapeComponent* const* landscape_component_ptr = name_to_landscape_component_map_.Find(current_component_id))
+			{
+				if (IsValid(*landscape_component_ptr))
+				{
+					updated_component = UpdatePaintLandscapeComponent(*landscape_component_ptr, color, current_component_id);
+				}
+			}
+
+			if (!updated_component)
 			{
 				continue;
 			}
-			if (!UpdatePaintRGBComponent(*component_ptr, color, current_component_id))
-			{
-				continue;
-			}
+
 			UpdateColorMappings(current_component_id, color_index);
 			updated_any = true;
 			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted RGB annotation of object %s to new RGB color: %s (ID # %s)"), *name_, *current_component_id, *name_to_gammacorrected_color_map_[current_component_id], *FString::FromInt(color_index));
@@ -593,6 +704,7 @@ bool FObjectAnnotator::AnnotateNewActor(AActor* actor)
 
 bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 	if (actor && IsPaintable(actor)) {
+		bool annotated_any = false;
 		TMap<FString, UMeshComponent*> paintable_components_meshes;
 		TMap<FString, TArray<FName>> paintable_components_tags;
 		getPaintableComponentMeshesAndTags(actor, &paintable_components_meshes, &paintable_components_tags);
@@ -602,9 +714,10 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 				name_to_component_map_[it.Key()] = it.Value();
 				component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 				const uint32 color_index = GetOrCreateLabelColorIndex(it.Key(), it.Value());
-				FColor Color = ColorGenerator_.GetColorFromColorMap(color_index);
+				FColor Color = GetAnnotationColorForIndex(color_index);
 				UpdateColorMappings(it.Key(), color_index);
 				check(UpdatePaintRGBComponent(it.Value(), Color, it.Key()));
+				annotated_any = true;
 			}
 			else {
 				FName* found_tag = paintable_components_tags[it.Key()].FindByPredicate([this](const FName& tagFName) {
@@ -615,16 +728,52 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 					name_to_component_map_.FindOrAdd(it.Key()) = it.Value();
 					component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 					uint32 ObjectIndex = GetOrCreateLabelColorIndex(it.Key(), it.Value());
-					FColor new_color = ColorGenerator_.GetColorFromColorMap(ObjectIndex);
+					FColor new_color = GetAnnotationColorForIndex(ObjectIndex);
 					UpdateColorMappings(it.Key(), ObjectIndex);
 					check(PaintRGBComponent(it.Value(), new_color, it.Key()));
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (RGB: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
+					annotated_any = true;
 				}else{
 					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Ignored new object %s"), *name_, *it.Key());
 				}
 			}
 		}
-		return true;
+
+		TMap<FString, ULandscapeComponent*> paintable_landscape_components;
+		TMap<FString, TArray<FName>> paintable_landscape_tags;
+		getPaintableLandscapeComponentsAndTags(actor, &paintable_landscape_components, &paintable_landscape_tags);
+		for (auto it = paintable_landscape_components.CreateConstIterator(); it; ++it)
+		{
+			if (name_to_landscape_component_map_.Contains(it.Key())) {
+				name_to_landscape_component_map_[it.Key()] = it.Value();
+				landscape_component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
+				const uint32 color_index = GetOrCreateLandscapeLabelColorIndex(it.Key(), it.Value());
+				FColor Color = GetAnnotationColorForIndex(color_index);
+				UpdateColorMappings(it.Key(), color_index);
+				check(UpdatePaintLandscapeComponent(it.Value(), Color, it.Key()));
+				annotated_any = true;
+			}
+			else {
+				FName* found_tag = paintable_landscape_tags[it.Key()].FindByPredicate([this](const FName& tagFName) {
+					FString tag = tagFName.ToString();
+					return tag.Contains("InstanceSegmentation_disable");
+					});
+				if (found_tag == nullptr) {
+					name_to_landscape_component_map_.FindOrAdd(it.Key()) = it.Value();
+					landscape_component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
+					uint32 ObjectIndex = GetOrCreateLandscapeLabelColorIndex(it.Key(), it.Value());
+					FColor new_color = GetAnnotationColorForIndex(ObjectIndex);
+					UpdateColorMappings(it.Key(), ObjectIndex);
+					check(PaintLandscapeComponent(it.Value(), new_color, it.Key()));
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
+					annotated_any = true;
+				}
+				else {
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Ignored new landscape object %s"), *name_, *it.Key());
+				}
+			}
+		}
+		return annotated_any;
 	}
 	else {
 		return false;
@@ -878,6 +1027,7 @@ bool FObjectAnnotator::AnnotateNewActorTexture(AActor* actor) {
 bool FObjectAnnotator::DeleteActor(AActor* actor)
 {
 	if (actor && IsPaintable(actor)) {
+		bool deleted_any = false;
 		TMap<FString, UMeshComponent*> paintable_components_meshes;
 		getPaintableComponentMeshes(actor, &paintable_components_meshes);
 		for (auto it = paintable_components_meshes.CreateConstIterator(); it; ++it)
@@ -886,6 +1036,7 @@ bool FObjectAnnotator::DeleteActor(AActor* actor)
 				check(DeleteComponent(it.Value(), it.Key()));
 				RemoveTrackedComponent(it.Key());
 				UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted object %s."), *name_, *it.Key());
+				deleted_any = true;
 
 			}
 			else {
@@ -893,7 +1044,27 @@ bool FObjectAnnotator::DeleteActor(AActor* actor)
 				return false;
 			}
 		}
-		return true;
+
+		if (UsesIndexedAnnotationColors())
+		{
+			TMap<FString, ULandscapeComponent*> paintable_landscape_components;
+			TMap<FString, TArray<FName>> paintable_landscape_tags;
+			getPaintableLandscapeComponentsAndTags(actor, &paintable_landscape_components, &paintable_landscape_tags);
+			for (auto it = paintable_landscape_components.CreateConstIterator(); it; ++it)
+			{
+				if (name_to_landscape_component_map_.Contains(it.Key())) {
+					check(DeleteLandscapeComponent(it.Value(), it.Key()));
+					RemoveTrackedComponent(it.Key());
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted landscape object %s."), *name_, *it.Key());
+					deleted_any = true;
+				}
+				else {
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: could not delete landscape object %s."), *name_, *it.Key());
+					return false;
+				}
+			}
+		}
+		return deleted_any;
 	}
 	else {
 		return false;
@@ -1021,6 +1192,26 @@ void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR*
 					check(PaintRGBComponent(it.Value(), new_color, it.Key()));
 					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
 				}				
+			}
+
+			TMap<FString, ULandscapeComponent*> paintable_landscape_components;
+			TMap<FString, TArray<FName>> paintable_landscape_tags;
+			getPaintableLandscapeComponentsAndTags(actor, &paintable_landscape_components, &paintable_landscape_tags);
+			for (auto it = paintable_landscape_components.CreateConstIterator(); it; ++it)
+			{
+				FName* found_tag = paintable_landscape_tags[it.Key()].FindByPredicate([this](const FName& tagFName) {
+					FString tag = tagFName.ToString();
+					return tag.Contains("InstanceSegmentation_disable");
+					});
+				if(!it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere") && found_tag == nullptr) {
+					name_to_landscape_component_map_.FindOrAdd(it.Key()) = it.Value();
+					landscape_component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
+					const uint32 color_index = GetOrCreateLandscapeLabelColorIndex(it.Key(), it.Value());
+					FColor new_color = GetAnnotationColorForIndex(color_index);
+					UpdateColorMappings(it.Key(), color_index);
+					check(PaintLandscapeComponent(it.Value(), new_color, it.Key()));
+					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
+				}
 			}
 		}
 	}
@@ -1271,6 +1462,22 @@ FString FObjectAnnotator::GetLabelKey(const FString& component_name, UMeshCompon
 	return StripRuntimeSuffixes(component_name);
 }
 
+FString FObjectAnnotator::GetLandscapeLabelKey(const FString& component_name, ULandscapeComponent* component) const
+{
+	if (const FString* cached_label_key = name_to_label_key_map_.Find(component_name))
+	{
+		return *cached_label_key;
+	}
+
+	const FString stable_landscape_label = GetStableLandscapeLabel(component);
+	if (!stable_landscape_label.IsEmpty())
+	{
+		return stable_landscape_label;
+	}
+
+	return StripRuntimeSuffixes(component_name);
+}
+
 uint32 FObjectAnnotator::GetNextAvailableColorIndex() const
 {
 	uint32 next_color_index = 0;
@@ -1284,6 +1491,20 @@ uint32 FObjectAnnotator::GetNextAvailableColorIndex() const
 uint32 FObjectAnnotator::GetOrCreateLabelColorIndex(const FString& component_name, UMeshComponent* component)
 {
 	const FString label_key = GetLabelKey(component_name, component);
+	name_to_label_key_map_.FindOrAdd(component_name) = label_key;
+	if (const uint32* color_index = label_to_color_index_map_.Find(label_key))
+	{
+		return *color_index;
+	}
+
+	const uint32 next_color_index = GetNextAvailableColorIndex();
+	label_to_color_index_map_.Add(label_key, next_color_index);
+	return next_color_index;
+}
+
+uint32 FObjectAnnotator::GetOrCreateLandscapeLabelColorIndex(const FString& component_name, ULandscapeComponent* component)
+{
+	const FString label_key = GetLandscapeLabelKey(component_name, component);
 	name_to_label_key_map_.FindOrAdd(component_name) = label_key;
 	if (const uint32* color_index = label_to_color_index_map_.Find(label_key))
 	{
@@ -1323,7 +1544,7 @@ void FObjectAnnotator::UpdateColorMappings(const FString& component_name, uint32
 
 void FObjectAnnotator::GetComponentIdsForColorUpdate(const FString& component_id, TArray<FString>& component_ids) const
 {
-	if (name_to_component_map_.Contains(component_id))
+	if (name_to_component_map_.Contains(component_id) || name_to_landscape_component_map_.Contains(component_id))
 	{
 		if (const FString* label_key = name_to_label_key_map_.Find(component_id))
 		{
@@ -1586,6 +1807,86 @@ bool FObjectAnnotator::UpdatePaintRGBComponent(UMeshComponent* component, const 
 	return true;
 }
 
+bool FObjectAnnotator::PaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name)
+{
+	if (!IsValid(component)) return false;
+
+	FLinearColor LinearColor = FLinearColor(color);
+	const FColor NewColor = LinearColor.ToFColor(false);
+
+	FString newName = name_ + "_" + component_name;
+	UAnnotationComponent* AnnotationComponent = NewObject<UAnnotationComponent>(component, FName(*newName));
+	if (!IsValid(AnnotationComponent))
+	{
+		return false;
+	}
+
+	AnnotationComponent->SetupAttachment(component);
+	AnnotationComponent->RegisterComponent();
+	AnnotationComponent->SetAnnotationColor(NewColor);
+	AnnotationComponent->SetVisibleInSceneCaptureOnly(true);
+	AnnotationComponent->SetVisibleInRayTracing(false);
+	AnnotationComponent->bVisibleInReflectionCaptures = false;
+	AnnotationComponent->bAffectDynamicIndirectLighting = false;
+	AnnotationComponent->bAffectDistanceFieldLighting = false;
+	AnnotationComponent->bVisibleInRealTimeSkyCaptures = false;
+	AnnotationComponent->bRenderInMainPass = false;
+	AnnotationComponent->SetReceivesDecals(false);
+	AnnotationComponent->SetCastShadow(false);
+	AnnotationComponent->MarkRenderStateDirty();
+	annotation_component_list_.AddUnique(AnnotationComponent);
+	return true;
+}
+
+bool FObjectAnnotator::UpdatePaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name)
+{
+	if (!IsValid(component)) return false;
+
+	FLinearColor LinearColor = FLinearColor(color);
+	const FColor NewColor = LinearColor.ToFColor(false);
+	const FString expected_component_name = name_ + "_" + component_name;
+	for (TWeakObjectPtr<UPrimitiveComponent>& tracked_component : annotation_component_list_)
+	{
+		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(tracked_component.Get());
+		if (IsValid(AnnotationComponent) && AnnotationComponent->GetName() == expected_component_name && AnnotationComponent->GetAttachParent() == component)
+		{
+			AnnotationComponent->SetAnnotationColor(NewColor);
+			AnnotationComponent->MarkRenderStateDirty();
+			return true;
+		}
+	}
+
+	AActor* owner = component->GetAttachmentRootActor();
+	if (!IsValid(owner))
+	{
+		owner = component->GetOwner();
+	}
+
+	if (!IsValid(owner))
+	{
+		return false;
+	}
+
+	TArray<UActorComponent*> AnnotationComponents = owner->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
+	for (UActorComponent* Component : AnnotationComponents)
+	{
+		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(Component);
+		if (!IsValid(AnnotationComponent))
+		{
+			continue;
+		}
+
+		if (AnnotationComponent->GetName() == expected_component_name) {
+			AnnotationComponent->SetAnnotationColor(NewColor);
+			AnnotationComponent->MarkRenderStateDirty();
+			annotation_component_list_.AddUnique(AnnotationComponent);
+			return true;
+		}
+	}
+
+	return PaintLandscapeComponent(component, color, component_name);
+}
+
 bool FObjectAnnotator::PaintTextureComponent(UMeshComponent* component, const FString& texture_path, const FString& component_name)
 {
 	if (!component) return false;
@@ -1658,6 +1959,49 @@ bool FObjectAnnotator::DeleteComponent(UMeshComponent* component, const FString&
 	return true;
 }
 
+bool FObjectAnnotator::DeleteLandscapeComponent(ULandscapeComponent* component, const FString& component_name)
+{
+	if (!IsValid(component)) return false;
+
+	const FString expected_component_name = name_ + "_" + component_name;
+	for (int32 component_index = annotation_component_list_.Num() - 1; component_index >= 0; --component_index)
+	{
+		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(annotation_component_list_[component_index].Get());
+		if (IsValid(AnnotationComponent) && AnnotationComponent->GetName() == expected_component_name && AnnotationComponent->GetAttachParent() == component)
+		{
+			annotation_component_list_.RemoveAt(component_index);
+			AnnotationComponent->DestroyComponent();
+		}
+	}
+
+	AActor* owner = component->GetAttachmentRootActor();
+	if (!IsValid(owner))
+	{
+		owner = component->GetOwner();
+	}
+
+	if (!IsValid(owner))
+	{
+		return false;
+	}
+
+	TArray<UActorComponent*> AnnotationComponents = owner->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
+	for (UActorComponent* Component : AnnotationComponents)
+	{
+		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(Component);
+		if (!IsValid(AnnotationComponent))
+		{
+			continue;
+		}
+
+		if (AnnotationComponent->GetName() == expected_component_name) {
+			annotation_component_list_.Remove(AnnotationComponent);
+			AnnotationComponent->DestroyComponent();
+		}
+	}
+	return true;
+}
+
 bool FObjectAnnotator::IsGeneratedAnnotationClone(const UMeshComponent* component) const
 {
 	return IsValid(component) && component->ComponentTags.Contains(GeneratedAnnotationCloneTag);
@@ -1678,6 +2022,14 @@ void FObjectAnnotator::RemoveTrackedComponent(const FString& component_name)
 	{
 		component_to_name_map_.Remove(*component_ptr);
 	}
+	if (ULandscapeComponent** landscape_component_ptr = name_to_landscape_component_map_.Find(component_name))
+	{
+		if (IsValid(*landscape_component_ptr))
+		{
+			DeleteLandscapeComponent(*landscape_component_ptr, component_name);
+		}
+		landscape_component_to_name_map_.Remove(*landscape_component_ptr);
+	}
 
 	if (const FString* color_key = color_to_name_map_.FindKey(component_name))
 	{
@@ -1692,6 +2044,7 @@ void FObjectAnnotator::RemoveTrackedComponent(const FString& component_name)
 	const bool had_label_key = name_to_label_key_map_.RemoveAndCopyValue(component_name, label_key);
 	name_to_generated_component_map_.Remove(component_name);
 	name_to_component_map_.Remove(component_name);
+	name_to_landscape_component_map_.Remove(component_name);
 	name_to_color_index_map_.Remove(component_name);
 	name_to_gammacorrected_color_map_.Remove(component_name);
 	name_to_value_map_.Remove(component_name);
@@ -1736,6 +2089,8 @@ void FObjectAnnotator::SetViewForAnnotationRender(FEngineShowFlags& show_flags)
 	show_flags.SetAtmosphere(false);
 	show_flags.SetInstancedFoliage(true);
 	show_flags.SetInstancedGrass(true);
+	show_flags.SetLandscape(true);
+	show_flags.SetNaniteMeshes(false);
 	show_flags.SetTextRender(false);
 	show_flags.SetTemporalAA(false);
 	show_flags.SetDecals(false);
@@ -1781,6 +2136,21 @@ void FObjectAnnotator::UpdateAnnotationComponents(UWorld* World)
 				{
 					stale_component_names.Add(component_entry.Key);
 				}
+			}
+		}
+
+		for (const auto& component_entry : name_to_landscape_component_map_)
+		{
+			if (!IsValid(component_entry.Value))
+			{
+				stale_component_names.Add(component_entry.Key);
+				continue;
+			}
+
+			const FColor color = GetAnnotationColorForIndex(name_to_color_index_map_.FindRef(component_entry.Key));
+			if (!UpdatePaintLandscapeComponent(component_entry.Value, color, component_entry.Key))
+			{
+				stale_component_names.Add(component_entry.Key);
 			}
 		}
 
@@ -1839,6 +2209,25 @@ TMap<FString, UMeshComponent*> FObjectAnnotator::GetNameToComponentMap() {
 	return name_to_component_map_;
 }
 
+TMap<FString, UPrimitiveComponent*> FObjectAnnotator::GetNameToPrimitiveComponentMap() {
+	TMap<FString, UPrimitiveComponent*> primitive_component_map;
+	for (const auto& element : name_to_component_map_)
+	{
+		if (IsValid(element.Value))
+		{
+			primitive_component_map.Emplace(element.Key, Cast<UPrimitiveComponent>(element.Value));
+		}
+	}
+	for (const auto& element : name_to_landscape_component_map_)
+	{
+		if (IsValid(element.Value))
+		{
+			primitive_component_map.Emplace(element.Key, Cast<UPrimitiveComponent>(element.Value));
+		}
+	}
+	return primitive_component_map;
+}
+
 TMap<UMeshComponent*, FString> FObjectAnnotator::GetComponentToNameMap() {
 	return component_to_name_map_;
 }
@@ -1892,6 +2281,7 @@ void FObjectAnnotator::EndPlay() {
 	gammacorrected_color_to_name_map_.Empty();
 	name_to_component_map_.Empty();
 	name_to_generated_component_map_.Empty();
+	name_to_landscape_component_map_.Empty();
 	name_to_label_key_map_.Empty();
 	label_to_color_index_map_.Empty();
 	annotation_component_list_.Empty();
@@ -1899,6 +2289,7 @@ void FObjectAnnotator::EndPlay() {
 	name_to_value_map_.Empty();
 	name_to_texture_path_map_.Empty();
 	component_to_name_map_.Empty();
+	landscape_component_to_name_map_.Empty();
 }
 
 int32 FColorGenerator::GetChannelValue(uint32 index) const
