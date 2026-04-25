@@ -291,6 +291,11 @@ bool WorldSimApi::setSegmentationObjectID(const std::string& mesh_name, int obje
 	return simmode_->SetMeshInstanceSegmentationID(mesh_name, object_id, is_name_regex);
 }
 
+std::vector<int> WorldSimApi::setSegmentationObjectIDs(const std::vector<std::string>& mesh_names, const std::vector<int>& object_ids, bool is_name_regex)
+{
+	return simmode_->SetMeshInstanceSegmentationIDs(mesh_names, object_ids, is_name_regex);
+}
+
 int WorldSimApi::getSegmentationObjectID(const std::string& mesh_name) const
 {
 	return simmode_->GetMeshInstanceSegmentationID(mesh_name);

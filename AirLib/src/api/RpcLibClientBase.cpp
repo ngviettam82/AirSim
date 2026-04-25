@@ -230,6 +230,10 @@ __pragma(warning(disable : 4239))
         {
             return pimpl_->client.call("simSetSegmentationObjectID", mesh_name, object_id, is_name_regex).as<bool>();
         }
+        vector<int> RpcLibClientBase::simSetSegmentationObjectIDs(const vector<string>& mesh_names, const vector<int>& object_ids, bool is_name_regex)
+        {
+            return pimpl_->client.call("simSetSegmentationObjectIDs", mesh_names, object_ids, is_name_regex).as<vector<int>>();
+        }
         int RpcLibClientBase::simGetSegmentationObjectID(const std::string& mesh_name) const
         {
             return pimpl_->client.call("simGetSegmentationObjectID", mesh_name).as<int>();

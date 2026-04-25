@@ -147,6 +147,22 @@ namespace
 
 		return annotation_material;
 	}
+
+	AActor* GetAnnotationOwnerForComponent(const USceneComponent* component)
+	{
+		if (!IsValid(component))
+		{
+			return nullptr;
+		}
+
+		AActor* owner = component->GetAttachmentRootActor();
+		if (!IsValid(owner))
+		{
+			owner = component->GetOwner();
+		}
+
+		return owner;
+	}
 }
 
 
@@ -1775,8 +1791,7 @@ bool FObjectAnnotator::PaintRGBComponent(UMeshComponent* component, const FColor
 	AnnotationComponent->bVisibleInRealTimeSkyCaptures = false;
 	AnnotationComponent->bRenderInMainPass = false;
 	AnnotationComponent->MarkRenderStateDirty();
-	UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(AnnotationComponent);
-	annotation_component_list_.Add(PrimitiveComponent);
+	TrackAnnotationComponent(component_name, AnnotationComponent);
 	return true;
 }
 
@@ -1790,21 +1805,37 @@ bool FObjectAnnotator::UpdatePaintRGBComponent(UMeshComponent* component, const 
 
 	FLinearColor LinearColor = FLinearColor(color);
 	const FColor NewColor = LinearColor.ToFColor(false);
-	TArray<UActorComponent*> AnnotationComponents = component->GetAttachmentRootActor()->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
+	if (UAnnotationComponent* tracked_annotation_component = FindTrackedAnnotationComponent(component_name, component))
+	{
+		tracked_annotation_component->SetAnnotationColor(NewColor);
+		tracked_annotation_component->MarkRenderStateDirty();
+		return true;
+	}
 
-	if (AnnotationComponents.Num() == 0)return PaintRGBComponent(component, color, component_name);
+	AActor* owner = GetAnnotationOwnerForComponent(component);
+	if (!IsValid(owner))
+	{
+		return false;
+	}
 
+	TArray<UActorComponent*> AnnotationComponents = owner->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
 	for (UActorComponent* Component : AnnotationComponents)
 	{
 		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(Component);
+		if (!IsValid(AnnotationComponent))
+		{
+			continue;
+		}
 		FName componentFName = *AnnotationComponent->GetName();
 		FString componentName = componentFName.ToString();
 		if (componentName == name_ + "_" + component_name) {
 			AnnotationComponent->SetAnnotationColor(NewColor);
 			AnnotationComponent->MarkRenderStateDirty();
+			TrackAnnotationComponent(component_name, AnnotationComponent);
+			return true;
 		}		
 	}
-	return true;
+	return PaintRGBComponent(component, color, component_name);
 }
 
 bool FObjectAnnotator::PaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name)
@@ -1834,7 +1865,7 @@ bool FObjectAnnotator::PaintLandscapeComponent(ULandscapeComponent* component, c
 	AnnotationComponent->SetReceivesDecals(false);
 	AnnotationComponent->SetCastShadow(false);
 	AnnotationComponent->MarkRenderStateDirty();
-	annotation_component_list_.AddUnique(AnnotationComponent);
+	TrackAnnotationComponent(component_name, AnnotationComponent);
 	return true;
 }
 
@@ -1845,23 +1876,14 @@ bool FObjectAnnotator::UpdatePaintLandscapeComponent(ULandscapeComponent* compon
 	FLinearColor LinearColor = FLinearColor(color);
 	const FColor NewColor = LinearColor.ToFColor(false);
 	const FString expected_component_name = name_ + "_" + component_name;
-	for (TWeakObjectPtr<UPrimitiveComponent>& tracked_component : annotation_component_list_)
+	if (UAnnotationComponent* tracked_annotation_component = FindTrackedAnnotationComponent(component_name, component))
 	{
-		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(tracked_component.Get());
-		if (IsValid(AnnotationComponent) && AnnotationComponent->GetName() == expected_component_name && AnnotationComponent->GetAttachParent() == component)
-		{
-			AnnotationComponent->SetAnnotationColor(NewColor);
-			AnnotationComponent->MarkRenderStateDirty();
-			return true;
-		}
+		tracked_annotation_component->SetAnnotationColor(NewColor);
+		tracked_annotation_component->MarkRenderStateDirty();
+		return true;
 	}
 
-	AActor* owner = component->GetAttachmentRootActor();
-	if (!IsValid(owner))
-	{
-		owner = component->GetOwner();
-	}
-
+	AActor* owner = GetAnnotationOwnerForComponent(component);
 	if (!IsValid(owner))
 	{
 		return false;
@@ -1879,7 +1901,7 @@ bool FObjectAnnotator::UpdatePaintLandscapeComponent(ULandscapeComponent* compon
 		if (AnnotationComponent->GetName() == expected_component_name) {
 			AnnotationComponent->SetAnnotationColor(NewColor);
 			AnnotationComponent->MarkRenderStateDirty();
-			annotation_component_list_.AddUnique(AnnotationComponent);
+			TrackAnnotationComponent(component_name, AnnotationComponent);
 			return true;
 		}
 	}
@@ -1904,8 +1926,7 @@ bool FObjectAnnotator::PaintTextureComponent(UMeshComponent* component, const FS
 	AnnotationComponent->bRenderInMainPass = false;
 	AnnotationComponent->bVisibleInRealTimeSkyCaptures = false;
 	AnnotationComponent->MarkRenderStateDirty();
-	UPrimitiveComponent* PrimitiveComponent = Cast<UPrimitiveComponent>(AnnotationComponent);
-	annotation_component_list_.Add(PrimitiveComponent);	
+	TrackAnnotationComponent(component_name, AnnotationComponent);
 	return true;
 }
 
@@ -1913,21 +1934,37 @@ bool FObjectAnnotator::UpdatePaintTextureComponent(UMeshComponent* component, co
 {
 	if (!component) return false;
 
-	TArray<UActorComponent*> AnnotationComponents = component->GetAttachmentRootActor()->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
+	if (UAnnotationComponent* tracked_annotation_component = FindTrackedAnnotationComponent(component_name, component))
+	{
+		tracked_annotation_component->SetAnnotationTexture(texture_path);
+		tracked_annotation_component->MarkRenderStateDirty();
+		return true;
+	}
 
-	if (AnnotationComponents.Num() == 0)return PaintTextureComponent(component, texture_path, component_name);
+	AActor* owner = GetAnnotationOwnerForComponent(component);
+	if (!IsValid(owner))
+	{
+		return false;
+	}
 
+	TArray<UActorComponent*> AnnotationComponents = owner->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
 	for (UActorComponent* Component : AnnotationComponents)
 	{
 		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(Component);
+		if (!IsValid(AnnotationComponent))
+		{
+			continue;
+		}
 		FName componentFName = *AnnotationComponent->GetName();
 		FString componentName = componentFName.ToString();
 		if (componentName == name_ + "_" + component_name) {
 			AnnotationComponent->SetAnnotationTexture(texture_path);
 			AnnotationComponent->MarkRenderStateDirty();
+			TrackAnnotationComponent(component_name, AnnotationComponent);
+			return true;
 		}
 	}
-	return true;
+	return PaintTextureComponent(component, texture_path, component_name);
 }
 
 bool FObjectAnnotator::DeleteComponent(UMeshComponent* component, const FString& component_name)
@@ -1947,39 +1984,17 @@ bool FObjectAnnotator::DeleteComponent(UMeshComponent* component, const FString&
 		return true;
 	}
 
-	TArray<UActorComponent*> AnnotationComponents = component->GetAttachmentRootActor()->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
-	for (UActorComponent* Component : AnnotationComponents)
-	{
-		FName componentFName = *Component->GetName();
-		FString componentName = componentFName.ToString();
-		if (componentName == name_ + "_" + component_name) {
-			Component->DestroyComponent();
-		}				
-	}
-	return true;
-}
-
-bool FObjectAnnotator::DeleteLandscapeComponent(ULandscapeComponent* component, const FString& component_name)
-{
-	if (!IsValid(component)) return false;
-
 	const FString expected_component_name = name_ + "_" + component_name;
-	for (int32 component_index = annotation_component_list_.Num() - 1; component_index >= 0; --component_index)
+	UAnnotationComponent* deleted_tracked_component = nullptr;
+	if (UAnnotationComponent* tracked_annotation_component = FindTrackedAnnotationComponent(component_name, component))
 	{
-		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(annotation_component_list_[component_index].Get());
-		if (IsValid(AnnotationComponent) && AnnotationComponent->GetName() == expected_component_name && AnnotationComponent->GetAttachParent() == component)
-		{
-			annotation_component_list_.RemoveAt(component_index);
-			AnnotationComponent->DestroyComponent();
-		}
+		annotation_component_list_.Remove(tracked_annotation_component);
+		name_to_annotation_component_map_.Remove(component_name);
+		tracked_annotation_component->DestroyComponent();
+		deleted_tracked_component = tracked_annotation_component;
 	}
 
-	AActor* owner = component->GetAttachmentRootActor();
-	if (!IsValid(owner))
-	{
-		owner = component->GetOwner();
-	}
-
+	AActor* owner = GetAnnotationOwnerForComponent(component);
 	if (!IsValid(owner))
 	{
 		return false;
@@ -1993,13 +2008,91 @@ bool FObjectAnnotator::DeleteLandscapeComponent(ULandscapeComponent* component, 
 		{
 			continue;
 		}
+		if (AnnotationComponent == deleted_tracked_component)
+		{
+			continue;
+		}
+		FName componentFName = *AnnotationComponent->GetName();
+		FString componentName = componentFName.ToString();
+		if (componentName == expected_component_name) {
+			annotation_component_list_.Remove(AnnotationComponent);
+			name_to_annotation_component_map_.Remove(component_name);
+			AnnotationComponent->DestroyComponent();
+		}				
+	}
+	return true;
+}
+
+bool FObjectAnnotator::DeleteLandscapeComponent(ULandscapeComponent* component, const FString& component_name)
+{
+	if (!IsValid(component)) return false;
+
+	const FString expected_component_name = name_ + "_" + component_name;
+	UAnnotationComponent* deleted_tracked_component = nullptr;
+	if (UAnnotationComponent* tracked_annotation_component = FindTrackedAnnotationComponent(component_name, component))
+	{
+		annotation_component_list_.Remove(tracked_annotation_component);
+		name_to_annotation_component_map_.Remove(component_name);
+		tracked_annotation_component->DestroyComponent();
+		deleted_tracked_component = tracked_annotation_component;
+	}
+
+	AActor* owner = GetAnnotationOwnerForComponent(component);
+	if (!IsValid(owner))
+	{
+		return false;
+	}
+
+	TArray<UActorComponent*> AnnotationComponents = owner->K2_GetComponentsByClass(UAnnotationComponent::StaticClass());
+	for (UActorComponent* Component : AnnotationComponents)
+	{
+		UAnnotationComponent* AnnotationComponent = Cast<UAnnotationComponent>(Component);
+		if (!IsValid(AnnotationComponent))
+		{
+			continue;
+		}
+		if (AnnotationComponent == deleted_tracked_component)
+		{
+			continue;
+		}
 
 		if (AnnotationComponent->GetName() == expected_component_name) {
 			annotation_component_list_.Remove(AnnotationComponent);
+			name_to_annotation_component_map_.Remove(component_name);
 			AnnotationComponent->DestroyComponent();
 		}
 	}
 	return true;
+}
+
+UAnnotationComponent* FObjectAnnotator::FindTrackedAnnotationComponent(const FString& component_name, const USceneComponent* attach_parent)
+{
+	UAnnotationComponent** annotation_component_ptr = name_to_annotation_component_map_.Find(component_name);
+	if (annotation_component_ptr == nullptr)
+	{
+		return nullptr;
+	}
+
+	UAnnotationComponent* annotation_component = *annotation_component_ptr;
+	if (IsValid(annotation_component) && (attach_parent == nullptr || annotation_component->GetAttachParent() == attach_parent))
+	{
+		return annotation_component;
+	}
+
+	annotation_component_list_.Remove(annotation_component);
+	name_to_annotation_component_map_.Remove(component_name);
+	return nullptr;
+}
+
+void FObjectAnnotator::TrackAnnotationComponent(const FString& component_name, UAnnotationComponent* component)
+{
+	if (!IsValid(component))
+	{
+		return;
+	}
+
+	name_to_annotation_component_map_.FindOrAdd(component_name) = component;
+	annotation_component_list_.AddUnique(component);
 }
 
 bool FObjectAnnotator::IsGeneratedAnnotationClone(const UMeshComponent* component) const
@@ -2043,6 +2136,7 @@ void FObjectAnnotator::RemoveTrackedComponent(const FString& component_name)
 	FString label_key;
 	const bool had_label_key = name_to_label_key_map_.RemoveAndCopyValue(component_name, label_key);
 	name_to_generated_component_map_.Remove(component_name);
+	name_to_annotation_component_map_.Remove(component_name);
 	name_to_component_map_.Remove(component_name);
 	name_to_landscape_component_map_.Remove(component_name);
 	name_to_color_index_map_.Remove(component_name);
@@ -2117,6 +2211,13 @@ void FObjectAnnotator::UpdateAnnotationComponents(UWorld* World)
 	annotation_component_list_.RemoveAll([](const TWeakObjectPtr<UPrimitiveComponent>& Component) {
 		return !Component.IsValid();
 		});
+	for (auto It = name_to_annotation_component_map_.CreateIterator(); It; ++It)
+	{
+		if (!IsValid(It.Value()))
+		{
+			It.RemoveCurrent();
+		}
+	}
 
 	if (UsesIndexedAnnotationColors())
 	{
@@ -2169,19 +2270,22 @@ void FObjectAnnotator::UpdateAnnotationComponents(UWorld* World)
 
 	for (UObject* Object : UObjectList)
 	{
-		UPrimitiveComponent* Component = Cast<UPrimitiveComponent>(Object);
+		UAnnotationComponent* Component = Cast<UAnnotationComponent>(Object);
 		if (!IsValid(Component))
 		{
 			continue;
 		}
 		FName componentFName = *Component->GetName();
 		FString componentName = componentFName.ToString();
+		const FString component_prefix = name_ + "_";
 		if (Component->GetWorld() == World
 			&& !annotation_component_list_.Contains(Component)
-			&& componentName.Contains(name_)
+			&& componentName.StartsWith(component_prefix)
 			&& !componentName.Contains("annotation_sphere"))
 		{
 			annotation_component_list_.Add(Component);
+			const FString tracked_component_name = componentName.RightChop(component_prefix.Len());
+			name_to_annotation_component_map_.FindOrAdd(tracked_component_name) = Component;
 		}
 	}
 
@@ -2282,6 +2386,7 @@ void FObjectAnnotator::EndPlay() {
 	name_to_component_map_.Empty();
 	name_to_generated_component_map_.Empty();
 	name_to_landscape_component_map_.Empty();
+	name_to_annotation_component_map_.Empty();
 	name_to_label_key_map_.Empty();
 	label_to_color_index_map_.Empty();
 	annotation_component_list_.Empty();

@@ -68,8 +68,9 @@ if __name__ == '__main__':
     # a) this version we set it based on the gathered objects in the list
     print("Setting all objects in world matching class-name '"
           + className + "' a certain color, based on object list...")
-    for item in classObjectMap[className]:
-        success = client.simSetSegmentationObjectID(item, classColorIndex, False)
+    classItems = classObjectMap[className]
+    setResults = client.simSetSegmentationObjectIDs(classItems, [classColorIndex] * len(classItems), False)
+    for item, success in zip(classItems, setResults):
         if success:
             print("Found object matching object-name '" + item + "'! Set segmentation value " + str(classColorIndex))
         else:

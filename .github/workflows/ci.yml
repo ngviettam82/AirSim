@@ -35,16 +35,7 @@ jobs:
         run: python tools/ci/check_repo_text.py
 
       - name: Validate workflow YAML
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          for workflow in Path(".github/workflows").glob("*.yml"):
-              with workflow.open("r", encoding="utf-8") as handle:
-                  yaml.safe_load(handle)
-              print(f"validated {workflow}")
-          PY
+        run: python tools/ci/validate_ci_yaml.py
 
       - name: Compile Python examples and client
         run: python -m compileall -q PythonClient
