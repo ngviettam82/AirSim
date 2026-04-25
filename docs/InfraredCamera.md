@@ -10,8 +10,8 @@ Important implications:
 
 * `simSetSegmentationObjectID()` updates both the segmentation color layer and the infrared grayscale-ID layer.
 * Infrared ID values above 255 alias because the output is one 8-bit grayscale value per channel.
-* Static meshes, skeletal meshes, and instanced static mesh components are supported by the current built-in ID path.
-* Landscape is not rendered in infrared ID images yet for the same reason it is not rendered in instance segmentation: `ULandscapeComponent` is a `UPrimitiveComponent`, not a `UMeshComponent`, and the current annotation proxy path has no landscape scene-proxy implementation.
+* Static meshes, skeletal meshes, instanced static mesh components, and Unreal Landscape components are supported by the current built-in ID path.
+* Landscape infrared uses the same lightweight landscape annotation proxy as instance segmentation. Each `ULandscapeComponent` is listed separately, while the owning `ALandscapeProxy` name is the shared label key so one ID update changes the whole landscape.
 
 To generate your own infrared-ID data, assign object IDs with `simSetSegmentationObjectID()` before capture, then request `airsim.ImageType.Infrared` through the image API. The legacy Africa-environment helper scripts sometimes referenced for thermal digital-count remapping are not present in this repository checkout; use the segmentation APIs directly or add a project-specific remapping script.
 

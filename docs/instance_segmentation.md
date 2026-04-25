@@ -2,26 +2,17 @@
 
 An Instance segmentation system is implemented into Cosys-AirSim. It uses annotation-only proxy rendering to allow each supported object in the world to get its own color.
 
-Current indexed instance segmentation supports regular static meshes, skeletal meshes, and `UInstancedStaticMeshComponent` content. Instanced static meshes are rendered through generated annotation mirror components that copy the source mesh and instance transforms, so the segmentation image stays aligned without changing the original scene materials.
+Current indexed instance segmentation supports regular static meshes, skeletal meshes, `UInstancedStaticMeshComponent` content, and Unreal Landscape components. Instanced static meshes are rendered through generated annotation mirror components that copy the source mesh and instance transforms, so the segmentation image stays aligned without changing the original scene materials. Landscapes are rendered through a lightweight landscape annotation proxy that reuses Unreal's landscape render path instead of converting terrain to generated meshes.
 
 ## Limitations
 * 2744000 different colors are currently available to be assigned to unique objects. If your environment during a run requires more colors, you will generate errors and new objects will be assigned color [0,0,0].
-* Static meshes, skeletal meshes, and instanced static mesh components are supported by the built-in instance segmentation path.
+* Static meshes, skeletal meshes, instanced static mesh components, and `ULandscapeComponent` terrain are supported by the built-in instance segmentation path.
   * One `UInstancedStaticMeshComponent` receives one segmentation ID/color. Per-instance IDs inside the same instanced component are not supported yet.
-  * Landscape objects aren't supported yet. In Unreal Engine 5.5, `ULandscapeComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, while the current object discovery path only gathers `UMeshComponent` instances and `UAnnotationComponent` only creates static/skeletal mesh proxies. As a work-around, StaticMesh terrain must be used.
+  * One `ALandscapeProxy` receives one segmentation ID/color by default. Internally, each `ULandscapeComponent` has its own listed component ID, but the owning landscape proxy name is used as the shared label key so `simSetSegmentationObjectID("<LandscapeProxyName>", ...)` updates all components of that landscape together.
+  * Landscape annotation uses `GEngine->LevelColorationUnlitMaterial` through a constant-color render proxy because regular AirSim annotation materials are not safe for the UE 5.5 landscape vertex factory unless they compile with landscape usage.
   * UE foliage painted as instanced static mesh foliage is covered by the instanced static mesh path because `UFoliageInstancedStaticMeshComponent` derives from `UInstancedStaticMeshComponent`. It still receives one ID/color per foliage component, not per individual tree/grass instance, and annotation materials do not reproduce wind or other source-material world-position-offset deformation.
   * Brush objects aren't supported. In Unreal Engine 5.5, `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, so brushes are skipped by the current object discovery path. As a work-around, convert them to StaticMesh assets.
   * Other unsupported primitive types, such as decals, text, non-instanced foliage systems, and non-mesh custom primitives, generally will not render in segmentation/infrared because the captures render only generated annotation components in their show-only lists.
-
-## Landscape follow-up plan
-
-The preferred lightweight path for future landscape support is to add a landscape-specific annotation proxy instead of converting terrain to meshes or overriding the original landscape material. The implementation should:
-
-1. Add a landscape annotation component/proxy that renders `ULandscapeComponent` geometry with a constant annotation material or color.
-2. Extend object discovery to include `ALandscapeProxy::LandscapeComponents` in addition to `UMeshComponent`.
-3. Add the generated landscape annotation components to the same segmentation and infrared show-only lists.
-4. Keep one label/color for the whole landscape by default, with optional per-landscape-component IDs only if needed.
-5. Avoid per-frame terrain mesh conversion, source material mutation, and full-scene material overrides because those are expensive and fragile in large environments.
 
 ## Usage
 By default, at the start of the simulation, it assigns an object ID/color index to each supported object label found by the annotator. You can disable this by setting the main parameter `InitialInstanceSegmentation` to false in the settings.json file.

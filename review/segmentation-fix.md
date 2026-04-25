@@ -2,15 +2,15 @@
 
 ## Review Scope
 
-This document explains the changes from commit `dcc0e20dfbc348e9bd4ae0d1152a3004782238b5` (`begin to develop`) to the current `HEAD` `4453bacc344f40b7ef20cf9d4f05c353d8961861` (`Implement instance segmentation and infrared annotation updates in APIPCamera and ASimModeBase`).
+This document explains the current staged segmentation/infrared implementation on top of commit `dcc0e20dfbc348e9bd4ae0d1152a3004782238b5` (`begin to develop`). It includes the later landscape-support fix validated in the EVN project before being mirrored back into `Unreal/Plugins/AirSim`.
 
-The branch contains three commits in that range:
+The original branch range contained three commits:
 
 1. `48286bdf` - `Fix segmentation camera annotation alignment`
 2. `02849d94` - `Add infrared annotation support to object annotator and camera systems`
 3. `4453bacc` - `Implement instance segmentation and infrared annotation updates in APIPCamera and ASimModeBase`
 
-The core theme is: make AirSim's instance-segmentation annotation path work correctly for instanced meshes, keep annotation-only geometry aligned with the source scene, and make the `Infrared` image type render the same object-ID information as a grayscale annotation layer.
+The final implementation additionally adds lightweight landscape annotation support and a safer randomization helper. The core theme is: make AirSim's instance-segmentation annotation path work correctly for static meshes, skeletal meshes, instanced meshes, and landscapes; keep annotation-only geometry aligned with the source scene; and make the `Infrared` image type render the same object-ID information as a grayscale annotation layer.
 
 ## High-Level Summary
 
@@ -19,6 +19,7 @@ Before this change, the segmentation path worked mostly through generated `UAnno
 - Instanced static mesh content could be missing, misaligned, or rendered with fallback/default materials in segmentation output.
 - The segmentation capture disabled material rendering, which conflicts with the new need to render generated instanced annotation mirrors using `AnnotationMaterial`.
 - `Infrared` was not treated as an annotation/object-ID capture, so it did not receive the same component show-list, gamma handling, or ID update behavior.
+- Landscape actors were not segmented because `ULandscapeComponent` is not a `UMeshComponent`, and the annotation proxy only handled static and skeletal meshes.
 - Runtime calls like `simSetSegmentationObjectID` only updated the segmentation annotator, not the new infrared annotator.
 - Rebuilding the camera show lists on every ID update was expensive and could cause unnecessary repeated world scans.
 - Some update/delete paths matched annotation components by substring, which could accidentally update/delete the wrong annotation if component names overlapped.
@@ -27,9 +28,11 @@ After this change:
 
 - Instance segmentation and infrared both use indexed object IDs from `FObjectAnnotator`.
 - Regular meshes still use `UAnnotationComponent`; instanced static meshes now get lightweight generated `UInstancedStaticMeshComponent` mirror components.
+- Landscape components now get lightweight `UAnnotationComponent` children with a landscape-specific scene proxy.
 - Segmentation and infrared captures both use `PRM_UseShowOnlyList`, annotation show flags, and linear/gamma-safe targets.
 - `ImageType::Infrared` now behaves as a grayscale ID annotation channel: `object_id % 256` maps to `(R=G=B=object_id)`.
 - ID updates, actor add/delete, and force refresh update both segmentation and infrared annotators.
+- Landscape component names are grouped under the owning landscape proxy label, so ID changes update all components of one landscape together instead of treating each terrain tile as a separate semantic object.
 - Camera references are cached as weak pointers and pruned instead of rediscovered on every refresh.
 - Refreshes are deferred to `Tick()` unless an immediate force update is explicitly requested.
 
@@ -593,12 +596,15 @@ It supports:
 - reading back each ID with `simGetSegmentationObjectID()`
 - writing a CSV report
 - restoring original IDs from a previous CSV
+- collapsing landscape component names into one landscape update group by default
+- filtering to IDs visible in a live segmentation camera image with `--screen-only`
 
 Default behavior:
 
 - regex: `.*`
-- limit: `25`
+- limit: `25`, unless `--screen-only` is used
 - ID range: `1..255`
+- landscape components are deduplicated by default
 
 Why the default ID range is `1..255`:
 
@@ -612,6 +618,20 @@ Example validation command:
 python PythonClient/segmentation/segmentation_randomize_ids.py --regex ".*" --limit 25 --seed 42
 ```
 
+Randomize every registered segmentation update group:
+
+```powershell
+python PythonClient/segmentation/segmentation_randomize_ids.py --regex ".*" --limit 0
+```
+
+Randomize only IDs visible in the current segmentation camera image:
+
+```powershell
+python PythonClient/segmentation/segmentation_randomize_ids.py --screen-only --camera-name frontcamera --limit 0
+```
+
+Use `--keep-landscape-components` only when testing each landscape component separately. Normal object-ID randomization should keep the default dedupe behavior so the landscape does not dominate random samples.
+
 Restore command:
 
 ```powershell
@@ -623,6 +643,7 @@ Why this script is useful for code review:
 - It exercises the public API path rather than only internal C++ calls.
 - It verifies set/readback behavior object-by-object.
 - It produces a CSV artifact that can be compared with captured segmentation/infrared images.
+- `--screen-only` validates the rendered image path, not just the object registry, by matching visible segmentation colors back to object IDs.
 
 ## End-to-End Runtime Workflow
 
@@ -797,25 +818,55 @@ The tradeoff is that dynamically spawned cameras after cache initialization requ
 - Annotation components now decide visibility by scene-capture status, not by the material show flag.
 - Scene/lighting captures hide the union of segmentation and infrared annotation components in the combined update path.
 
-## Landscape Gap Validation
+## Landscape Implementation Validation
 
-The landscape issue is not caused by camera position, detail mode, line endings, or segmentation/infrared show flags. The current code path simply never creates annotation geometry for Unreal landscape components.
+The landscape issue was not caused by camera position, detail mode, line endings, or segmentation/infrared show flags. The failing code path never created annotation geometry for Unreal landscape components.
 
 Validation findings:
 
-1. `FObjectAnnotator::IsPaintable()` and the paintable-component collection helpers call `actor->GetComponents<UMeshComponent>()`, so actors that only contain `ULandscapeComponent` are skipped.
+1. The old `FObjectAnnotator::IsPaintable()` and paintable-component collection helpers called `actor->GetComponents<UMeshComponent>()`, so actors that only contained `ULandscapeComponent` were skipped.
 2. In Unreal Engine 5.5 source, `ULandscapeComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`.
-3. `UAnnotationComponent::CreateSceneProxy()` only has static-mesh and skeletal-mesh branches, so even a manually attached annotation component would not render a landscape proxy today.
+3. The old `UAnnotationComponent::CreateSceneProxy()` only had static-mesh and skeletal-mesh branches, so even a manually attached annotation component would not render a landscape proxy.
 4. Segmentation and infrared captures use `PRM_UseShowOnlyList`; anything without a generated annotation component in that list is intentionally invisible.
 5. Segmentation and infrared use the same camera transform copy path, so supported annotation geometry should appear in the correct pixel position.
 
-Recommended lightweight implementation plan:
+Implemented lightweight path:
 
-1. Add a landscape-specific annotation component or proxy that wraps `FLandscapeComponentSceneProxy`-style rendering with a constant annotation material/color.
-2. Extend object discovery for indexed annotation modes to include `ALandscapeProxy::LandscapeComponents`.
-3. Register generated landscape annotation components into the existing segmentation and infrared component lists.
-4. Default to one label/color per landscape actor to keep memory and component count low; only add per-landscape-component labels if a dataset requires them.
-5. Avoid converting landscape to static meshes, mutating the source landscape material, or using a global capture material override because those approaches are heavy and risky in large environments.
+1. `FObjectAnnotator` discovers `ALandscapeProxy::LandscapeComponents` for indexed annotation modes only.
+2. `UAnnotationComponent` now creates a landscape proxy branch and returns landscape bounds for culling.
+3. `PrepareLandscapeComponentForAnnotationProxy()` enables dynamic landscape material instances and fills missing dynamic slots before UE creates the landscape render proxy.
+4. `FLandscapeAnnotationSceneProxy` wraps UE's landscape scene proxy and uses a constant-color special engine material proxy.
+5. The custom `FColoredMaterialRenderProxy` explicitly caches uniform expressions before cached landscape draw commands use it.
+6. Generated landscape annotation components are registered into the existing segmentation and infrared component lists.
+7. The owning landscape proxy name is the shared label key, so all components of one landscape update together by default.
+8. The implementation avoids converting landscape to static meshes, mutating the source landscape material, or using a global capture material override.
+
+Why the dynamic-material preparation is required:
+
+- UE 5.5's `FLandscapeComponentSceneProxy` selects `MaterialInstancesDynamic` when `ALandscapeProxy::bUseDynamicMaterialInstance` is enabled.
+- In standalone `-game`, calling the editor material-instance update path can hit editor-only material instance constant assertions.
+- The implementation therefore creates missing `UMaterialInstanceDynamic` entries directly from existing landscape material interfaces and does not call the editor-only update path.
+
+Why the render-thread render-proxy cache call is required:
+
+- The landscape path can use cached static mesh draw commands.
+- A persistent custom `FColoredMaterialRenderProxy` is not a one-frame collector proxy, so it is not automatically refreshed by `FMeshElementCollector::AddMesh()`.
+- The final implementation updates the proxy's uniform expression cache in `FLandscapeAnnotationSceneProxy::CreateRenderThreadResources()`, where the proxy is alive and the render-thread command list is available.
+- A previous `CacheUniformExpressions_GameThread(false)` attempt fixed `ShaderBaseClasses.cpp:342` but could queue a raw-pointer cache command that outlived the proxy during fast startup/shutdown. That path was rejected after it produced a `Pure virtual function being called` crash in EVN.
+- Without the render-thread cache update, standalone runtime hit `ShaderBaseClasses.cpp:342` with `UniformExpressionCache should be up to date`.
+
+Rejected landscape approaches:
+
+- Converting landscape to static mesh: too heavy for large environments and loses landscape LOD behavior.
+- Replacing source landscape materials: risks leaking annotation state into normal scene captures.
+- Global capture material override: conflicts with AirSim's show-only annotation component model.
+- One object ID per landscape component by default: technically possible, but too noisy for randomization and not usually semantically useful.
+
+Final landscape validation:
+
+- EVN editor target built successfully with the copied AirSim plugin.
+- EVN standalone `-game` runtime ran through the landscape render path with zero `Assertion failed`, `Fatal error`, `Pure virtual`, `UniformExpressionCache`, `MaterialInstanceConstant.cpp`, or `ShaderBaseClasses.cpp` matches after the render-thread cache fix.
+- EVN logs showed landscape annotation registration for both indexed layers: `InstanceSegmentation=256`, `Infrared=256`.
 
 ## Foliage And Brush Validation
 
@@ -826,6 +877,39 @@ The old "foliage is unsupported" documentation is no longer precise for the buil
 - This gives one ID/color per foliage component; it does not give separate IDs per individual tree or grass instance inside that component.
 - It also does not reproduce source-material world-position-offset effects such as wind, because the annotation mirror uses the flat annotation material.
 - Brushes remain unsupported because `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, and there is no brush-specific annotation proxy.
+
+## Copy-To-Another-Project Validation
+
+The final implementation was tested in the EVN Unreal project first, then mirrored back to the CosysAirSim source tree.
+
+Validated copy path:
+
+1. Build the CosysAirSim dependencies with `build.cmd` so `Unreal/Plugins/AirSim/Source/AirLib` and required third-party libraries are present.
+2. Copy `Unreal/Plugins/AirSim` into the target project's `Plugins/AirSim` directory.
+3. Build the target project editor target.
+4. Launch the target project in standalone `-game` and exercise segmentation/infrared captures.
+
+What was actually verified:
+
+- EVN's copied `Plugins/AirSim/Source/Annotation` files match `Unreal/Plugins/AirSim/Source/Annotation` in CosysAirSim.
+- EVN's copied `Plugins/AirSim/Source/SimMode/SimModeBase.cpp` matches `Unreal/Plugins/AirSim/Source/SimMode/SimModeBase.cpp` in CosysAirSim.
+- EVN editor build completed successfully after the landscape proxy fix.
+- EVN standalone runtime no longer hits the UE 5.5 landscape material-instance assert or the render-thread uniform-cache assert.
+
+Requirements for another project:
+
+- The project must use a compatible Unreal Engine 5.5 setup, matching the validated engine path.
+- The copied plugin must include AirSim content assets, especially `Content/HUDAssets/AnnotationMaterial`.
+- The plugin must be copied after `build.cmd` has produced/copy-synced the native dependencies into the plugin source tree.
+- The target project should rebuild the plugin rather than reusing stale `Binaries`/`Intermediate` output from another machine.
+
+Expected behavior after copy:
+
+- Static and skeletal meshes render through `UAnnotationComponent` scene proxies.
+- Instanced static meshes render through generated instanced annotation mirrors.
+- Landscapes render through the landscape annotation scene proxy.
+- `simSetSegmentationObjectID()` updates both `InstanceSegmentation` and `Infrared`.
+- Landscape randomization updates one landscape label group by default instead of repeatedly changing individual terrain components.
 
 ## Risk Areas / Review Questions
 
