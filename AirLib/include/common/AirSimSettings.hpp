@@ -78,9 +78,12 @@ namespace airlib
             std::string texture_path;
             std::string texture_prefix;
             float max_view_distance;
+            std::string render_backend;
+            int proxy_component_budget;
 
-            AnnotatorSetting(int annotator_index_val = 0, int type_val = 0, bool show_by_default_val = true,
-                const std::string& name_val = "", bool set_direct_val = false, std::string texture_path_val = "", std::string texture_prefix_val = "", float max_view_distance_val = -1.0f)
+            AnnotatorSetting(int annotator_index_val = 0, int type_val = 0, bool show_by_default_val = false,
+                const std::string& name_val = "", bool set_direct_val = false, std::string texture_path_val = "", std::string texture_prefix_val = "", float max_view_distance_val = -1.0f,
+                std::string render_backend_val = "Auto", int proxy_component_budget_val = 5000)
                 : annotator_index(annotator_index_val)
                 , type(type_val)
                 , show_by_default(show_by_default_val)
@@ -89,6 +92,8 @@ namespace airlib
                 , texture_path(texture_path_val)
 				, texture_prefix(texture_prefix_val)
                 , max_view_distance(max_view_distance_val)
+                , render_backend(render_backend_val)
+                , proxy_component_budget(proxy_component_budget_val)
             {
             }
         };
@@ -594,7 +599,7 @@ namespace airlib
         float clock_speed = 1.0f;
         bool engine_sound = false;
         bool move_world_origin = false;
-        bool initial_instance_segmentation = true;
+        bool initial_instance_segmentation = false;
         bool log_messages_visible = true;
         bool show_los_debug_lines_ = false;
         HomeGeoPoint origin_geopoint{ GeoPoint(47.641468, -122.140165, 122) }; //The geo-coordinate assigned to Unreal coordinate 0,0,0
@@ -1620,12 +1625,14 @@ namespace airlib
                         AnnotatorSetting annotator_setting;
                         annotator_setting.annotator_index = (int)child_index;
                         annotator_setting.type = json_settings_child.getInt("Type", 0);
-                        annotator_setting.show_by_default = json_settings_child.getBool("Default", true);
+                        annotator_setting.show_by_default = json_settings_child.getBool("Default", false);
                         annotator_setting.name = json_settings_child.getString("Name", "");
                         annotator_setting.set_direct = json_settings_child.getBool("SetDirect", false);
                         annotator_setting.texture_path = json_settings_child.getString("TexturePath", "");
                         annotator_setting.texture_prefix = json_settings_child.getString("TexturePrefix", "");
                         annotator_setting.max_view_distance = json_settings_child.getFloat("ViewDistance", -1.0f);
+                        annotator_setting.render_backend = json_settings_child.getString("Backend", "Auto");
+                        annotator_setting.proxy_component_budget = json_settings_child.getInt("ProxyComponentBudget", 5000);
                         annotator_settings.push_back(annotator_setting);
                     }
                 }
@@ -1659,7 +1666,7 @@ namespace airlib
             speed_unit_factor = settings_json.getFloat("SpeedUnitFactor", 1.0f);
             speed_unit_label = settings_json.getString("SpeedUnitLabel", "m\\s");
             move_world_origin = settings_json.getBool("MoveWorldOrigin", false);
-            initial_instance_segmentation = settings_json.getBool("InitialInstanceSegmentation", true);
+            initial_instance_segmentation = settings_json.getBool("InitialInstanceSegmentation", false);
             log_messages_visible = settings_json.getBool("LogMessagesVisible", true);
             show_los_debug_lines_ = settings_json.getBool("ShowLosDebugLines", false);
 
