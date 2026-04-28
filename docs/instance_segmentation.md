@@ -24,8 +24,8 @@ By default, AirSim does not run the startup segmentation scan. Set the root sett
 }
 ```
 
-When `InitialInstanceSegmentation` is omitted or set to `false`, segmentation/infrared startup labeling and the first forced refresh are skipped. This is useful for projects that do not need segmentation masks.
-Please see the [Image API documentation](image_apis.md#segmentation) on how to manually set or get the color information.
+When `InitialInstanceSegmentation` is omitted or set to `false`, segmentation/infrared startup labeling and the first forced refresh are skipped. This is useful for projects that do not need segmentation masks. In that mode, the segmentation object list starts empty; ID update APIs can only update objects that have already been added to the annotator, for example by `ASimModeBase::AddNewActorToInstanceSegmentation(AActor)`.
+Please see the [Image API documentation](image_apis.md#segmentation) on how to set or get the color information after objects are registered.
 
 For an example of the Instance Segmentation API, please see the script _segmentation_test.py_ (Cosys-Airsim/PythonClient/segmentation/segmentation_test.py).
 

@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
     # Generate list of all colors available for segmentation
     print("Loading segmentation colormap...")
-    colorMap = client.simGetSegmentationColorMap()
+    colorMap = np.asarray(client.simGetSegmentationColorMap())
     print("Loaded segmentation colormap.")
 
     # Get names of all objects in simulation world and store in list together with the associated RGB value
@@ -25,8 +25,13 @@ if __name__ == '__main__':
     currentObjectList = client.simListInstanceSegmentationObjects()
     print("Generating list of all current objects...")
     with open('airsim_segmentation_colormap_list_' +  datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + '.csv', 'w') as f:
-        f.write("ObjectName,R,G,B\n")
-        for index, item in enumerate(currentObjectList):
-            f.write("%s,%s\n" % (item, ','.join([str(x) for x in colorMap[index,:]])))
+        f.write("ObjectName,ObjectID,R,G,B\n")
+        for item in currentObjectList:
+            object_id = client.simGetSegmentationObjectID(item)
+            if 0 <= object_id < len(colorMap):
+                color = colorMap[object_id, :]
+            else:
+                color = [0, 0, 0]
+            f.write("%s,%s,%s\n" % (item, object_id, ','.join([str(int(x)) for x in color])))
     print("Generated list of all current objects with a total of " + str(len(currentObjectList)) + ' objects.')
 

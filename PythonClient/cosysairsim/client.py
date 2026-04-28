@@ -819,7 +819,7 @@ class VehicleClient:
 
         Args:
             mesh_name (str): Name of the mesh.
-            object_id (int): Desired ID for the object.
+            object_id (int): Desired ID for the object. Built-in source-stencil segmentation accepts 0..255.
             is_name_regex (bool, optional): Whether the mesh name is a regex.
 
         Returns:
@@ -833,7 +833,7 @@ class VehicleClient:
 
         Args:
             mesh_names (list[str]): Names of the meshes.
-            object_ids (list[int]): Desired IDs for the objects.
+            object_ids (list[int]): Desired IDs for the objects. Built-in source-stencil segmentation accepts 0..255.
             is_name_regex (bool, optional): Whether each mesh name is a regex.
 
         Returns:
@@ -889,7 +889,7 @@ class VehicleClient:
         Args:
             annotation_name (str): Name of the annotation layer.
             mesh_name (str): Name of the mesh.
-            object_id (int): Desired ID for the object.
+            object_id (int): Desired ID for the object. SourceStencil RGB index layers accept 0..255; proxy RGB index layers can use the larger colormap.
             is_name_regex (bool, optional): Whether the mesh name is a regex.
 
         Returns:

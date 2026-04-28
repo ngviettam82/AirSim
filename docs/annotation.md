@@ -90,7 +90,7 @@ The types are:
 Common settings:
 
 * `Default` applies to all types and controls what happens when no tag is set for an actor/component. If omitted, it defaults to `false`. When set to `false`, the mesh is not rendered in the custom annotation layer. When set to `true`, the mesh is rendered with the default value of the layer.
-* `Backend` chooses the render backend. Supported values are `Auto`, `SourceStencil`, and `Proxy`. If omitted, it defaults to `Auto`. `SourceStencil` is supported for RGB index layers (`Type: 0`, `SetDirect: false`) and for built-in segmentation/infrared. Direct RGB, greyscale, and texture layers fall back to `Proxy`.
+* `Backend` chooses the render backend. Supported values are `Auto`, `SourceStencil`, and `Proxy`. If omitted, it defaults to `Auto`. For custom annotation layers, `Auto` uses the proxy backend. Set `Backend` to `SourceStencil` explicitly when you want a lightweight RGB index layer (`Type: 0`, `SetDirect: false`). Built-in segmentation/infrared always use source stencil. Direct RGB, greyscale, and texture layers use `Proxy`.
 * `ProxyComponentBudget` limits how many proxy annotation components one layer may create. If omitted, it defaults to `5000`. Use `0` to prevent proxy creation for that layer, or `-1` for no budget limit.
 
 The `ViewDistance` setting applies to all types and allows you to set the maximum distance in meters at which the annotation layer is rendered.

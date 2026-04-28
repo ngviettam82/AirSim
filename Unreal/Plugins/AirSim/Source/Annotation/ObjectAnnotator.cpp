@@ -890,6 +890,10 @@ bool FObjectAnnotator::AnnotateNewActorRGB(AActor* actor) {
 				}
 				else {
 					color_index = FCString::Atoi(*splitTag[1]);
+					if (UsesIndexedAnnotationColors() && (color_index < 0 || color_index > 255)) {
+						UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Ignored ID %d for %s because SourceStencil labels must be in 0..255."), *name_, color_index, *it.Key());
+						continue;
+					}
 					new_color = ColorGenerator_.GetColorFromColorMap(color_index);
 				}
 				FString color_string = FString::FromInt(new_color.R) + "," + FString::FromInt(new_color.G) + "," + FString::FromInt(new_color.B);
@@ -939,7 +943,8 @@ bool FObjectAnnotator::AnnotateNewActorRGB(AActor* actor) {
 				name_to_component_map_.Emplace(it.Key(), it.Value());
 				component_to_name_map_.Emplace(it.Value(), it.Key());
 				FColor new_color = FColor(0, 0, 0);
-				name_to_color_index_map_.Emplace(it.Key(), 2744000 - 1);
+				const uint32 default_color_index = UsesIndexedAnnotationColors() ? 0 : 2744000 - 1;
+				name_to_color_index_map_.Emplace(it.Key(), default_color_index);
 				FString color_string = FString::FromInt(new_color.R) + "," + FString::FromInt(new_color.G) + "," + FString::FromInt(new_color.B);
 				FString color_string_gammacorrected = FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(new_color.R)) + "," + FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(new_color.G)) + "," + FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(new_color.B));
 				color_to_name_map_.Emplace(color_string, it.Key());
@@ -1369,6 +1374,10 @@ void FObjectAnnotator::InitializeRGB(ULevel* InLevel)
 					}
 					else {
 						color_index = FCString::Atoi(*splitTag[1]);
+						if (UsesIndexedAnnotationColors() && (color_index < 0 || color_index > 255)) {
+							UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Ignored ID %d for %s because SourceStencil labels must be in 0..255."), *name_, color_index, *it.Key());
+							continue;
+						}
 						new_color = ColorGenerator_.GetColorFromColorMap(color_index);
 					}
 					name_to_color_index_map_.Emplace(it.Key(), color_index);
@@ -1390,7 +1399,8 @@ void FObjectAnnotator::InitializeRGB(ULevel* InLevel)
 					name_to_component_map_.Emplace(it.Key(), it.Value());
 					component_to_name_map_.Emplace(it.Value(), it.Key());
 					FColor new_color = FColor(0, 0, 0);
-					name_to_color_index_map_.Emplace(it.Key(), 2744000 - 1);
+					const uint32 default_color_index = UsesIndexedAnnotationColors() ? 0 : 2744000 - 1;
+					name_to_color_index_map_.Emplace(it.Key(), default_color_index);
 					FString color_string = FString::FromInt(new_color.R) + "," + FString::FromInt(new_color.G) + "," + FString::FromInt(new_color.B);
 					FString color_string_gammacorrected = FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(new_color.R)) + "," + FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(new_color.G)) + "," + FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(new_color.B));
 					color_to_name_map_.Emplace(color_string, it.Key());
@@ -2183,7 +2193,7 @@ void FObjectAnnotator::RemoveTrackedComponent(const FString& component_name)
 
 void FObjectAnnotator::SetViewForAnnotationRender(FEngineShowFlags& show_flags)
 {
-	// Annotation components and lightweight instanced mirrors both rely on the annotation material.
+	// Proxy annotation components rely on the annotation material.
 	show_flags.SetMaterials(true);
 	show_flags.SetLighting(false);
 	show_flags.SetBSPTriangles(true);
