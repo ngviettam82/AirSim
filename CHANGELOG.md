@@ -1,4 +1,7 @@
 ### Development (version 3.4)
+* Updated built-in instance segmentation and infrared to use source CustomStencil labels instead of generated annotation mirror geometry. This avoids duplicating dense ISM/HISM instance buffers in large Unreal environments.
+* Changed `InitialInstanceSegmentation` default to false; set it explicitly to true when startup segmentation labels are needed.
+* Added annotation `Backend` and `ProxyComponentBudget` settings, and changed annotation `Default` to false by default so optional custom annotation layers do not proxy the whole level unless requested.
 * Fixed duplicate indexes for annotation system causing meshes to not show up in annotation masks.
 
 ### April 2025 (version 3.3)
@@ -37,7 +40,7 @@
 
 ### September/October 2024 (version 3.1)
 * Updated Docker support to use new official Unreal 5 containers for runtime binaries and source development with updated [tutorial](docs/docker_ubuntu.md) and scripts.
-* Added main setting parameter `InitialInstanceSegmentation` to toggle initial [Instance Segmentation](docs/instance_segmentation.md). It is enabled by default.
+* Added main setting parameter `InitialInstanceSegmentation` to toggle initial [Instance Segmentation](docs/instance_segmentation.md). It was originally enabled by default; the current development default is false.
 * Added packaged binary of Blocks environment to releases for Windows and Linux for testing the simulation without needing the Unreal Editor.
 * Updated Matlab API Client:
     * Removed startup arguments for API control and vehicle name when creating client.
