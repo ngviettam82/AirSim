@@ -243,7 +243,9 @@ When you specify `ImageType = DepthVis` in `ImageRequest`, you get an image that
 You normally want to retrieve disparity image as float (i.e. set `pixels_as_float = true` and specify `ImageType = DisparityNormalized` in `ImageRequest`) in which case each pixel is `(Xl - Xr)/Xmax`, which is thereby normalized to values between 0 to 1.
 
 ### Segmentation
-When you specify `ImageType = Segmentation` in `ImageRequest`, you get an image that gives you ground truth instance segmentation of supported scene geometry. At startup, AirSim assigns an object ID/color index to each supported object label found by the instance segmentation annotator. You can disable this by setting the main parameter `InitialInstanceSegmentation` to false in the settings.json file. The RGB values for each color index ID can be retrieved from the API.
+When you specify `ImageType = Segmentation` in `ImageRequest`, you get an image that gives you ground truth segmentation of supported scene geometry. The current built-in segmentation path labels original scene primitives through Unreal CustomDepth/CustomStencil and maps the 8-bit stencil label to the AirSim segmentation color map in the capture post-process.
+
+AirSim does not run the startup segmentation scan unless the root setting `InitialInstanceSegmentation` is set to `true` in `settings.json`. When enabled, AirSim assigns an object ID/color index to each supported object label found by the instance segmentation annotator. The RGB values for each color index ID can be retrieved from the API.
 
 You can assign a specific value to a specific mesh using APIs. For example, below Python code sets the object ID for the mesh called "Ground" to 20 in Blocks environment and hence changes its color in Segmentation view to the 20th color of the instance segmentation colormap:
 Note that this will not do a check if this color is already assigned to a different object!
@@ -251,7 +253,7 @@ Note that this will not do a check if this color is already assigned to a differ
 success = client.simSetSegmentationObjectID("Ground", 20)
 ```
 
-The return value is a boolean type that lets you know if the mesh was found.
+The return value is a boolean type that lets you know if the mesh was found and updated. Built-in source-stencil segmentation accepts IDs `0..255`; values outside that range are rejected.
 
 Notice that typical Unreal environments, like Blocks, usually have many other meshes that comprises of same object, for example, "Ground_2", "Ground_3" and so on. As it is tedious to set object ID for all of these meshes, AirSim also supports regular expressions. For example, the code below sets all meshes which have names starting with "ground" (ignoring case) to 21 with just one line:
 
@@ -305,7 +307,7 @@ Once you decide on the meshes you are interested, note down their names and use 
 The segmentation color for each object ID is fixed by the segmentation color map returned from `simGetSegmentationColorMap()`. You can change which ID is assigned to an object with `simSetSegmentationObjectID()` or, for many objects, `simSetSegmentationObjectIDs()`, but the built-in instance segmentation API does not directly assign arbitrary RGB colors to object IDs.
 
 #### Startup Object IDs
-At the start, AirSim assigns color indexes to supported static mesh, skeletal mesh, instanced static mesh, and Landscape components. It then makes an understandable naming depending on the hierarchy the object belongs to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_, _door_window_door_38_, or _Landscape_Landscape_0_0_0_0_). Landscape component IDs are listed individually, while the owning landscape actor/proxy name can be used as a shared ID update alias. Brush components are not included by the current built-in instance segmentation path.
+When `InitialInstanceSegmentation` is `true`, AirSim assigns color indexes to supported static mesh, skeletal mesh, instanced static mesh, and Landscape components at startup. It then makes an understandable naming depending on the hierarchy the object belongs to in the Unreal World (example _box_2_fullpalletspawner_5_pallet_4_, _door_window_door_38_, or _Landscape_Landscape_0_0_0_0_). Landscape component IDs are listed individually, while the owning landscape actor/proxy name can be used as a shared ID update alias. Brush components are not included by the current built-in instance segmentation path.
 
 #### Getting Object ID for Mesh
 The `simGetSegmentationObjectID` API allows you get object ID for given mesh name.
@@ -314,7 +316,7 @@ The `simGetSegmentationObjectID` API allows you get object ID for given mesh nam
 Please see the [instance segmentation documentation](instance_segmentation.md) for some more information on the segmentation system created by Cosys-Lab.
 
 ### Infrared
-Currently, this is an annotation/object-ID view that maps object ID to grayscale value `object_id % 256`. So any supported object with object ID 42 shows up with color (42, 42, 42). Please see [segmentation section](#segmentation) for more details on how to set object IDs. Keep noise and distortion disabled when you need exact label values; enabling those post-process settings can make the output more visual but less suitable as ground truth.
+Currently, this is an annotation/object-ID view that maps a valid object ID directly to an 8-bit grayscale value. So any supported object with object ID 42 shows up with color (42, 42, 42). It uses the same source-stencil labels as segmentation, so IDs must be in `0..255`. Please see [segmentation section](#segmentation) for more details on how to set object IDs. Keep noise and distortion disabled when you need exact label values; enabling those post-process settings can make the output more visual but less suitable as ground truth.
 
 ### OpticalFlow and OpticalFlowVis
 These image types return information about motion perceived by the point of view of the camera. OpticalFlow returns a 2-channel image where the channels correspond to vx and vy respectively. OpticalFlowVis is similar to OpticalFlow but converts flow data to RGB for a more 'visual' output.

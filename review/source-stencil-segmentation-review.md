@@ -4,7 +4,7 @@
 
 This document reviews the current EVN AirSim segmentation, infrared, and annotation changes after removing the generated annotation mirror path. It replaces `review/errant-biomes-segmentation-proposal.md`, which was a planning document and is now deleted.
 
-Last verified: 2026-04-28 22:36 +07.
+Last verified: 2026-04-28 22:42 +07.
 
 Verified target:
 
@@ -105,6 +105,15 @@ Annotation is kept for future use, but it is now more controlled:
 - `"Backend": "SourceStencil"` is supported for RGB index annotation layers.
 - SourceStencil remains mandatory for built-in `InstanceSegmentation` and `Infrared`.
 - Texture annotation and RGB direct annotation still use the proxy path because stencil cannot represent arbitrary textures or unlimited direct RGB values.
+
+Settings contract:
+
+| Setting | Scope | Default | Meaning |
+| --- | --- | --- | --- |
+| `InitialInstanceSegmentation` | root | `false` | If `true`, AirSim scans supported source components at startup and assigns source-stencil labels for built-in segmentation/infrared. If `false`, startup scan and startup segmentation refresh are skipped. |
+| `Annotation[].Default` | custom annotation layer | `false` | If `true`, untagged objects are included in that custom annotation layer. If `false`, only tagged objects are included. |
+| `Annotation[].Backend` | custom annotation layer | `Auto` | `SourceStencil` is supported for RGB index layers. `Proxy` is required for direct RGB, greyscale, and texture annotation. Built-in segmentation/infrared always use source stencil. |
+| `Annotation[].ProxyComponentBudget` | custom annotation layer | `5000` | Maximum proxy components for a layer. `0` blocks proxy creation; `-1` removes the budget. Source-stencil layers do not create proxy components. |
 
 Example lightweight annotation layer:
 
@@ -226,6 +235,13 @@ Code checks:
 - `git diff --check` passed.
 - Active EVN plugin source files hash-match the repository plugin for touched files.
 - Stale generated mirror symbol search was clean.
+- User-facing docs updated for the new settings contract and backend behavior:
+  - `docs/settings.md`
+  - `docs/annotation.md`
+  - `docs/instance_segmentation.md`
+  - `docs/InfraredCamera.md`
+  - `docs/image_apis.md`
+  - `CHANGELOG.md`
 
 Build:
 

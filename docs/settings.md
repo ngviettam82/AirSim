@@ -55,7 +55,7 @@ Note this does not include most sensor types.
   "ApiServerPort": 41451,
   "RecordUIVisible": true,
   "MoveWorldOrigin": false,
-  "InitialInstanceSegmentation": true,
+  "InitialInstanceSegmentation": false,
   "LogMessagesVisible": true,
   "ShowLosDebugLines": false,
   "ViewMode": "",
@@ -235,7 +235,32 @@ The ViewMode determines which camera to use as default and how camera will follo
 * `NoDisplay`: This will freeze rendering for main screen however rendering for subwindows, recording and APIs remain active. This mode is useful to save resources in "headless" mode where you are only interested in getting images and don't care about what gets rendered on main screen. This may also improve FPS for recording images.
 
 ## Annotation
-The annotation system allows you to choose different groundtruth labeling techniques to create more data from your simulation. Find more info [here](annotation.md) for defining the settings.
+The annotation system allows you to choose different groundtruth labeling techniques to create more data from your simulation. Custom annotation layers are only created when they are listed in the root-level `Annotation` array. Find more info [here](annotation.md) for defining the settings.
+
+Current annotation settings:
+
+```json
+{
+  "Annotation": [
+    {
+      "Name": "species_mask",
+      "Type": 0,
+      "SetDirect": false,
+      "Default": false,
+      "Backend": "SourceStencil",
+      "ProxyComponentBudget": 0,
+      "ViewDistance": -1
+    }
+  ]
+}
+```
+
+Important defaults:
+
+* `InitialInstanceSegmentation` defaults to `false`. Set it to `true` when you want AirSim to scan and label supported objects at startup for `ImageType::Segmentation` and `ImageType::Infrared`.
+* Annotation `Default` defaults to `false`. A custom annotation layer will not annotate the whole level unless you explicitly set `"Default": true`.
+* Annotation `Backend` defaults to `Auto`. `SourceStencil` is supported for RGB index layers and is mandatory for built-in segmentation/infrared. Direct RGB, greyscale, and texture annotation use the proxy backend.
+* Annotation `ProxyComponentBudget` defaults to `5000` per layer. Use `0` to prevent proxy creation for a layer, or `-1` for no limit.
 
 ## TimeOfDay
 This setting controls the position of Sun in the environment. By default `Enabled` is false which means Sun's position is left at whatever was the default in the environment and it doesn't change over the time. If `Enabled` is true then Sun position is computed using longitude, latitude and altitude specified in `OriginGeopoint` section for the date specified in `StartDateTime` in the string format as [%Y-%m-%d %H:%M:%S](https://en.cppreference.com/w/cpp/io/manip/get_time), for example, `2018-02-12 15:20:00`. If this string is empty then current date and time is used. If `StartDateTimeDst` is true then we adjust for day light savings time. The Sun's position is then continuously updated at the interval specified in `UpdateIntervalSecs`. In some cases, it might be desirable to have celestial clock run faster or slower than simulation clock. This can be specified using `CelestialClockSpeed`, for example, value 100 means for every 1 second of simulation clock, Sun's position is advanced by 100 seconds so Sun will move in sky much faster.
