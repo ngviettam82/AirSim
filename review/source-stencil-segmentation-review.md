@@ -4,7 +4,7 @@
 
 This document reviews the current EVN AirSim segmentation, infrared, and annotation changes after removing the generated annotation mirror path. It replaces `review/errant-biomes-segmentation-proposal.md`, which was a planning document and is now deleted.
 
-Last verified: 2026-04-28 22:42 +07.
+Last verified: 2026-04-28 22:53 +07.
 
 Verified target:
 
@@ -12,7 +12,7 @@ Verified target:
 - Active EVN plugin: `C:\Users\ADMIN\Documents\Unreal Projects\EVN\Plugins\AirSim`
 - Build: `EVNEditor Win64 Development`
 - Output DLL: `C:\Users\ADMIN\Documents\Unreal Projects\EVN\Plugins\AirSim\Binaries\Win64\UnrealEditor-AirSim.dll`
-- DLL timestamp: `2026-04-28 22:36:51 +07`
+- DLL timestamp: `2026-04-28 22:53:06 +07`
 
 ## High-Level Summary
 
@@ -64,6 +64,14 @@ Review docs:
 - `review/source-stencil-segmentation-review.md`
 - `review/segmentation-fix.md`
 
+Python examples/docs:
+
+- `PythonClient/computer_vision/segmentation.py`
+- `PythonClient/cosysairsim/client.py`
+- `PythonClient/segmentation/segmentation_colormap_gamma_test.py`
+- `PythonClient/segmentation/segmentation_generate_list.py`
+- `PythonClient/segmentation/segmentation_test.py`
+
 Deleted:
 
 - `review/errant-biomes-segmentation-proposal.md`
@@ -112,7 +120,7 @@ Settings contract:
 | --- | --- | --- | --- |
 | `InitialInstanceSegmentation` | root | `false` | If `true`, AirSim scans supported source components at startup and assigns source-stencil labels for built-in segmentation/infrared. If `false`, startup scan and startup segmentation refresh are skipped. |
 | `Annotation[].Default` | custom annotation layer | `false` | If `true`, untagged objects are included in that custom annotation layer. If `false`, only tagged objects are included. |
-| `Annotation[].Backend` | custom annotation layer | `Auto` | `SourceStencil` is supported for RGB index layers. `Proxy` is required for direct RGB, greyscale, and texture annotation. Built-in segmentation/infrared always use source stencil. |
+| `Annotation[].Backend` | custom annotation layer | `Auto` | For custom annotation layers, `Auto` uses the proxy backend. Set `SourceStencil` explicitly for lightweight RGB index layers. `Proxy` is required for direct RGB, greyscale, and texture annotation. Built-in segmentation/infrared always use source stencil. |
 | `Annotation[].ProxyComponentBudget` | custom annotation layer | `5000` | Maximum proxy components for a layer. `0` blocks proxy creation; `-1` removes the budget. Source-stencil layers do not create proxy components. |
 
 Example lightweight annotation layer:
@@ -180,6 +188,8 @@ Source-stencil annotators skip the global `UAnnotationComponent` cleanup scan be
 
 Proxy annotation cleanup now destroys tracked annotation components instead of scanning every `UAnnotationComponent` in the process.
 
+Hide-only refresh still hides proxy annotation components from Scene and Lighting camera captures. This preserves the old proxy-annotation behavior without hiding source scene primitives for source-stencil segmentation/infrared captures.
+
 ### Added Proxy Budgets
 
 Proxy annotation creation now checks a per-layer budget before creating `UAnnotationComponent` proxies. When the budget is reached, AirSim logs one warning and skips additional proxy components.
@@ -225,14 +235,17 @@ Important intentional changes:
 - Annotation `"Default"` now defaults to `false`. Existing settings that rely on implicit whole-scene annotation must set `"Default": true`.
 - SourceStencil labels are limited to `0..255`.
 - `simSetSegmentationObjectID()` rejects IDs outside `0..255`.
+- SourceStencil RGB index tags outside `0..255` are rejected during annotation initialization and dynamic actor annotation.
 - Optional RGB index annotation with `Backend=SourceStencil` also uses the 8-bit stencil label domain.
 - Texture annotation still requires proxy rendering.
+- Python segmentation examples now read each object's actual ID with `simGetSegmentationObjectID()` instead of assuming list index equals object ID.
 
 ## Validation
 
 Code checks:
 
 - `git diff --check` passed.
+- Touched Python examples passed `python -m py_compile`.
 - Active EVN plugin source files hash-match the repository plugin for touched files.
 - Stale generated mirror symbol search was clean.
 - User-facing docs updated for the new settings contract and backend behavior:
@@ -247,7 +260,7 @@ Build:
 
 - `EVNEditor Win64 Development` completed successfully.
 - Modified files compiled, including `ObjectAnnotator.cpp`, `PIPCamera.cpp`, and `SimModeBase.cpp`.
-- `UnrealEditor-AirSim.dll` linked at `2026-04-28 22:36:51 +07`.
+- `UnrealEditor-AirSim.dll` linked at `2026-04-28 22:53:06 +07`.
 
 Remaining warnings are pre-existing:
 

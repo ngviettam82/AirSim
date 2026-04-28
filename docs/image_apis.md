@@ -245,7 +245,7 @@ You normally want to retrieve disparity image as float (i.e. set `pixels_as_floa
 ### Segmentation
 When you specify `ImageType = Segmentation` in `ImageRequest`, you get an image that gives you ground truth segmentation of supported scene geometry. The current built-in segmentation path labels original scene primitives through Unreal CustomDepth/CustomStencil and maps the 8-bit stencil label to the AirSim segmentation color map in the capture post-process.
 
-AirSim does not run the startup segmentation scan unless the root setting `InitialInstanceSegmentation` is set to `true` in `settings.json`. When enabled, AirSim assigns an object ID/color index to each supported object label found by the instance segmentation annotator. The RGB values for each color index ID can be retrieved from the API.
+AirSim does not run the startup segmentation scan unless the root setting `InitialInstanceSegmentation` is set to `true` in `settings.json`. When enabled, AirSim assigns an object ID/color index to each supported object label found by the instance segmentation annotator. When disabled, the segmentation object list starts empty and ID update APIs can only update objects that have already been added to the annotator. The RGB values for each color index ID can be retrieved from the API.
 
 You can assign a specific value to a specific mesh using APIs. For example, below Python code sets the object ID for the mesh called "Ground" to 20 in Blocks environment and hence changes its color in Segmentation view to the 20th color of the instance segmentation colormap:
 Note that this will not do a check if this color is already assigned to a different object!

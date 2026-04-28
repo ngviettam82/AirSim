@@ -4,7 +4,7 @@
 
 This document is historical. It describes an earlier generated annotation mirror implementation for segmentation and infrared. That design was later removed for EVN because generated ISM/HISM mirrors duplicated dense Errant Biomes instance data and could overflow Unreal GPU Scene.
 
-The current production review is `review/source-stencil-segmentation-review.md`. Treat that document as authoritative for the active EVN implementation.
+The current production review is `review/source-stencil-segmentation-review.md`. Treat that document as authoritative for the active EVN implementation. The text below is preserved as historical analysis of the superseded mirror-based implementation, so references to "current" or "final" below refer to that older review state, not the active code.
 
 ## Review Scope
 

@@ -1,5 +1,11 @@
-# In settings.json first activate computer vision mode: 
+# In settings.json first activate computer vision mode and startup segmentation:
 # https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/docs/image_apis.md#computer-vision-mode
+#
+# {
+#   "SettingsVersion": 2.0,
+#   "SimMode": "ComputerVision",
+#   "InitialInstanceSegmentation": true
+# }
 
 import cosysairsim as airsim
 import cv2
@@ -10,7 +16,7 @@ client = airsim.VehicleClient()
 client.confirmConnection()
 
 airsim.wait_key('Press any key to set all object IDs to 0')
-found = client.simSetSegmentationObjectID("[\w]*", 0, True);
+found = client.simSetSegmentationObjectID(r"[\w]*", 0, True);
 print("Done: %r" % (found))
 
 #for block environment
@@ -21,7 +27,7 @@ print("Done: %r" % (found))
 
 #regex are case insensitive
 airsim.wait_key('Press any key to change all ground object ID')
-found = client.simSetSegmentationObjectID("ground[\w]*", 22, True);
+found = client.simSetSegmentationObjectID(r"ground[\w]*", 22, True);
 print("Done: %r" % (found))
 
 ##for neighborhood environment
@@ -30,9 +36,9 @@ print("Done: %r" % (found))
 found = client.simSetSegmentationObjectID("SkySphere", 42, True);
 print("Done: %r" % (found))
 
-#below doesn't work yet. You must set CustomDepthStencilValue in Unreal Editor for now
+# Landscape and other supported components can be changed after the startup segmentation scan.
 airsim.wait_key('Press any key to set Landscape object ID to 128')
-found = client.simSetSegmentationObjectID("[\w]*", 128, True);
+found = client.simSetSegmentationObjectID(r"[\w]*", 128, True);
 print("Done: %r" % (found))
 
 #get segmentation image in various formats
@@ -60,4 +66,4 @@ for idx, response in enumerate(responses):
         #find unique colors
         print(np.unique(img_rgb[:,:,0], return_counts=True)) #red
         print(np.unique(img_rgb[:,:,1], return_counts=True)) #green
-        print(np.unique(img_rgb[:,:,2], return_counts=True)) #blue  
+        print(np.unique(img_rgb[:,:,2], return_counts=True)) #blue

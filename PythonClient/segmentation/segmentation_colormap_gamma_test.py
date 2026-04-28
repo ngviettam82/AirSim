@@ -17,6 +17,11 @@ uniqueColorIndexes = np.zeros((len(uniqueColors), 1), dtype=np.int32)
 for i in range(0, len(uniqueColors)):
     FoundIndex = np.where((colormap == np.array([uniqueColors[i], uniqueColors[i], uniqueColors[i]])).all(axis=1))[0]
     uniqueColorIndexes[i] = int(FoundIndex[0])
+uniqueColorIndexes = [
+    int(index[0])
+    for index in uniqueColorIndexes
+    if 0 <= int(index[0]) <= 255
+]
 
 # Loop those colors
 wrongColors = {}

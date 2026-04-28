@@ -667,9 +667,12 @@ void APIPCamera::updateAnnotationCapture(USceneCaptureComponent2D* annotation_ca
 }
 
 void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
-    if (!only_hide) {
-        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
+    if (only_hide) {
+        updateAnnotationCapture(nullptr, ComponentList, true);
+        return;
     }
+
+    configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
 }
 
 void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& SegmentationComponentList,

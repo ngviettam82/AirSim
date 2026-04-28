@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
     # Generate list of all colors available for segmentation
     print("Getting segmentation colormap...")
-    colorMap = client.simGetSegmentationColorMap()
+    colorMap = np.asarray(client.simGetSegmentationColorMap())
     print("Getting segmentation colormap\n")
 
     # Get names of all objects in simulation world in the instance segmentation format
@@ -27,9 +27,14 @@ if __name__ == '__main__':
     currentObjectList = client.simListInstanceSegmentationObjects()
     print("Generating list of all current objects...")
     with open('airsim_segmentation_colormap_list_' +  datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + '.csv', 'w') as f:
-        f.write("ObjectName,R,G,B\n")
-        for index, item in enumerate(currentObjectList):
-            f.write("%s,%s\n" % (item, ','.join([str(x) for x in colorMap[index,:]])))
+        f.write("ObjectName,ObjectID,R,G,B\n")
+        for item in currentObjectList:
+            object_id = client.simGetSegmentationObjectID(item)
+            if 0 <= object_id < len(colorMap):
+                color = colorMap[object_id, :]
+            else:
+                color = [0, 0, 0]
+            f.write("%s,%s,%s\n" % (item, object_id, ','.join([str(int(x)) for x in color])))
     print("Generated list of all current objects with their RGB value with a total of " + str(len(currentObjectList)) + ' objects\n')
 
     # Get names of all objects in simulation world in the instance segmentation format
@@ -64,7 +69,7 @@ if __name__ == '__main__':
 
     # Set the colors for all AI humans to a chosen color with color index 15
     className = 'ground'
-    classColorIndex = 1000000
+    classColorIndex = 100
     # a) this version we set it based on the gathered objects in the list
     print("Setting all objects in world matching class-name '"
           + className + "' a certain color, based on object list...")
