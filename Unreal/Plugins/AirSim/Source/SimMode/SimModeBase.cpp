@@ -212,15 +212,16 @@ void ASimModeBase::InitializeAnnotation() {
 	for (auto& annotator_setting : getSettings().annotator_settings) {
         FString name = FString(annotator_setting.name.c_str());
         FObjectAnnotator::AnnotatorType type = FObjectAnnotator::AnnotatorType(annotator_setting.type);
-		bool set_direct = annotator_setting.set_direct;
+        bool set_direct = annotator_setting.set_direct;
         FString texture_path = FString(annotator_setting.texture_path.c_str());
         FString texture_prefix = FString(annotator_setting.texture_prefix.c_str());
         float max_view_distance = annotator_setting.max_view_distance;
-        annotators_.Emplace(name, FObjectAnnotator(name, type, annotator_setting.show_by_default, set_direct, texture_path, texture_prefix, max_view_distance));
-		annotators_[name].Initialize(this->GetLevel());
-        AddAnnotatorCamera(name, type, max_view_distance);
+        FString render_backend = FString(annotator_setting.render_backend.c_str());
+        int32 proxy_component_budget = annotator_setting.proxy_component_budget;
+        annotators_.Emplace(name, FObjectAnnotator(name, type, annotator_setting.show_by_default, set_direct, texture_path, texture_prefix, max_view_distance, render_backend, proxy_component_budget));
+        annotators_[name].Initialize(this->GetLevel());
+        AddAnnotatorCamera(name, type, max_view_distance, annotators_[name].UsesSourceStencilBackend());
         ForceUpdateAnnotation(name);
-        updateAnnotation(name);
 	}
 }
 
@@ -238,8 +239,8 @@ void ASimModeBase::InitializeInstanceSegmentation()
     if (getSettings().initial_instance_segmentation) {
         instance_segmentation_annotator_.Initialize(this->GetLevel());
         infrared_annotator_.Initialize(this->GetLevel());
+        ForceUpdateInstanceSegmentation();
     }
-    ForceUpdateInstanceSegmentation();
 }
 
 bool ASimModeBase::AddRGBDirectAnnotationTagToActor(FString annotation_name, AActor* actor, FColor color, bool update_annotation) {
@@ -819,6 +820,11 @@ std::vector<msr::airlib::Pose> ASimModeBase::GetAllInstanceSegmentationMeshPoses
 }
 
 bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, int object_id, bool is_name_regex, bool update_annotation) {
+    if (object_id < 0 || object_id > 255) {
+        UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [InstanceSegmentation]: Ignored ID %d for %s because SourceStencil labels must be in 0..255."), object_id, *FString(mesh_name.c_str()));
+        return false;
+    }
+
 	if (is_name_regex) {
 		std::regex name_regex;
 		name_regex.assign(mesh_name, std::regex_constants::icase);
@@ -883,6 +889,11 @@ std::vector<int> ASimModeBase::SetMeshInstanceSegmentationIDs(const std::vector<
 			primitive_component_map = instance_segmentation_annotator_.GetNameToPrimitiveComponentMap();
 		}
 		for (int32 index = 0; index < keys.Num(); ++index) {
+            if (ids[index] < 0 || ids[index] > 255) {
+                UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [InstanceSegmentation]: Ignored ID %d for %s because SourceStencil labels must be in 0..255."), ids[index], *keys[index]);
+                continue;
+            }
+
 			bool success = false;
 			if (is_name_regex) {
 				std::regex name_regex;
@@ -1253,7 +1264,6 @@ std::string ASimModeBase::GetMeshRGBAnnotationColor(const std::string& annotatio
 }
 
 bool ASimModeBase::AddNewActorToInstanceSegmentation(AActor* Actor, bool update_annotation){
-   
 	bool success = instance_segmentation_annotator_.AnnotateNewActor(Actor);
     success = infrared_annotator_.AnnotateNewActor(Actor) || success;
     if(success && update_annotation)requestInstanceSegmentationRefresh();
@@ -1409,10 +1419,12 @@ void ASimModeBase::updateAnnotation(FString annotation_name) {
         UAirBlueprintLib::RunCommandOnGameThread([this, &cameras_found]() {
             UGameplayStatics::GetAllActorsOfClass(this, APIPCamera::StaticClass(), cameras_found);
             }, true);
-        UAirBlueprintLib::FindAllActor<APIPCamera>(this, cameras_found);
-        if (cameras_found.Num() >= 0) {
-            for (auto camera_actor : cameras_found) {
-                APIPCamera* cur_camera = static_cast<APIPCamera*>(camera_actor);
+        if (cameras_found.Num() > 0) {
+            for (AActor* camera_actor : cameras_found) {
+                APIPCamera* cur_camera = Cast<APIPCamera>(camera_actor);
+                if (cur_camera == nullptr) {
+                    continue;
+                }
                 cur_camera->updateAnnotation(current_annotation_components, annotation_name);
             }
         }
@@ -1420,10 +1432,12 @@ void ASimModeBase::updateAnnotation(FString annotation_name) {
         UAirBlueprintLib::RunCommandOnGameThread([this, &lidar_cameras_found]() {
             UGameplayStatics::GetAllActorsOfClass(this, ALidarCamera::StaticClass(), lidar_cameras_found);
             }, true);
-        UAirBlueprintLib::FindAllActor<ALidarCamera>(this, lidar_cameras_found);
-        if (cameras_found.Num() >= 0) {
-            for (auto lidar_camera_actor : lidar_cameras_found) {
-                ALidarCamera* cur_lidar_camera = static_cast<ALidarCamera*>(lidar_camera_actor);
+        if (lidar_cameras_found.Num() > 0) {
+            for (AActor* lidar_camera_actor : lidar_cameras_found) {
+                ALidarCamera* cur_lidar_camera = Cast<ALidarCamera>(lidar_camera_actor);
+                if (cur_lidar_camera == nullptr) {
+                    continue;
+                }
                 if (!cur_lidar_camera->instance_segmentation_ && cur_lidar_camera->generate_groundtruth_ && cur_lidar_camera->annotation_name_ == annotation_name)
                     cur_lidar_camera->updateAnnotation(current_annotation_components);
             }
@@ -1441,13 +1455,16 @@ void ASimModeBase::updateAnnotation(FString annotation_name) {
     }
 }
 
-void ASimModeBase::AddAnnotatorCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance) {
+void ASimModeBase::AddAnnotatorCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance, bool use_source_stencil_backend) {
     TArray<AActor*> cameras_found;
     UAirBlueprintLib::FindAllActor<APIPCamera>(this, cameras_found);
-    if (cameras_found.Num() >= 0) {
-        for (auto camera_actor : cameras_found) {
-            APIPCamera* cur_camera = static_cast<APIPCamera*>(camera_actor);
-            cur_camera->addAnnotationCamera(name, type, max_view_distance);
+    if (cameras_found.Num() > 0) {
+        for (AActor* camera_actor : cameras_found) {
+            APIPCamera* cur_camera = Cast<APIPCamera>(camera_actor);
+            if (cur_camera == nullptr) {
+                continue;
+            }
+            cur_camera->addAnnotationCamera(name, type, max_view_distance, use_source_stencil_backend);
         }
     }
 }
@@ -1496,6 +1513,7 @@ void ASimModeBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
     vehicle_sim_apis_.clear();
 
     instance_segmentation_annotator_.EndPlay();
+    infrared_annotator_.EndPlay();
     for(auto& annotator : annotators_){
 		annotator.Value.EndPlay();
 	}

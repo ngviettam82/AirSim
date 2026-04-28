@@ -1,5 +1,11 @@
 # Segmentation Fix Deep Dive
 
+## Superseded Implementation Note
+
+This document is historical. It describes an earlier generated annotation mirror implementation for segmentation and infrared. That design was later removed for EVN because generated ISM/HISM mirrors duplicated dense Errant Biomes instance data and could overflow Unreal GPU Scene.
+
+The current production review is `review/source-stencil-segmentation-review.md`. Treat that document as authoritative for the active EVN implementation.
+
 ## Review Scope
 
 This document explains the current staged segmentation/infrared implementation on top of commit `dcc0e20dfbc348e9bd4ae0d1152a3004782238b5` (`begin to develop`). It includes the later landscape-support fix validated in the EVN project before being mirrored back into `Unreal/Plugins/AirSim`.

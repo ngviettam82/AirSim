@@ -11,6 +11,16 @@
 #include <exception>
 #include "AirBlueprintLib.h"
 
+namespace
+{
+    bool UsesSourceStencilAnnotationCamera(FObjectAnnotator::AnnotatorType type, bool use_source_stencil_backend = false)
+    {
+        return use_source_stencil_backend ||
+               type == FObjectAnnotator::AnnotatorType::InstanceSegmentation ||
+               type == FObjectAnnotator::AnnotatorType::Infrared;
+    }
+}
+
 //CinemAirSim
 APIPCamera::APIPCamera(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer
@@ -102,6 +112,24 @@ APIPCamera::APIPCamera(const FObjectInitializer& ObjectInitializer)
     {
         annotation_sphere_static_ = loadedMesh.Object;
     }
+
+    static ConstructorHelpers::FObjectFinder<UMaterial> segmentation_stencil_mat_finder(TEXT("Material'/AirSim/HUDAssets/SegmentationMaterial.SegmentationMaterial'"));
+    if (segmentation_stencil_mat_finder.Succeeded()) {
+        segmentation_stencil_material_static_ = segmentation_stencil_mat_finder.Object;
+    }
+    else {
+        UAirBlueprintLib::LogMessageString("Cannot create source stencil segmentation material for the PIPCamera",
+                                           "", LogDebugLevel::Failure);
+    }
+
+    static ConstructorHelpers::FObjectFinder<UMaterial> infrared_stencil_mat_finder(TEXT("Material'/AirSim/HUDAssets/InfraredMaterial.InfraredMaterial'"));
+    if (infrared_stencil_mat_finder.Succeeded()) {
+        infrared_stencil_material_static_ = infrared_stencil_mat_finder.Object;
+    }
+    else {
+        UAirBlueprintLib::LogMessageString("Cannot create source stencil infrared material for the PIPCamera",
+                                           "", LogDebugLevel::Failure);
+    }
 }
 
 void APIPCamera::PostInitializeComponents()
@@ -148,10 +176,8 @@ void APIPCamera::PostInitializeComponents()
     //set initial focal length
     camera_->CurrentFocalLength = 11.9;
 
-    FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowFlags);
-    captures_[Utils::toNumeric(ImageType::Segmentation)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
-    FObjectAnnotator::SetViewForAnnotationRender(captures_[Utils::toNumeric(ImageType::Infrared)]->ShowFlags);
-    captures_[Utils::toNumeric(ImageType::Infrared)]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+    configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
+    configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], FObjectAnnotator::AnnotatorType::Infrared);
 
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetLighting(true);
     captures_[Utils::toNumeric(ImageType::Lighting)]->ShowFlags.SetMaterials(false);
@@ -383,8 +409,19 @@ void APIPCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
     distortion_material_static_ = nullptr;
     distortion_materials_.Empty();
+    for (const auto& stencil_material_entry : source_stencil_annotation_material_map_) {
+        if (IsValid(stencil_material_entry.Key) && IsValid(stencil_material_entry.Value)) {
+            stencil_material_entry.Key->PostProcessSettings.RemoveBlendable(stencil_material_entry.Value);
+        }
+    }
+    source_stencil_annotation_material_map_.Empty();
+    source_stencil_annotation_materials_.Empty();
+    segmentation_stencil_material_static_ = nullptr;
+    infrared_stencil_material_static_ = nullptr;
 
 	annotator_name_to_index_map_.Empty();
+    annotator_name_to_type_map_.Empty();
+    annotator_name_to_source_stencil_map_.Empty();
     sphere_annotation_component_map_.Empty();
 
 
@@ -537,9 +574,63 @@ void APIPCamera::setDistortionParam(const std::string& param_name, float value)
     distortion_param_instance_->SetScalarParameterValue(FName(param_name.c_str()), value);
 }
 
+bool APIPCamera::hasBlendable(USceneCaptureComponent2D* capture, UObject* blendable) const
+{
+    if (capture == nullptr || blendable == nullptr) {
+        return false;
+    }
+
+    for (const FWeightedBlendable& weighted_blendable : capture->PostProcessSettings.WeightedBlendables.Array) {
+        if (weighted_blendable.Object == blendable) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void APIPCamera::configureSourceStencilAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
+                                                         FObjectAnnotator::AnnotatorType type)
+{
+    if (annotation_capture == nullptr) {
+        return;
+    }
+
+    UMaterial* stencil_material = nullptr;
+    if (type == FObjectAnnotator::AnnotatorType::Infrared) {
+        stencil_material = infrared_stencil_material_static_;
+    }
+    else {
+        stencil_material = segmentation_stencil_material_static_;
+    }
+
+    FObjectAnnotator::SetViewForSourceStencilAnnotationRender(annotation_capture->ShowFlags);
+    annotation_capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
+    annotation_capture->ShowOnlyComponents.Empty();
+
+    if (!IsValid(stencil_material)) {
+        UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation: Source stencil capture %s is missing its post-process material."), *annotation_capture->GetName());
+        return;
+    }
+
+    UMaterialInstanceDynamic* stencil_mid = source_stencil_annotation_material_map_.FindRef(annotation_capture);
+    if (!IsValid(stencil_mid)) {
+        stencil_mid = UMaterialInstanceDynamic::Create(stencil_material, annotation_capture);
+        if (!IsValid(stencil_mid)) {
+            UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation: Failed to create source stencil material instance for %s."), *annotation_capture->GetName());
+            return;
+        }
+        source_stencil_annotation_material_map_.Add(annotation_capture, stencil_mid);
+        source_stencil_annotation_materials_.Add(stencil_mid);
+    }
+
+    if (!hasBlendable(annotation_capture, stencil_mid)) {
+        annotation_capture->PostProcessSettings.AddBlendable(stencil_mid, 1.0f);
+    }
+}
+
 void APIPCamera::updateAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
-                                         const TArray<TWeakObjectPtr<UPrimitiveComponent> >& component_list,
-                                         bool only_hide,
+                                          const TArray<TWeakObjectPtr<UPrimitiveComponent> >& component_list,
+                                          bool only_hide,
                                          UPrimitiveComponent* extra_component)
 {
     if (!only_hide && annotation_capture != nullptr) {
@@ -576,7 +667,9 @@ void APIPCamera::updateAnnotationCapture(USceneCaptureComponent2D* annotation_ca
 }
 
 void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
-    updateAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], ComponentList, only_hide);
+    if (!only_hide) {
+        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
+    }
 }
 
 void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& SegmentationComponentList,
@@ -584,41 +677,41 @@ void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TW
                                                                  bool only_hide)
 {
     if (!only_hide) {
-        if (captures_[Utils::toNumeric(ImageType::Segmentation)] != nullptr) {
-            captures_[Utils::toNumeric(ImageType::Segmentation)]->ShowOnlyComponents = SegmentationComponentList;
-        }
-        if (captures_[Utils::toNumeric(ImageType::Infrared)] != nullptr) {
-            captures_[Utils::toNumeric(ImageType::Infrared)]->ShowOnlyComponents = InfraredComponentList;
-        }
-    }
-
-    TArray<TWeakObjectPtr<UPrimitiveComponent> > hidden_components = SegmentationComponentList;
-    hidden_components.Reserve(SegmentationComponentList.Num() + InfraredComponentList.Num());
-    for (const TWeakObjectPtr<UPrimitiveComponent>& component : InfraredComponentList) {
-        hidden_components.AddUnique(component);
-    }
-
-    if (captures_[Utils::toNumeric(ImageType::Scene)] != nullptr) {
-        captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents = hidden_components;
-    }
-    if (captures_[Utils::toNumeric(ImageType::Lighting)] != nullptr) {
-        captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents = hidden_components;
+        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
+        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], FObjectAnnotator::AnnotatorType::Infrared);
     }
 }
 
 void APIPCamera::updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
-    updateAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], ComponentList, only_hide);
+    if (!only_hide) {
+        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], FObjectAnnotator::AnnotatorType::Infrared);
+    }
 }
 
 void APIPCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, FString annotation_name, bool only_hide) {
+    const int* render_index = annotator_name_to_index_map_.Find(annotation_name);
+    if (render_index == nullptr || !captures_.IsValidIndex(*render_index)) {
+        return;
+    }
+
+    if (const FObjectAnnotator::AnnotatorType* type = annotator_name_to_type_map_.Find(annotation_name)) {
+        const bool use_source_stencil_backend = annotator_name_to_source_stencil_map_.FindRef(annotation_name);
+        if (UsesSourceStencilAnnotationCamera(*type, use_source_stencil_backend)) {
+            if (!only_hide) {
+                configureSourceStencilAnnotationCapture(captures_[*render_index], *type);
+            }
+            return;
+        }
+    }
+
     updateAnnotationCapture(
-        captures_[annotator_name_to_index_map_[annotation_name]],
+        captures_[*render_index],
         ComponentList,
         only_hide,
         sphere_annotation_component_map_.Contains(annotation_name) ? sphere_annotation_component_map_[annotation_name].Get() : nullptr);
 }
 
-void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance)
+void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance, bool use_source_stencil_backend)
 {
     USceneCaptureComponent2D* new_capture = NewObject<USceneCaptureComponent2D>(this, USceneCaptureComponent2D ::StaticClass(), *name);
 
@@ -631,7 +724,7 @@ void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorTy
 	new_capture->RegisterComponent();
     new_capture->Deactivate();
 
-    if (max_view_distance > 0) {
+    if (max_view_distance > 0 && !UsesSourceStencilAnnotationCamera(type, use_source_stencil_backend)) {
         FString sphereName  = name + "_hidden_sphere";
         UStaticMeshComponent* annotation_sphere = NewObject<UStaticMeshComponent>(this, FName(*sphereName));
         annotation_sphere->SetupAttachment(RootComponent);
@@ -660,12 +753,11 @@ void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorTy
         render_targets_[render_index]->TargetGamma = 1;
     }
 
-    FObjectAnnotator::SetViewForAnnotationRender(captures_[render_index]->ShowFlags);
-    captures_[render_index]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
-
     camera_type_enabled_.push_back(false);   
 
     annotator_name_to_index_map_.Add(TCHAR_TO_UTF8(*name), render_index);
+    annotator_name_to_type_map_.Add(TCHAR_TO_UTF8(*name), type);
+    annotator_name_to_source_stencil_map_.Add(TCHAR_TO_UTF8(*name), use_source_stencil_backend);
 
     detections_.Add(NewObject<UDetectionComponent>(this));
     if (detections_[render_index]) {
@@ -680,14 +772,20 @@ void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorTy
 
     if (sensor_params_.capture_settings.at(Utils::toNumeric(ImageType::Annotation)).ignore_marked)captures_[render_index]->HiddenActors.Append(ignore_actors_);
     
-    captures_[render_index]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
-
     updateCaptureComponentSetting(captures_[render_index], render_targets_[render_index],
         false, EPixelFormat::PF_B8G8R8A8,
         sensor_params_.capture_settings.at(Utils::toNumeric(ImageType::Annotation)),
         *ned_transform_, false);
 
-    copyCameraSettingsToSceneCapture(camera_, captures_[render_index]);	
+    copyCameraSettingsToSceneCapture(camera_, captures_[render_index]);
+
+    if (UsesSourceStencilAnnotationCamera(type, use_source_stencil_backend)) {
+        configureSourceStencilAnnotationCapture(captures_[render_index], type);
+    }
+    else {
+        FObjectAnnotator::SetViewForAnnotationRender(captures_[render_index]->ShowFlags);
+        captures_[render_index]->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+    }
 }
 
 void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera_setting, const NedTransform& ned_transform)
@@ -798,6 +896,8 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
             copyCameraSettingsToAllSceneCapture(camera_); //CinemAirSim
         }
     }
+    configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
+    configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], FObjectAnnotator::AnnotatorType::Infrared);
     if (camera_setting.capture_settings.at(Utils::toNumeric(ImageType::Scene)).force_update){
         setCameraTypeEnabled(ImageType::Scene, true);
         setCameraTypeUpdate(ImageType::Scene, false);

@@ -3,14 +3,12 @@
 // Licensed under the MIT License.
 #pragma once
 
+#include "CoreMinimal.h"
 #include <vector>
 #include <string>
 #include "Components/MeshComponent.h"
 #include "Components/SceneComponent.h"
-#include "Components/InstancedStaticMeshComponent.h"
 #include "UObject/ObjectMacros.h"
-#include "Components/StaticMeshComponent.h"
-#include <Engine/StaticMesh.h>
 #include "ShowFlags.h"
 #include "UObject/ScriptMacros.h"
 #include "Runtime/Engine/Classes/GameFramework/Actor.h"
@@ -48,7 +46,7 @@ public:
 
 	FObjectAnnotator();
 
-	FObjectAnnotator(FString name, AnnotatorType type = AnnotatorType::RGB, bool show_by_default = true, bool set_direct = false, FString texture_path = FString(""), FString texture_prefix = FString(""), float max_view_distance = -1.0f);
+	FObjectAnnotator(FString name, AnnotatorType type = AnnotatorType::RGB, bool show_by_default = true, bool set_direct = false, FString texture_path = FString(""), FString texture_prefix = FString(""), float max_view_distance = -1.0f, FString render_backend = FString("Auto"), int32 proxy_component_budget = 5000);
 
 	void Initialize(ULevel* level);
 	void InitializeInstanceSegmentation(ULevel* level);
@@ -84,11 +82,13 @@ public:
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> GetAnnotationComponents();
 
 	static void SetViewForAnnotationRender(FEngineShowFlags& show_flags);
+	static void SetViewForSourceStencilAnnotationRender(FEngineShowFlags& show_flags);
 
 	TArray<FColor> GetColorMap();
 
 	bool IsDirect();
 	FObjectAnnotator::AnnotatorType GetType();
+	bool UsesSourceStencilBackend() const;
 
 	void EndPlay();
 
@@ -109,13 +109,13 @@ private:
 	FString texture_path_;
 	FString texture_prefix_;
 	float max_view_distance_;
+	bool use_source_stencil_backend_;
+	int32 proxy_component_budget_;
+	bool proxy_component_budget_warning_logged_;
 
 	bool PaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
 	bool UpdatePaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
-	bool PaintInstancedSegmentationComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
-	bool UpdatePaintInstancedSegmentationComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
-	bool PopulateGeneratedInstanceComponent(UInstancedStaticMeshComponent* generated_component, UInstancedStaticMeshComponent* source_component) const;
-	bool UpdateGeneratedMeshColor(UStaticMeshComponent* component, const FColor& color) const;
+	bool PaintSourceStencilComponent(UPrimitiveComponent* component, const FColor& color, const FString& component_name);
 	bool PaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name);
 	bool UpdatePaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name);
 
@@ -124,10 +124,10 @@ private:
 
 	bool DeleteComponent(UMeshComponent* component, const FString& component_name);
 	bool DeleteLandscapeComponent(ULandscapeComponent* component, const FString& component_name);
-	bool IsGeneratedAnnotationClone(const UMeshComponent* component) const;
 	UAnnotationComponent* FindTrackedAnnotationComponent(const FString& component_name, const USceneComponent* attach_parent = nullptr);
 	void TrackAnnotationComponent(const FString& component_name, UAnnotationComponent* component);
 	bool UsesIndexedAnnotationColors() const;
+	bool CanCreateProxyAnnotationComponent(const FString& component_name);
 	FColor GetAnnotationColorForIndex(uint32 color_index) const;
 	FString GetDisplayColorString(const FColor& color) const;
 	void InitializeIndexedAnnotation(ULevel* level, const TCHAR* annotation_mode);
@@ -136,9 +136,14 @@ private:
 	FString GetLabelKey(const FString& component_name, UMeshComponent* component) const;
 	FString GetLandscapeLabelKey(const FString& component_name, ULandscapeComponent* component) const;
 	uint32 GetOrCreateLandscapeLabelColorIndex(const FString& component_name, ULandscapeComponent* component);
+	uint32 GetDefaultIndexedColorIndex(const FString& label_key) const;
 	void UpdateColorMappings(const FString& component_name, uint32 color_index);
 	void RemoveTrackedComponent(const FString& component_name);
 	void GetComponentIdsForColorUpdate(const FString& component_id, TArray<FString>& component_ids) const;
+	uint8 GetStencilValueForAnnotationColor(const FColor& color, const FString& component_name) const;
+	void TrackSourceStencilComponent(UPrimitiveComponent* component);
+	void ReleaseSourceStencilComponent(UPrimitiveComponent* component);
+	void ReleaseAllSourceStencilComponents();
 
 	void getPaintableComponentMeshes(AActor* actor, TMap<FString, UMeshComponent*>* paintable_components_meshes);
 	void getPaintableComponentMeshesAndTags(AActor* actor, TMap<FString, UMeshComponent*>* paintable_components_meshes, TMap<FString, TArray<FName>>* paintable_components_tags);
@@ -153,7 +158,6 @@ private:
 	TMap<FString, FString> color_to_name_map_;
 	TMap<FString, FString> gammacorrected_color_to_name_map_;
 	TMap<FString, UMeshComponent*> name_to_component_map_;
-	TMap<FString, UMeshComponent*> name_to_generated_component_map_;
 	TMap<FString, ULandscapeComponent*> name_to_landscape_component_map_;
 	TMap<FString, UAnnotationComponent*> name_to_annotation_component_map_;
 	TMap<FString, FString> name_to_label_key_map_;
@@ -161,4 +165,5 @@ private:
 	TMap<UMeshComponent*, FString> component_to_name_map_;
 	TMap<ULandscapeComponent*, FString> landscape_component_to_name_map_;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> annotation_component_list_;
+	TSet<TWeakObjectPtr<UPrimitiveComponent>> source_stencil_components_;
 };

@@ -77,7 +77,7 @@ public:
     void updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide = false);
     bool GetAnnotationNameExist(std::string annotation_name);
     void updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, FString annotation_name, bool only_hide = false);
-    void addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f);
+    void addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f, bool use_source_stencil_backend = false);
     void setupCameraFromSettings(const APIPCamera::CameraSetting& camera_setting, const NedTransform& ned_transform);
     void setCameraPose(const msr::airlib::Pose& relative_pose);
     void setCameraFoV(float fov_degrees);
@@ -130,12 +130,18 @@ private: //members
     UPROPERTY() UMaterial* motion_blur_material_static_;
     UPROPERTY() UMaterial* radial_blur_material_static_;
     UPROPERTY() UMaterial* guassian_blur_material_static_;
+    UPROPERTY() UMaterial* segmentation_stencil_material_static_;
+    UPROPERTY() UMaterial* infrared_stencil_material_static_;
 
     UPROPERTY() TArray<UMaterialInstanceDynamic*> fake_motion_blur_materials_;
     UPROPERTY() TArray<UMaterialInstanceDynamic*> guassian_blur_materials_;
     UPROPERTY() TArray<UMaterialInstanceDynamic*> radial_blur_materials_;
+    UPROPERTY() TArray<UMaterialInstanceDynamic*> source_stencil_annotation_materials_;
+    TMap<USceneCaptureComponent2D*, UMaterialInstanceDynamic*> source_stencil_annotation_material_map_;
 
     TMap<FString, int> annotator_name_to_index_map_;
+    TMap<FString, FObjectAnnotator::AnnotatorType> annotator_name_to_type_map_;
+    TMap<FString, bool> annotator_name_to_source_stencil_map_;
     TMap<FString, TWeakObjectPtr<UPrimitiveComponent>> sphere_annotation_component_map_;
 
     std::vector<bool> camera_type_enabled_;
@@ -167,6 +173,9 @@ private: //methods
                                  const TArray<TWeakObjectPtr<UPrimitiveComponent> >& component_list,
                                  bool only_hide = false,
                                  UPrimitiveComponent* extra_component = nullptr);
+    void configureSourceStencilAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
+                                                 FObjectAnnotator::AnnotatorType type);
+    bool hasBlendable(USceneCaptureComponent2D* capture, UObject* blendable) const;
     //CinemAirSim
     static void updateCameraSetting(UCineCameraComponent* camera, const CaptureSetting& setting, const NedTransform& ned_transform);
     void copyCameraSettingsToAllSceneCapture(UCameraComponent* camera);

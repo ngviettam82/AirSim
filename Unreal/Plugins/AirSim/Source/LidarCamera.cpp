@@ -91,6 +91,15 @@ ALidarCamera::ALidarCamera()
 	else
 		UAirBlueprintLib::LogMessageString("Cannot create intensity material for the LidarCamera", "", LogDebugLevel::Failure);
 
+	static ConstructorHelpers::FObjectFinder<UMaterial> mat_finder_segmentation(TEXT("Material'/AirSim/HUDAssets/SegmentationMaterial.SegmentationMaterial'"));
+	if (mat_finder_segmentation.Succeeded())
+	{
+		UMaterialInstanceDynamic* segmentation_material = UMaterialInstanceDynamic::Create(mat_finder_segmentation.Object, capture_2D_segmentation_);
+		capture_2D_segmentation_->PostProcessSettings.AddBlendable(segmentation_material, 1.0f);
+	}
+	else
+		UAirBlueprintLib::LogMessageString("Cannot create source stencil segmentation material for the LidarCamera", "", LogDebugLevel::Failure);
+
 	PrimaryActorTick.bCanEverTick = true;
 
 }
@@ -221,8 +230,8 @@ void ALidarCamera::InitializeSensor()
 	capture_2D_depth_->bUseCustomProjectionMatrix = false;
 
 	// Setup the capture component for the virtual instance segmentation camera
-	FObjectAnnotator::SetViewForAnnotationRender(capture_2D_segmentation_->ShowFlags);
-	capture_2D_segmentation_->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+	FObjectAnnotator::SetViewForSourceStencilAnnotationRender(capture_2D_segmentation_->ShowFlags);
+	capture_2D_segmentation_->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
 
 	render_target_2D_segmentation_->TargetGamma = 1;
 	capture_2D_segmentation_->TextureTarget = render_target_2D_segmentation_;
@@ -351,7 +360,7 @@ bool ALidarCamera::Update(float delta_time, msr::airlib::vector<msr::airlib::rea
 }
 
 void ALidarCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList) {
-	capture_2D_segmentation_->ShowOnlyComponents = ComponentList;
+	capture_2D_segmentation_->ShowOnlyComponents.Empty();
 }
 
 void ALidarCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList) {

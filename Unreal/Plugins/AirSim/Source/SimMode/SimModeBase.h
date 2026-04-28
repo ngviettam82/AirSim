@@ -345,7 +345,7 @@ private:
 private:
     void InitializeInstanceSegmentation();
     void InitializeAnnotation();
-    void AddAnnotatorCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f);
+    void AddAnnotatorCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f, bool use_source_stencil_backend = false);
     void requestInstanceSegmentationRefresh(bool force_immediate = false);
     void refreshCachedAnnotationCameras();
     void pruneCachedAnnotationCameras();
