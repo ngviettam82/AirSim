@@ -889,7 +889,7 @@ class VehicleClient:
         Args:
             annotation_name (str): Name of the annotation layer.
             mesh_name (str): Name of the mesh.
-            object_id (int): Desired ID for the object. SourceStencil RGB index layers accept 0..255; proxy RGB index layers can use the larger colormap.
+            object_id (int): Desired ID for the object. Custom RGB index annotation uses the proxy backend and can use the larger AirSim RGB colormap.
             is_name_regex (bool, optional): Whether the mesh name is a regex.
 
         Returns:

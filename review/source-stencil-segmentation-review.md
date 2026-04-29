@@ -4,15 +4,15 @@
 
 This document reviews the current EVN AirSim segmentation, infrared, and annotation changes after removing the generated annotation mirror path. It replaces `review/errant-biomes-segmentation-proposal.md`, which was a planning document and is now deleted.
 
-Last verified: 2026-04-28 22:53 +07.
+Last verified: 2026-04-29.
 
 Verified target:
 
 - Repository plugin: `Unreal/Plugins/AirSim`
 - Active EVN plugin: `C:\Users\ADMIN\Documents\Unreal Projects\EVN\Plugins\AirSim`
-- Build: `EVNEditor Win64 Development`
+- Build: `EVNEditor Win64 Development -NoUBA -NoUBALocal`
 - Output DLL: `C:\Users\ADMIN\Documents\Unreal Projects\EVN\Plugins\AirSim\Binaries\Win64\UnrealEditor-AirSim.dll`
-- DLL timestamp: `2026-04-28 22:53:06 +07`
+- DLL timestamp: `2026-04-29 07:01:49 +07`
 
 ## High-Level Summary
 
@@ -26,6 +26,7 @@ Current behavior:
 - Scene and Lighting captures are not fed source components through the old annotation hide/show-only path.
 - Optional RGB/greyscale/texture annotation remains available for future use.
 - Optional annotation defaults are now safer: configured layers do not annotate the whole level unless `"Default": true` is set explicitly.
+- Custom annotation layers use the proxy backend. Source stencil is reserved for built-in segmentation/infrared because Unreal exposes one custom stencil value per primitive.
 
 ## Root Cause
 
@@ -64,14 +65,6 @@ Review docs:
 - `review/source-stencil-segmentation-review.md`
 - `review/segmentation-fix.md`
 
-Python examples/docs:
-
-- `PythonClient/computer_vision/segmentation.py`
-- `PythonClient/cosysairsim/client.py`
-- `PythonClient/segmentation/segmentation_colormap_gamma_test.py`
-- `PythonClient/segmentation/segmentation_generate_list.py`
-- `PythonClient/segmentation/segmentation_test.py`
-
 Deleted:
 
 - `review/errant-biomes-segmentation-proposal.md`
@@ -99,9 +92,8 @@ This keeps segmentation aligned with the visible scene and avoids duplicate rend
 - clear `ShowOnlyComponents`
 - keep Scene/Lighting hidden component lists unchanged
 - apply `SegmentationMaterial` or `InfraredMaterial`
-- skip annotation helper sphere/proxy creation for source-stencil annotation cameras
 
-`ALidarCamera` 2D segmentation also uses source-stencil capture configuration.
+`ALidarCamera` 2D segmentation also uses source-stencil capture configuration for built-in segmentation, and switches back to proxy/show-only mode when a GPU LiDAR is configured to capture a custom annotation layer.
 
 ### Annotation Path
 
@@ -110,7 +102,8 @@ Annotation is kept for future use, but it is now more controlled:
 - Top-level `"Annotation"` settings are still required to create named annotation layers.
 - `"Default"` now defaults to `false`, so a future annotation layer does not automatically proxy the whole world.
 - `"ProxyComponentBudget"` defaults to `5000` per layer.
-- `"Backend": "SourceStencil"` is supported for RGB index annotation layers.
+- Custom annotation layers use the proxy backend, including RGB index layers.
+- `"Backend": "SourceStencil"` is accepted for settings compatibility but custom layers fall back to proxy annotation.
 - SourceStencil remains mandatory for built-in `InstanceSegmentation` and `Infrared`.
 - Texture annotation and RGB direct annotation still use the proxy path because stencil cannot represent arbitrary textures or unlimited direct RGB values.
 
@@ -120,10 +113,10 @@ Settings contract:
 | --- | --- | --- | --- |
 | `InitialInstanceSegmentation` | root | `false` | If `true`, AirSim scans supported source components at startup and assigns source-stencil labels for built-in segmentation/infrared. If `false`, startup scan and startup segmentation refresh are skipped. |
 | `Annotation[].Default` | custom annotation layer | `false` | If `true`, untagged objects are included in that custom annotation layer. If `false`, only tagged objects are included. |
-| `Annotation[].Backend` | custom annotation layer | `Auto` | For custom annotation layers, `Auto` uses the proxy backend. Set `SourceStencil` explicitly for lightweight RGB index layers. `Proxy` is required for direct RGB, greyscale, and texture annotation. Built-in segmentation/infrared always use source stencil. |
-| `Annotation[].ProxyComponentBudget` | custom annotation layer | `5000` | Maximum proxy components for a layer. `0` blocks proxy creation; `-1` removes the budget. Source-stencil layers do not create proxy components. |
+| `Annotation[].Backend` | custom annotation layer | `Auto` | Custom annotation layers use proxy annotation. `SourceStencil` is reserved for built-in segmentation/infrared; custom layers that request it fall back to proxy annotation. |
+| `Annotation[].ProxyComponentBudget` | custom annotation layer | `5000` | Maximum proxy components for a custom layer. `0` blocks proxy creation; `-1` removes the budget. |
 
-Example lightweight annotation layer:
+Example RGB index annotation layer:
 
 ```json
 "Annotation": [
@@ -132,8 +125,8 @@ Example lightweight annotation layer:
     "Type": 0,
     "SetDirect": false,
     "Default": false,
-    "Backend": "SourceStencil",
-    "ProxyComponentBudget": 0
+    "Backend": "Proxy",
+    "ProxyComponentBudget": 5000
   }
 ]
 ```
@@ -196,6 +189,10 @@ Proxy annotation creation now checks a per-layer budget before creating `UAnnota
 
 This protects future annotation experiments from accidentally proxying a full Errant-scale world.
 
+### Rejected Custom Source Stencil Annotation
+
+Custom RGB index annotation no longer exposes an independent source-stencil plane. Unreal stores one `CustomDepthStencilValue` on each primitive, so a custom source-stencil annotation layer would share the same value used by built-in segmentation/infrared. Keeping custom layers on proxies avoids silent label overwrites.
+
 ## Behavior By Image Type
 
 ### Scene
@@ -222,8 +219,7 @@ No generated mirrors.
 
 Depends on configured annotation layer:
 
-- RGB index with `Backend=SourceStencil`: source-stencil path, 0..255 labels.
-- InstanceSegmentation/Infrared annotation types: source-stencil path.
+- RGB index: proxy path with the AirSim RGB colormap.
 - RGB direct: proxy path.
 - Greyscale: proxy path.
 - Texture: proxy path.
@@ -235,19 +231,19 @@ Important intentional changes:
 - Annotation `"Default"` now defaults to `false`. Existing settings that rely on implicit whole-scene annotation must set `"Default": true`.
 - SourceStencil labels are limited to `0..255`.
 - `simSetSegmentationObjectID()` rejects IDs outside `0..255`.
-- SourceStencil RGB index tags outside `0..255` are rejected during annotation initialization and dynamic actor annotation.
-- Optional RGB index annotation with `Backend=SourceStencil` also uses the 8-bit stencil label domain.
+- Custom annotation layers that request `Backend=SourceStencil` fall back to proxy annotation to avoid conflicting with built-in segmentation/infrared stencil labels.
+- RGB annotation ID APIs reject IDs outside the AirSim RGB colormap range.
 - Texture annotation still requires proxy rendering.
-- Python segmentation examples now read each object's actual ID with `simGetSegmentationObjectID()` instead of assuming list index equals object ID.
 
 ## Validation
 
 Code checks:
 
 - `git diff --check` passed.
-- Touched Python examples passed `python -m py_compile`.
+- `python -m py_compile PythonClient/cosysairsim/client.py` passed.
 - Active EVN plugin source files hash-match the repository plugin for touched files.
 - Stale generated mirror symbol search was clean.
+- Stale custom `SourceStencil` RGB-index documentation/code search was clean except for the documented compatibility fallback.
 - User-facing docs updated for the new settings contract and backend behavior:
   - `docs/settings.md`
   - `docs/annotation.md`
@@ -258,9 +254,10 @@ Code checks:
 
 Build:
 
-- `EVNEditor Win64 Development` completed successfully.
-- Modified files compiled, including `ObjectAnnotator.cpp`, `PIPCamera.cpp`, and `SimModeBase.cpp`.
-- `UnrealEditor-AirSim.dll` linked at `2026-04-28 22:53:06 +07`.
+- `EVNEditor Win64 Development -NoUBA -NoUBALocal` completed successfully.
+- Modified files compiled, including `ObjectAnnotator.cpp`, `LidarCamera.cpp`, `LidarCamera.h`, and `SimModeBase.cpp`.
+- `UnrealEditor-AirSim.dll` linked at `2026-04-29 07:01:49 +07`.
+- Note: the first full build attempt with the UBA local executor reached the AirSim library link step and did not return; the orphaned linker was stopped, then the non-UBA build completed normally.
 
 Remaining warnings are pre-existing:
 
@@ -276,7 +273,7 @@ Runtime validation still matters:
 3. Confirm segmentation/infrared labels appear on visible Errant foliage without hiding foreground occluders.
 4. Confirm `ShowOnlyComponents` remains empty on source-stencil segmentation/infrared captures.
 5. Confirm source custom-depth/stencil state restores on EndPlay.
-6. Test optional RGB index annotation with `"Backend": "SourceStencil"` in a small scene before using it in EVN production.
+6. Test a small custom RGB index annotation layer and confirm it uses proxy/show-only rendering without modifying source stencil labels.
 7. Add an ownership audit for unmanaged nonzero CustomStencil writers if EVN uses stencil for other systems.
 
 ## Final Assessment

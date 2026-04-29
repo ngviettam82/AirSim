@@ -247,8 +247,8 @@ Current annotation settings:
       "Type": 0,
       "SetDirect": false,
       "Default": false,
-      "Backend": "SourceStencil",
-      "ProxyComponentBudget": 0,
+      "Backend": "Proxy",
+      "ProxyComponentBudget": 5000,
       "ViewDistance": -1
     }
   ]
@@ -259,7 +259,7 @@ Important defaults:
 
 * `InitialInstanceSegmentation` defaults to `false`. Set it to `true` when you want AirSim to scan and label supported objects at startup for `ImageType::Segmentation` and `ImageType::Infrared`.
 * Annotation `Default` defaults to `false`. A custom annotation layer will not annotate the whole level unless you explicitly set `"Default": true`.
-* Annotation `Backend` defaults to `Auto`. For custom annotation layers, `Auto` uses the proxy backend. Set it to `SourceStencil` explicitly for lightweight RGB index annotation. Built-in segmentation/infrared always use source stencil. Direct RGB, greyscale, and texture annotation use the proxy backend.
+* Annotation `Backend` defaults to `Auto`. Custom annotation layers use the proxy backend. `SourceStencil` is reserved for built-in segmentation/infrared because Unreal has one custom stencil value per primitive; custom layers that request `SourceStencil` fall back to proxy annotation.
 * Annotation `ProxyComponentBudget` defaults to `5000` per layer. Use `0` to prevent proxy creation for a layer, or `-1` for no limit.
 
 ## TimeOfDay
