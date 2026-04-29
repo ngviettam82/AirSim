@@ -10,9 +10,11 @@ Verified target:
 
 - Repository plugin: `Unreal/Plugins/AirSim`
 - Active EVN plugin: `C:\Users\ADMIN\Documents\Unreal Projects\EVN\Plugins\AirSim`
-- Build: `EVNEditor Win64 Development -NoUBA -NoUBALocal`
+- Build checks:
+  - Normal build command: `EVNEditor Win64 Development -WaitMutex -NoHotReloadFromIDE`
+  - Deterministic compile/link build: `EVNEditor Win64 Development -WaitMutex -NoHotReloadFromIDE -NoUBA -NoUBALocal`
 - Output DLL: `C:\Users\ADMIN\Documents\Unreal Projects\EVN\Plugins\AirSim\Binaries\Win64\UnrealEditor-AirSim.dll`
-- DLL timestamp: `2026-04-29 07:01:49 +07`
+- DLL timestamp after compile/link: `2026-04-29 08:15:11 +07`
 
 ## High-Level Summary
 
@@ -268,7 +270,8 @@ Build:
 - `EVNEditor Win64 Development -NoUBA -NoUBALocal` completed successfully after the GPU LiDAR optimization pass.
 - Modified files compiled, including `ObjectAnnotator.cpp`, `LidarCamera.cpp`, `LidarCamera.h`, `SimModeBase.cpp`, `UnrealGPULidarSensor.cpp`, and `UnrealSensorFactory.cpp`.
 - `UnrealEditor-AirSim.dll` linked at `2026-04-29 08:15:11 +07`.
-- Note: the first full build attempt with the UBA local executor reached the AirSim library link step and did not return; the orphaned linker was stopped, then the non-UBA build completed normally.
+- Normal build command without `-NoUBA` completed after that and reported `Target is up to date`, confirming the regular Unreal build path accepts the current target state.
+- Note: an earlier UBA-local build attempt reached the AirSim library link step and did not return; the non-UBA build was used to force a deterministic compile/link, and the later normal build command completed successfully.
 
 Remaining warnings are pre-existing:
 
