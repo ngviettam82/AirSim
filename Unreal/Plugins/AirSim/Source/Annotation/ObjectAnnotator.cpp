@@ -1329,10 +1329,10 @@ bool FObjectAnnotator::CanCreateProxyAnnotationComponent(const FString& componen
 
 FColor FObjectAnnotator::GetAnnotationColorForIndex(uint32 color_index) const
 {
-	if (type_ == AnnotatorType::Infrared)
+	if (UsesSourceStencilBackend())
 	{
-		const uint8 grayscale_value = static_cast<uint8>(color_index % 256);
-		return FColor(grayscale_value, grayscale_value, grayscale_value, 255);
+		const uint8 stencil_value = static_cast<uint8>(color_index & MaxSourceStencilAnnotationId);
+		return FColor(stencil_value, stencil_value, stencil_value, 255);
 	}
 
 	return ColorGenerator_.GetColorFromColorMap(color_index);
@@ -1340,7 +1340,7 @@ FColor FObjectAnnotator::GetAnnotationColorForIndex(uint32 color_index) const
 
 FString FObjectAnnotator::GetDisplayColorString(const FColor& color) const
 {
-	if (type_ == AnnotatorType::Infrared)
+	if (UsesSourceStencilBackend())
 	{
 		return FString::FromInt(color.R) + "," + FString::FromInt(color.G) + "," + FString::FromInt(color.B);
 	}
@@ -1799,7 +1799,7 @@ void FObjectAnnotator::GetComponentIdsForColorUpdate(const FString& component_id
 
 uint8 FObjectAnnotator::GetStencilValueForAnnotationColor(const FColor& color, const FString& component_name) const
 {
-	if (type_ == AnnotatorType::Infrared)
+	if (UsesSourceStencilBackend())
 	{
 		return color.R;
 	}
@@ -2644,6 +2644,10 @@ int FColorGenerator::GetGammaCorrectedColor(int color_index) const {
 }
 
  TArray<FColor> FColorGenerator::GetColorMap() const{
+	if (color_map_.Num() == 0)
+	{
+		GetColorFromColorMap(0);
+	}
 	return color_map_;
 }
 

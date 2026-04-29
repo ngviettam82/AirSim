@@ -7,6 +7,7 @@ Current indexed instance segmentation supports regular static meshes, skeletal m
 ## Limitations
 * Built-in source-stencil segmentation IDs are limited to `0..255`. IDs outside this range are rejected by `simSetSegmentationObjectID()` and `simSetSegmentationObjectIDs()`.
 * Startup auto-labeling uses stable 8-bit label values. In large scenes, different objects can share a label because the stencil domain is intentionally compact.
+* Source-stencil segmentation and GPU LiDAR intensity both use Unreal `CustomDepthStencilValue`. Unreal provides one stencil value per primitive, so enabling `InitialInstanceSegmentation` can replace material IDs that GPU LiDAR intensity uses for reflectance.
 * Static meshes, skeletal meshes, instanced static mesh components, and `ULandscapeComponent` terrain are supported by the built-in instance segmentation path.
   * One `UInstancedStaticMeshComponent` receives one segmentation ID/color. Per-instance IDs inside the same instanced component are not supported yet.
   * One `ALandscapeProxy` receives one segmentation ID/color by default. Internally, each `ULandscapeComponent` has its own listed component ID, but the owning landscape proxy name is used as the shared label key so `simSetSegmentationObjectID("<LandscapeProxyName>", ...)` updates all components of that landscape together.

@@ -44,6 +44,30 @@ ASimModeBase* ASimModeBase::SIMMODE = nullptr;
 namespace
 {
     constexpr int32 MaxRGBAnnotationId = 2744000 - 1;
+
+    bool HasEnabledGpuLidarIntensitySensor(const msr::airlib::AirSimSettings& settings)
+    {
+        for (const auto& vehicle_entry : settings.vehicles) {
+            const msr::airlib::AirSimSettings::VehicleSetting* vehicle_setting = vehicle_entry.second.get();
+            if (vehicle_setting == nullptr) {
+                continue;
+            }
+
+            for (const auto& sensor_entry : vehicle_setting->sensors) {
+                const std::shared_ptr<msr::airlib::AirSimSettings::SensorSetting>& sensor_setting = sensor_entry.second;
+                if (!sensor_setting || !sensor_setting->enabled) {
+                    continue;
+                }
+
+                if (sensor_setting->sensor_type == msr::airlib::SensorBase::SensorType::GPULidar &&
+                    sensor_setting->settings.getBool("GenerateIntensity", false)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
 
 ASimModeBase* ASimModeBase::getSimMode()
@@ -149,7 +173,13 @@ void ASimModeBase::BeginPlay()
 
     setupClockSpeed();
 
-    InitializeMaterialStencils();
+    const bool has_gpu_lidar_intensity = HasEnabledGpuLidarIntensitySensor(getSettings());
+    if (has_gpu_lidar_intensity) {
+        InitializeMaterialStencils();
+        if (getSettings().initial_instance_segmentation) {
+            UE_LOG(LogTemp, Warning, TEXT("AirSim GPU Lidar: GenerateIntensity and InitialInstanceSegmentation both use Unreal CustomStencil. Source-stencil segmentation/infrared labels can replace material IDs used for intensity reflectance."));
+        }
+    }
 
     record_tick_count = 0;
     setupInputBindings();

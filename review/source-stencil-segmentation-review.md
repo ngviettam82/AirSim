@@ -183,6 +183,14 @@ Proxy annotation cleanup now destroys tracked annotation components instead of s
 
 Hide-only refresh still hides proxy annotation components from Scene and Lighting camera captures. This preserves the old proxy-annotation behavior without hiding source scene primitives for source-stencil segmentation/infrared captures.
 
+### Reduced Unused GPU Work
+
+Source-stencil segmentation now carries the stencil ID directly on the CPU side and does not build the full AirSim RGB colormap during startup. The RGB colormap is still generated on demand when the API requests it.
+
+GPU LiDAR now captures the segmentation render target only when `GroundTruth` is enabled and captures the intensity render target only when `GenerateIntensity` is enabled. It also allocates those render target resources only for the enabled outputs, keeps optional capture components out of persistent view-state/tick work, and defers optional post-process material setup until the matching output is enabled.
+
+Material stencil initialization and `materials.csv` parsing now run only when an enabled GPU LiDAR requests intensity. This avoids setting up CustomDepth material IDs or material reflectance maps for projects that do not consume intensity.
+
 ### Added Proxy Budgets
 
 Proxy annotation creation now checks a per-layer budget before creating `UAnnotationComponent` proxies. When the budget is reached, AirSim logs one warning and skips additional proxy components.
@@ -232,6 +240,7 @@ Important intentional changes:
 - SourceStencil labels are limited to `0..255`.
 - `simSetSegmentationObjectID()` rejects IDs outside `0..255`.
 - Custom annotation layers that request `Backend=SourceStencil` fall back to proxy annotation to avoid conflicting with built-in segmentation/infrared stencil labels.
+- GPU LiDAR intensity and source-stencil segmentation both need Unreal's single `CustomDepthStencilValue`. If `InitialInstanceSegmentation=true`, material-accurate GPU LiDAR intensity is not compatible with source-stencil object labels.
 - RGB annotation ID APIs reject IDs outside the AirSim RGB colormap range.
 - Texture annotation still requires proxy rendering.
 
@@ -242,11 +251,13 @@ Code checks:
 - `git diff --check` passed.
 - `python -m py_compile PythonClient/cosysairsim/client.py` passed.
 - Active EVN plugin source files hash-match the repository plugin for touched files.
+- UE 5.5 source verification confirmed `CustomDepthStencilValue` is one 0..255 value per primitive, and disabled manual scene captures should avoid persistent view state unless they need temporal history.
 - Stale generated mirror symbol search was clean.
 - Stale custom `SourceStencil` RGB-index documentation/code search was clean except for the documented compatibility fallback.
 - User-facing docs updated for the new settings contract and backend behavior:
   - `docs/settings.md`
   - `docs/annotation.md`
+  - `docs/gpulidar.md`
   - `docs/instance_segmentation.md`
   - `docs/InfraredCamera.md`
   - `docs/image_apis.md`
@@ -254,9 +265,9 @@ Code checks:
 
 Build:
 
-- `EVNEditor Win64 Development -NoUBA -NoUBALocal` completed successfully.
-- Modified files compiled, including `ObjectAnnotator.cpp`, `LidarCamera.cpp`, `LidarCamera.h`, and `SimModeBase.cpp`.
-- `UnrealEditor-AirSim.dll` linked at `2026-04-29 07:01:49 +07`.
+- `EVNEditor Win64 Development -NoUBA -NoUBALocal` completed successfully after the GPU LiDAR optimization pass.
+- Modified files compiled, including `ObjectAnnotator.cpp`, `LidarCamera.cpp`, `LidarCamera.h`, `SimModeBase.cpp`, `UnrealGPULidarSensor.cpp`, and `UnrealSensorFactory.cpp`.
+- `UnrealEditor-AirSim.dll` linked at `2026-04-29 08:15:11 +07`.
 - Note: the first full build attempt with the UBA local executor reached the AirSim library link step and did not return; the orphaned linker was stopped, then the non-UBA build completed normally.
 
 Remaining warnings are pre-existing:

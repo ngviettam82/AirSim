@@ -17,7 +17,7 @@ Similarly, you can also load a texture to a specific mesh component only visible
 The annotation system uses actor and/or component tags to set these values for the 3 modes (greyscale, RGB, texture). You can add these manually or use the APIs (RPC API, Unreal Blueprint, Unreal c++).
 
 ## Limitations
-* Source-stencil labels are 8-bit values (`0..255`) and are reserved for built-in segmentation/infrared. Unreal exposes one `CustomDepthStencilValue` per primitive, so custom source-stencil annotation would overwrite or be overwritten by built-in segmentation/infrared labels.
+* Source-stencil labels are 8-bit values (`0..255`) and are reserved for built-in segmentation/infrared. Unreal exposes one `CustomDepthStencilValue` per primitive, so custom source-stencil annotation would overwrite or be overwritten by built-in segmentation/infrared labels. GPU LiDAR intensity also uses this stencil slot for material IDs, so it cannot produce material-accurate intensity while source-stencil segmentation owns the same primitives.
 * Custom RGB index layers use the larger AirSim RGB colormap, but they create proxy annotation components and should be used with a practical `ProxyComponentBudget`.
 * Custom annotation layers support mesh components, including regular static meshes, skeletal meshes, and instanced static mesh components. Built-in instance segmentation and infrared additionally support Unreal Landscape components because their indexed startup path gathers landscapes separately.
   * For instanced static mesh components, one source component receives one annotation ID/color; per-instance IDs inside the same component are not supported yet.

@@ -130,6 +130,10 @@ private:
 
 	void configureSourceStencilSegmentationCapture();
 	void configureProxyAnnotationCapture(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList);
+	void configureIntensityCapture();
+	void ensureSegmentationMaterial();
+	void ensureIntensityMaterial();
+	float GetMaterialReflectance(uint8 material_id) const;
 	void GenerateLidarCoordinates();
 	void RotateCamera(float sensor_rotation_angle);
 	bool SampleRenders(float sensor_rotation_angle, float fov, msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final);
@@ -148,6 +152,9 @@ private:
 
 	UPROPERTY()
 		UMaterialInstanceDynamic* segmentation_material_;
+
+	UPROPERTY()
+		UMaterialInstanceDynamic* intensity_material_;
 
 	UPROPERTY()
 		UTextureRenderTarget2D* render_target_2D_depth_;
@@ -193,4 +200,3 @@ private:
 	//TArray<FColor> buffer_2D_intensity_;
 	//bool first_frame_ = true;
 };
-
