@@ -2,10 +2,10 @@
 
 A multi-layer annotation system is implemented into Cosys-AirSim. Annotation can render custom RGB, greyscale, or texture layers for actors and components in the world.
 
-There are two rendering backends:
+There are two rendering paths:
 
-* `SourceStencil` writes labels directly to the original Unreal source primitives through CustomDepth/CustomStencil. It is lightweight and does not create proxy mesh components, but it is limited to 8-bit labels (`0..255`) and is only supported for indexed RGB-style labels.
-* `Proxy` creates AirSim annotation components that render with annotation materials. This supports direct RGB colors, greyscale values, and textures, but it can be expensive in very dense environments.
+* Built-in `InstanceSegmentation` and `Infrared` use source stencil. AirSim writes labels directly to the original Unreal source primitives through CustomDepth/CustomStencil. This is lightweight and avoids proxy mesh components, but it is limited to 8-bit labels (`0..255`).
+* Custom RGB, greyscale, and texture annotation layers use proxy annotation components. This supports direct RGB colors, RGB index colors from the larger AirSim colormap, greyscale values, and textures, but it can be expensive in very dense environments.
 
 Built-in `InstanceSegmentation` and `Infrared` use the source-stencil backend. Optional custom annotation layers are only created when they are listed in `settings.json`.
 An annotation layer allows the user to tag individual actors and/or their child-components with a certain annotation value. This can be used to create ground truth data for machine learning models or to create a visual representation of the environment.
@@ -17,8 +17,8 @@ Similarly, you can also load a texture to a specific mesh component only visible
 The annotation system uses actor and/or component tags to set these values for the 3 modes (greyscale, RGB, texture). You can add these manually or use the APIs (RPC API, Unreal Blueprint, Unreal c++).
 
 ## Limitations
-* Source-stencil annotation labels are 8-bit values (`0..255`). Use this backend for class IDs, compact instance IDs, or EVN-style masks where 256 labels are enough. It does not support arbitrary direct RGB colors or textures.
-* Proxy RGB index layers can still use the larger AirSim RGB colormap, but they create proxy annotation components and should be used with a practical `ProxyComponentBudget`.
+* Source-stencil labels are 8-bit values (`0..255`) and are reserved for built-in segmentation/infrared. Unreal exposes one `CustomDepthStencilValue` per primitive, so custom source-stencil annotation would overwrite or be overwritten by built-in segmentation/infrared labels.
+* Custom RGB index layers use the larger AirSim RGB colormap, but they create proxy annotation components and should be used with a practical `ProxyComponentBudget`.
 * Custom annotation layers support mesh components, including regular static meshes, skeletal meshes, and instanced static mesh components. Built-in instance segmentation and infrared additionally support Unreal Landscape components because their indexed startup path gathers landscapes separately.
   * For instanced static mesh components, one source component receives one annotation ID/color; per-instance IDs inside the same component are not supported yet.
   * For landscapes in built-in segmentation/infrared, each `ULandscapeComponent` is listed separately, while the owning `ALandscapeProxy` name is used as a shared label key for grouped ID updates.
@@ -49,8 +49,8 @@ For example:
         "Type": 0,
         "Default": false,
         "SetDirect": false,
-        "Backend": "SourceStencil",
-        "ProxyComponentBudget": 0
+        "Backend": "Proxy",
+        "ProxyComponentBudget": 5000
     },
     {
         "Name": "GreyscaleTest",
@@ -90,7 +90,7 @@ The types are:
 Common settings:
 
 * `Default` applies to all types and controls what happens when no tag is set for an actor/component. If omitted, it defaults to `false`. When set to `false`, the mesh is not rendered in the custom annotation layer. When set to `true`, the mesh is rendered with the default value of the layer.
-* `Backend` chooses the render backend. Supported values are `Auto`, `SourceStencil`, and `Proxy`. If omitted, it defaults to `Auto`. For custom annotation layers, `Auto` uses the proxy backend. Set `Backend` to `SourceStencil` explicitly when you want a lightweight RGB index layer (`Type: 0`, `SetDirect: false`). Built-in segmentation/infrared always use source stencil. Direct RGB, greyscale, and texture layers use `Proxy`.
+* `Backend` chooses the render backend. Supported values are `Auto`, `Proxy`, and `SourceStencil`. If omitted, it defaults to `Auto`. Custom annotation layers use `Proxy`; `SourceStencil` is reserved for built-in segmentation/infrared and custom layers that request it fall back to `Proxy`.
 * `ProxyComponentBudget` limits how many proxy annotation components one layer may create. If omitted, it defaults to `5000`. Use `0` to prevent proxy creation for that layer, or `-1` for no budget limit.
 
 The `ViewDistance` setting applies to all types and allows you to set the maximum distance in meters at which the annotation layer is rendered.
@@ -105,10 +105,7 @@ Actor/component tags have the following format: `annotationName_R_G_B` for direc
 So if for example your RGB annotation layer is called `RGBTestDirect`, you can tag an actor with the tag `RGBTestDirect_255_0_0` to give it a red color.
 Or for index mode, `RGBTest_5` to give it the fifth color in the colormap.
 
-RGB direct mode uses the proxy backend. RGB index mode can use either backend:
-
-* `Backend: "SourceStencil"` is the lightweight option. It labels source primitives directly and supports IDs `0..255`.
-* `Backend: "Proxy"` keeps the larger RGB colormap behavior, but creates proxy annotation components and is controlled by `ProxyComponentBudget`.
+RGB direct mode and RGB index mode both use the proxy backend for custom annotation layers. RGB index mode keeps the larger AirSim colormap behavior and is controlled by `ProxyComponentBudget`.
 
 When `Default` is set to `true`, all objects without a tag for this layer will be rendered with the layer default. When `Default` is omitted or set to `false`, untagged objects are not included in this custom annotation layer.
 

@@ -94,8 +94,11 @@ ALidarCamera::ALidarCamera()
 	static ConstructorHelpers::FObjectFinder<UMaterial> mat_finder_segmentation(TEXT("Material'/AirSim/HUDAssets/SegmentationMaterial.SegmentationMaterial'"));
 	if (mat_finder_segmentation.Succeeded())
 	{
-		UMaterialInstanceDynamic* segmentation_material = UMaterialInstanceDynamic::Create(mat_finder_segmentation.Object, capture_2D_segmentation_);
-		capture_2D_segmentation_->PostProcessSettings.AddBlendable(segmentation_material, 1.0f);
+		segmentation_material_ = UMaterialInstanceDynamic::Create(mat_finder_segmentation.Object, capture_2D_segmentation_);
+		if (IsValid(segmentation_material_))
+		{
+			capture_2D_segmentation_->PostProcessSettings.AddBlendable(segmentation_material_, 1.0f);
+		}
 	}
 	else
 		UAirBlueprintLib::LogMessageString("Cannot create source stencil segmentation material for the LidarCamera", "", LogDebugLevel::Failure);
@@ -147,6 +150,7 @@ void ALidarCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	capture_2D_depth_ = nullptr;
 	render_target_2D_depth_ = nullptr;
+	segmentation_material_ = nullptr;
 	capture_2D_segmentation_ = nullptr;
 	render_target_2D_segmentation_ = nullptr;
 	capture_2D_intensity_ = nullptr;
@@ -230,8 +234,7 @@ void ALidarCamera::InitializeSensor()
 	capture_2D_depth_->bUseCustomProjectionMatrix = false;
 
 	// Setup the capture component for the virtual instance segmentation camera
-	FObjectAnnotator::SetViewForSourceStencilAnnotationRender(capture_2D_segmentation_->ShowFlags);
-	capture_2D_segmentation_->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
+	configureSourceStencilSegmentationCapture();
 
 	render_target_2D_segmentation_->TargetGamma = 1;
 	capture_2D_segmentation_->TextureTarget = render_target_2D_segmentation_;
@@ -360,11 +363,44 @@ bool ALidarCamera::Update(float delta_time, msr::airlib::vector<msr::airlib::rea
 }
 
 void ALidarCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList) {
-	capture_2D_segmentation_->ShowOnlyComponents.Empty();
+	configureSourceStencilSegmentationCapture();
 }
 
 void ALidarCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList) {
+	configureProxyAnnotationCapture(ComponentList);
+}
+
+void ALidarCamera::configureSourceStencilSegmentationCapture()
+{
+	if (capture_2D_segmentation_ == nullptr)
+	{
+		return;
+	}
+
+	FObjectAnnotator::SetViewForSourceStencilAnnotationRender(capture_2D_segmentation_->ShowFlags);
+	capture_2D_segmentation_->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
+	capture_2D_segmentation_->ShowOnlyComponents.Empty();
+	if (IsValid(segmentation_material_))
+	{
+		capture_2D_segmentation_->PostProcessSettings.RemoveBlendable(segmentation_material_);
+		capture_2D_segmentation_->PostProcessSettings.AddBlendable(segmentation_material_, 1.0f);
+	}
+}
+
+void ALidarCamera::configureProxyAnnotationCapture(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList)
+{
+	if (capture_2D_segmentation_ == nullptr)
+	{
+		return;
+	}
+
+	FObjectAnnotator::SetViewForAnnotationRender(capture_2D_segmentation_->ShowFlags);
+	capture_2D_segmentation_->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 	capture_2D_segmentation_->ShowOnlyComponents = ComponentList;
+	if (IsValid(segmentation_material_))
+	{
+		capture_2D_segmentation_->PostProcessSettings.RemoveBlendable(segmentation_material_);
+	}
 }
 
 

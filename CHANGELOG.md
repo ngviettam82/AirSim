@@ -1,9 +1,9 @@
 ### Development (version 3.4)
 * Updated built-in instance segmentation and infrared to use source CustomStencil labels instead of generated annotation mirror geometry. This avoids duplicating dense ISM/HISM instance buffers in large Unreal environments.
 * Changed `InitialInstanceSegmentation` default to false; set it explicitly to true when startup segmentation labels are needed.
-* Added annotation `Backend` and `ProxyComponentBudget` settings, and changed annotation `Default` to false by default so optional custom annotation layers do not proxy the whole level unless requested.
+* Added annotation `Backend` and `ProxyComponentBudget` settings, and changed annotation `Default` to false by default so optional custom annotation layers do not proxy the whole level unless requested. Custom annotation layers use proxy rendering; source stencil is reserved for built-in segmentation/infrared.
 * Updated segmentation Python examples for the source-stencil ID range and actual object-ID lookup behavior.
-* Fixed source-stencil RGB annotation initialization to reject IDs outside `0..255` and preserved proxy annotation hiding in Scene/Lighting captures.
+* Fixed RGB annotation initialization and dynamic updates to reject malformed/out-of-range tags, preserved proxy annotation hiding in Scene/Lighting captures, and kept custom annotation off the built-in stencil plane.
 * Fixed duplicate indexes for annotation system causing meshes to not show up in annotation masks.
 
 ### April 2025 (version 3.3)

@@ -15,6 +15,7 @@
 #include "Components/SkinnedMeshComponent.h"
 #include "Camera/CameraActor.h"
 #include "Materials/Material.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Runtime/Core/Public/PixelFormat.h"
 #include "TextureResource.h"
 #include "common/AirSimSettings.hpp"
@@ -127,6 +128,8 @@ public:
 
 private: 
 
+	void configureSourceStencilSegmentationCapture();
+	void configureProxyAnnotationCapture(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList);
 	void GenerateLidarCoordinates();
 	void RotateCamera(float sensor_rotation_angle);
 	bool SampleRenders(float sensor_rotation_angle, float fov, msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final);
@@ -142,6 +145,9 @@ private:
 
 	UPROPERTY()
 		USceneCaptureComponent2D* capture_2D_intensity_;
+
+	UPROPERTY()
+		UMaterialInstanceDynamic* segmentation_material_;
 
 	UPROPERTY()
 		UTextureRenderTarget2D* render_target_2D_depth_;

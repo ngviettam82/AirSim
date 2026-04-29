@@ -41,6 +41,11 @@
 
 ASimModeBase* ASimModeBase::SIMMODE = nullptr;
 
+namespace
+{
+    constexpr int32 MaxRGBAnnotationId = 2744000 - 1;
+}
+
 ASimModeBase* ASimModeBase::getSimMode()
 {
     return SIMMODE;
@@ -985,6 +990,10 @@ bool ASimModeBase::SetMeshRGBAnnotationID(const std::string& annotation_name, co
         UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: This annotation layer is not set to index mode."), *FString(annotation_name.c_str()));
         return false;
     }
+    if (object_id < 0 || object_id > MaxRGBAnnotationId) {
+        UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Ignored ID %d for %s because RGB annotation IDs must be in 0..%d."), *FString(annotation_name.c_str()), object_id, *FString(mesh_name.c_str()), MaxRGBAnnotationId);
+        return false;
+    }
 
     if (is_name_regex) {
         std::regex name_regex;
@@ -993,24 +1002,26 @@ bool ASimModeBase::SetMeshRGBAnnotationID(const std::string& annotation_name, co
         for (auto It = annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().CreateConstIterator(); It; ++It)
         {
             if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-                bool success;
+                bool success = false;
                 FString key = It.Key();
                 UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success, annotation_name]() {
                     success = annotators_[FString(annotation_name.c_str())].SetComponentRGBColorByIndex(key, object_id);
                     }, true);
-                changes++;
+                if (success) {
+                    ++changes;
+                }
             }
         }
         if (update_annotation && changes > 0)updateAnnotation(FString(annotation_name.c_str()));
         return changes > 0;
     }
     else if (annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().Contains(mesh_name.c_str())) {
-        bool success;
+        bool success = false;
         FString key = mesh_name.c_str();
         UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success, annotation_name]() {
             success = annotators_[FString(annotation_name.c_str())].SetComponentRGBColorByIndex(key, object_id);
             }, true);
-        if (update_annotation)updateAnnotation(FString(annotation_name.c_str()));
+        if (success && update_annotation)updateAnnotation(FString(annotation_name.c_str()));
         return success;
     }
     else {
@@ -1031,6 +1042,10 @@ bool ASimModeBase::SetMeshRGBAnnotationColor(const std::string& annotation_name,
         UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: This annotation layer is not set to direct mode."), *FString(annotation_name.c_str()));
         return false;
     }
+    if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) {
+        UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Ignored RGB color (%d, %d, %d) for %s because direct RGB values must be in 0..255."), *FString(annotation_name.c_str()), r, g, b, *FString(mesh_name.c_str()));
+        return false;
+    }
 
     FColor color = FColor(r, g, b);
 
@@ -1041,24 +1056,26 @@ bool ASimModeBase::SetMeshRGBAnnotationColor(const std::string& annotation_name,
         for (auto It = annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().CreateConstIterator(); It; ++It)
         {
             if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-                bool success;
+                bool success = false;
                 FString key = It.Key();
                 UAirBlueprintLib::RunCommandOnGameThread([this, key, color, &success, annotation_name]() {
                     success = annotators_[FString(annotation_name.c_str())].SetComponentRGBColorByColor(key, color);
                     }, true);
-                changes++;
+                if (success) {
+                    ++changes;
+                }
             }
         }
         if (update_annotation && changes > 0)updateAnnotation(FString(annotation_name.c_str()));
         return changes > 0;
     }
     else if (annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().Contains(mesh_name.c_str())) {
-        bool success;
+        bool success = false;
         FString key = mesh_name.c_str();
         UAirBlueprintLib::RunCommandOnGameThread([this, key, color, &success, annotation_name]() {
             success = annotators_[FString(annotation_name.c_str())].SetComponentRGBColorByColor(key, color);
             }, true);
-        if (update_annotation)updateAnnotation(FString(annotation_name.c_str()));
+        if (success && update_annotation)updateAnnotation(FString(annotation_name.c_str()));
         return success;
     }
     else {
@@ -1084,24 +1101,26 @@ bool ASimModeBase::SetMeshGreyscaleAnnotationValue(const std::string& annotation
         for (auto It = annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().CreateConstIterator(); It; ++It)
         {
             if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-                bool success;
+                bool success = false;
                 FString key = It.Key();
                 UAirBlueprintLib::RunCommandOnGameThread([this, key, greyscale_value, &success, annotation_name]() {
                     success = annotators_[FString(annotation_name.c_str())].SetComponentGreyScaleColorByValue(key, greyscale_value);
                     }, true);
-                changes++;
+                if (success) {
+                    ++changes;
+                }
             }
         }
         if (update_annotation && changes > 0)updateAnnotation(FString(annotation_name.c_str()));
         return changes > 0;
     }
     else if (annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().Contains(mesh_name.c_str())) {
-        bool success;
+        bool success = false;
         FString key = mesh_name.c_str();
         UAirBlueprintLib::RunCommandOnGameThread([this, key, greyscale_value, &success, annotation_name]() {
             success = annotators_[FString(annotation_name.c_str())].SetComponentGreyScaleColorByValue(key, greyscale_value);
             }, true);
-        if (update_annotation)updateAnnotation(FString(annotation_name.c_str()));
+        if (success && update_annotation)updateAnnotation(FString(annotation_name.c_str()));
         return success;
     }
     else {
@@ -1145,24 +1164,26 @@ bool ASimModeBase::SetMeshTextureAnnotationPath(const std::string& annotation_na
         for (auto It = annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().CreateConstIterator(); It; ++It)
         {
             if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-                bool success;
+                bool success = false;
                 FString key = It.Key();
                 UAirBlueprintLib::RunCommandOnGameThread([this, key, texture_path_fstring, &success, annotation_name]() {
                     success = annotators_[FString(annotation_name.c_str())].SetComponentTextureByDirectPath(key, texture_path_fstring);
                     }, true);
-                changes++;
+                if (success) {
+                    ++changes;
+                }
             }
         }
         if (update_annotation && changes > 0)updateAnnotation(FString(annotation_name.c_str()));
         return changes > 0;
     }
     else if (annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().Contains(mesh_name.c_str())) {
-        bool success;
+        bool success = false;
         FString key = mesh_name.c_str();
         UAirBlueprintLib::RunCommandOnGameThread([this, key, texture_path_fstring, &success, annotation_name]() {
             success = annotators_[FString(annotation_name.c_str())].SetComponentTextureByDirectPath(key, texture_path_fstring);
             }, true);
-        if (update_annotation)updateAnnotation(FString(annotation_name.c_str()));
+        if (success && update_annotation)updateAnnotation(FString(annotation_name.c_str()));
         return success;
     }
     else {
@@ -1192,24 +1213,26 @@ bool ASimModeBase::EnableMeshTextureAnnotationByPath(const std::string& annotati
         for (auto It = annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().CreateConstIterator(); It; ++It)
         {
             if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-                bool success;
+                bool success = false;
                 FString key = It.Key();
                 UAirBlueprintLib::RunCommandOnGameThread([this, key, &success, annotation_name]() {
                     success = annotators_[FString(annotation_name.c_str())].SetComponentTextureByRelativePath(key);
                     }, true);
-                changes++;
+                if (success) {
+                    ++changes;
+                }
             }
         }
         if (update_annotation && changes > 0)updateAnnotation(FString(annotation_name.c_str()));
         return changes > 0;
     }
     else if (annotators_[FString(annotation_name.c_str())].GetNameToComponentMap().Contains(mesh_name.c_str())) {
-        bool success;
+        bool success = false;
         FString key = mesh_name.c_str();
         UAirBlueprintLib::RunCommandOnGameThread([this, key, &success, annotation_name]() {
             success = annotators_[FString(annotation_name.c_str())].SetComponentTextureByRelativePath(key);
             }, true);
-        if (update_annotation)updateAnnotation(FString(annotation_name.c_str()));
+        if (success && update_annotation)updateAnnotation(FString(annotation_name.c_str()));
         return success;
     }
     else {
