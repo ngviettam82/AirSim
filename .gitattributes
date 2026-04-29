@@ -1,3 +1,36 @@
-# This repository intentionally contains mixed LF/CRLF files.
-# Preserve the exact line endings committed in Git on every platform.
-* -text
+# Normalize all tracked text files to LF in Git and in the working tree.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending normalized.
+*.7z binary
+*.a binary
+*.avi binary
+*.bin binary
+*.bmp binary
+*.dll binary
+*.dylib binary
+*.exe binary
+*.exr binary
+*.fbx binary
+*.gif binary
+*.gz binary
+*.hdr binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.lib binary
+*.mov binary
+*.mp3 binary
+*.mp4 binary
+*.obj binary
+*.ogg binary
+*.pdb binary
+*.pdf binary
+*.png binary
+*.so binary
+*.tar binary
+*.tga binary
+*.uasset binary
+*.umap binary
+*.wav binary
+*.zip binary
