@@ -72,6 +72,21 @@ ALidarCamera::ALidarCamera()
 	capture_2D_depth_ = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Lidar2DDepth"));
 	capture_2D_segmentation_ = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Lidar2DSegmentation"));
 	capture_2D_intensity_ = CreateDefaultSubobject<USceneCaptureComponent2D>(TEXT("Lidar2DIntensity"));
+	segmentation_material_ = nullptr;
+	intensity_material_ = nullptr;
+
+	capture_2D_depth_->bCaptureEveryFrame = false;
+	capture_2D_depth_->bCaptureOnMovement = false;
+	capture_2D_depth_->bAlwaysPersistRenderingState = false;
+	capture_2D_depth_->SetComponentTickEnabled(false);
+	capture_2D_segmentation_->bCaptureEveryFrame = false;
+	capture_2D_segmentation_->bCaptureOnMovement = false;
+	capture_2D_segmentation_->bAlwaysPersistRenderingState = false;
+	capture_2D_segmentation_->SetComponentTickEnabled(false);
+	capture_2D_intensity_->bCaptureEveryFrame = false;
+	capture_2D_intensity_->bCaptureOnMovement = false;
+	capture_2D_intensity_->bAlwaysPersistRenderingState = false;
+	capture_2D_intensity_->SetComponentTickEnabled(false);
 
 	// Find materials in Plugin content and assign to post process settings of the capture components
 	static ConstructorHelpers::FObjectFinder<UMaterial> mat_finder(TEXT("Material'/AirSim/HUDAssets/LidarDepthMaterial.LidarDepthMaterial'"));
@@ -82,27 +97,6 @@ ALidarCamera::ALidarCamera()
 	}
 	else
 		UAirBlueprintLib::LogMessageString("Cannot create depth material for the LidarCamera", "", LogDebugLevel::Failure);
-	static ConstructorHelpers::FObjectFinder<UMaterial> mat_finder_intensity(TEXT("Material'/AirSim/HUDAssets/LidarImpactNormalMaterial.LidarImpactNormalMaterial'"));
-	if (mat_finder_intensity.Succeeded())
-	{
-		UMaterialInstanceDynamic* intensity_material = UMaterialInstanceDynamic::Create(mat_finder_intensity.Object, capture_2D_intensity_);
-		capture_2D_intensity_->PostProcessSettings.AddBlendable(intensity_material, 1.0f);
-	}
-	else
-		UAirBlueprintLib::LogMessageString("Cannot create intensity material for the LidarCamera", "", LogDebugLevel::Failure);
-
-	static ConstructorHelpers::FObjectFinder<UMaterial> mat_finder_segmentation(TEXT("Material'/AirSim/HUDAssets/SegmentationMaterial.SegmentationMaterial'"));
-	if (mat_finder_segmentation.Succeeded())
-	{
-		segmentation_material_ = UMaterialInstanceDynamic::Create(mat_finder_segmentation.Object, capture_2D_segmentation_);
-		if (IsValid(segmentation_material_))
-		{
-			capture_2D_segmentation_->PostProcessSettings.AddBlendable(segmentation_material_, 1.0f);
-		}
-	}
-	else
-		UAirBlueprintLib::LogMessageString("Cannot create source stencil segmentation material for the LidarCamera", "", LogDebugLevel::Failure);
-
 	PrimaryActorTick.bCanEverTick = true;
 
 }
@@ -112,9 +106,9 @@ void ALidarCamera::PostInitializeComponents()
 	Super::PostInitializeComponents();
 
 	// Create new render targets that will be used by the capture components
-	render_target_2D_depth_ = NewObject<UTextureRenderTarget2D>();
-	render_target_2D_segmentation_ = NewObject<UTextureRenderTarget2D>();
-	render_target_2D_intensity_ = NewObject<UTextureRenderTarget2D>();
+	render_target_2D_depth_ = NewObject<UTextureRenderTarget2D>(this);
+	render_target_2D_segmentation_ = nullptr;
+	render_target_2D_intensity_ = nullptr;
 
 	// Set the position, rotation and source type of each capture component and attach it to the root of the Actor
 	capture_2D_depth_->SetRelativeRotation(FRotator(0, 0, 0));
@@ -151,6 +145,7 @@ void ALidarCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	capture_2D_depth_ = nullptr;
 	render_target_2D_depth_ = nullptr;
 	segmentation_material_ = nullptr;
+	intensity_material_ = nullptr;
 	capture_2D_segmentation_ = nullptr;
 	render_target_2D_segmentation_ = nullptr;
 	capture_2D_intensity_ = nullptr;
@@ -185,26 +180,30 @@ void ALidarCamera::InitializeSettingsFromAirSim(const msr::airlib::GPULidarSimpl
 	rain_constant_b_ = settings.rain_constant_b;
 	generate_distance_noise_ = settings.generate_noise;
 
-	// Load materials.csv file holding the lambertian reflectance coefficients for certain material types and save tem into a map
-	std::string material_List_content;
-	FString materialListContent;
-	if (FFileHelper::LoadFileToString(materialListContent, UTF8_TO_TCHAR(settings.material_list_file.c_str()))) {
-		material_List_content = std::string(TCHAR_TO_UTF8(*materialListContent));
-	}
-	std::istringstream iss(material_List_content);
-	std::string line, word;
+	material_map_.clear();
 	material_map_.emplace(0, 1);
-	int stencil_index = 1;
-	while (std::getline(iss, line))
-	{
-		std::stringstream ss(line);
-		std::vector<std::string> row;
-		while (std::getline(ss, word, ',')) {
-			row.push_back(word);
+
+	if (generate_intensity_) {
+		// Load materials.csv file holding the lambertian reflectance coefficients for certain material types and save them into a map.
+		std::string material_List_content;
+		FString materialListContent;
+		if (FFileHelper::LoadFileToString(materialListContent, UTF8_TO_TCHAR(settings.material_list_file.c_str()))) {
+			material_List_content = std::string(TCHAR_TO_UTF8(*materialListContent));
 		}
-		if (row.size() > 1) {
-			material_map_.emplace(stencil_index, std::stof(row[1]));
-			stencil_index = stencil_index + 1;
+		std::istringstream iss(material_List_content);
+		std::string line, word;
+		int stencil_index = 1;
+		while (std::getline(iss, line))
+		{
+			std::stringstream ss(line);
+			std::vector<std::string> row;
+			while (std::getline(ss, word, ',')) {
+				row.push_back(word);
+			}
+			if (row.size() > 1) {
+				material_map_.emplace(stencil_index, std::stof(row[1]));
+				stencil_index = stencil_index + 1;
+			}
 		}
 	}
 
@@ -221,34 +220,61 @@ void ALidarCamera::InitializeSettingsFromAirSim(const msr::airlib::GPULidarSimpl
 
 void ALidarCamera::InitializeSensor()
 {
+	if (!IsValid(render_target_2D_depth_)) {
+		render_target_2D_depth_ = NewObject<UTextureRenderTarget2D>(this);
+	}
+
 	// Setup the resolution and pixel format of each render target texture
 	render_target_2D_depth_->InitCustomFormat((uint32)resolution_, (uint32)resolution_, PF_B8G8R8A8, true);
-	render_target_2D_segmentation_->InitCustomFormat((uint32)resolution_, (uint32)resolution_, PF_B8G8R8A8, false); // The instance segmentation image requires normal gamma (none-linear)
-	render_target_2D_intensity_->InitCustomFormat((uint32)resolution_, (uint32)resolution_, PF_B8G8R8A8, true);
 
 	// Setup the capture component for the virtual depth camera
 	capture_2D_depth_->TextureTarget = render_target_2D_depth_;
-	capture_2D_depth_->bAlwaysPersistRenderingState = true;
+	capture_2D_depth_->bAlwaysPersistRenderingState = false;
 	capture_2D_depth_->bCaptureEveryFrame = false;
 	capture_2D_depth_->bCaptureOnMovement = false;
 	capture_2D_depth_->bUseCustomProjectionMatrix = false;
+	capture_2D_depth_->SetComponentTickEnabled(false);
 
-	// Setup the capture component for the virtual instance segmentation camera
-	configureSourceStencilSegmentationCapture();
-
-	render_target_2D_segmentation_->TargetGamma = 1;
-	capture_2D_segmentation_->TextureTarget = render_target_2D_segmentation_;
-	capture_2D_segmentation_->bAlwaysPersistRenderingState = true;
+	capture_2D_segmentation_->bAlwaysPersistRenderingState = false;
 	capture_2D_segmentation_->bCaptureEveryFrame = false;
 	capture_2D_segmentation_->bCaptureOnMovement = false;
 	capture_2D_segmentation_->bUseCustomProjectionMatrix = false;
+	capture_2D_segmentation_->SetVisibility(generate_groundtruth_);
+	capture_2D_segmentation_->SetComponentTickEnabled(false);
 
-	// Setup the capture component for the virtual intensity camera
-	capture_2D_intensity_->TextureTarget = render_target_2D_intensity_;
-	capture_2D_intensity_->bAlwaysPersistRenderingState = true;
+	// Setup the capture component for the virtual instance segmentation camera
+	if (generate_groundtruth_) {
+		if (!IsValid(render_target_2D_segmentation_)) {
+			render_target_2D_segmentation_ = NewObject<UTextureRenderTarget2D>(this);
+		}
+		render_target_2D_segmentation_->InitCustomFormat((uint32)resolution_, (uint32)resolution_, PF_B8G8R8A8, false); // The instance segmentation image requires normal gamma (none-linear)
+		render_target_2D_segmentation_->TargetGamma = 1;
+		capture_2D_segmentation_->TextureTarget = render_target_2D_segmentation_;
+		configureSourceStencilSegmentationCapture();
+	}
+	else {
+		capture_2D_segmentation_->TextureTarget = nullptr;
+	}
+
+	capture_2D_intensity_->bAlwaysPersistRenderingState = false;
 	capture_2D_intensity_->bCaptureEveryFrame = false;
 	capture_2D_intensity_->bCaptureOnMovement = false;
 	capture_2D_intensity_->bUseCustomProjectionMatrix = false;
+	capture_2D_intensity_->SetVisibility(generate_intensity_);
+	capture_2D_intensity_->SetComponentTickEnabled(false);
+
+	// Setup the capture component for the virtual intensity camera
+	if (generate_intensity_) {
+		if (!IsValid(render_target_2D_intensity_)) {
+			render_target_2D_intensity_ = NewObject<UTextureRenderTarget2D>(this);
+		}
+		render_target_2D_intensity_->InitCustomFormat((uint32)resolution_, (uint32)resolution_, PF_B8G8R8A8, true);
+		capture_2D_intensity_->TextureTarget = render_target_2D_intensity_;
+		configureIntensityCapture();
+	}
+	else {
+		capture_2D_intensity_->TextureTarget = nullptr;
+	}
 
 	// Generate the XYZ-coordinates LUT based on the LiDAR sensor laser configuration
 	GenerateLidarCoordinates();
@@ -281,8 +307,12 @@ void ALidarCamera::InitializeSensor()
 		}
 	}
 	capture_2D_depth_->HiddenActors = actors;
-	capture_2D_segmentation_->HiddenActors = actors;
-	capture_2D_intensity_->HiddenActors = actors;
+	if (generate_groundtruth_) {
+		capture_2D_segmentation_->HiddenActors = actors;
+	}
+	if (generate_intensity_) {
+		capture_2D_intensity_->HiddenActors = actors;
+	}
 
 	sensor_cur_angle_ = FMath::Fmod(horizontal_fov_min_, 360);
 	hfov_ = abs(horizontal_fov_max_ - horizontal_fov_min_);
@@ -324,8 +354,12 @@ bool ALidarCamera::Update(float delta_time, msr::airlib::vector<msr::airlib::rea
 		if (cur_fov % 2 != 0) cur_fov += 1;
 		if (cur_fov < 90) cur_fov = 90;
 		capture_2D_depth_->FOVAngle = cur_fov;
-		capture_2D_segmentation_->FOVAngle = cur_fov;
-		capture_2D_intensity_->FOVAngle = cur_fov;
+		if (generate_groundtruth_) {
+			capture_2D_segmentation_->FOVAngle = cur_fov;
+		}
+		if (generate_intensity_) {
+			capture_2D_intensity_->FOVAngle = cur_fov;
+		}
 
 		// Rotate the physical cameras in the Unreal world to the new location based on what happened in previous frames
 		RotateCamera(FMath::Fmod(sensor_cur_angle_ + sensor_prev_rotation_angle_ + (cur_fov / 2), 360));
@@ -348,8 +382,12 @@ bool ALidarCamera::Update(float delta_time, msr::airlib::vector<msr::airlib::rea
 		else {
 
 			capture_2D_depth_->CaptureScene();
-			capture_2D_segmentation_->CaptureScene();
-			capture_2D_intensity_->CaptureScene();
+			if (generate_groundtruth_) {
+				capture_2D_segmentation_->CaptureScene();
+			}
+			if (generate_intensity_) {
+				capture_2D_intensity_->CaptureScene();
+			}
 			refresh_pointcloud = SampleRenders(sensor_sum_rotation_angle_, cur_fov, point_cloud, point_cloud_final);
 		}
 
@@ -370,6 +408,42 @@ void ALidarCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >
 	configureProxyAnnotationCapture(ComponentList);
 }
 
+void ALidarCamera::ensureSegmentationMaterial()
+{
+	if (IsValid(segmentation_material_))
+	{
+		return;
+	}
+
+	UMaterial* segmentation_material = LoadObject<UMaterial>(nullptr, TEXT("Material'/AirSim/HUDAssets/SegmentationMaterial.SegmentationMaterial'"));
+	if (IsValid(segmentation_material))
+	{
+		segmentation_material_ = UMaterialInstanceDynamic::Create(segmentation_material, capture_2D_segmentation_);
+	}
+	else
+	{
+		UAirBlueprintLib::LogMessageString("Cannot create source stencil segmentation material for the LidarCamera", "", LogDebugLevel::Failure);
+	}
+}
+
+void ALidarCamera::ensureIntensityMaterial()
+{
+	if (IsValid(intensity_material_))
+	{
+		return;
+	}
+
+	UMaterial* intensity_material = LoadObject<UMaterial>(nullptr, TEXT("Material'/AirSim/HUDAssets/LidarImpactNormalMaterial.LidarImpactNormalMaterial'"));
+	if (IsValid(intensity_material))
+	{
+		intensity_material_ = UMaterialInstanceDynamic::Create(intensity_material, capture_2D_intensity_);
+	}
+	else
+	{
+		UAirBlueprintLib::LogMessageString("Cannot create intensity material for the LidarCamera", "", LogDebugLevel::Failure);
+	}
+}
+
 void ALidarCamera::configureSourceStencilSegmentationCapture()
 {
 	if (capture_2D_segmentation_ == nullptr)
@@ -377,6 +451,7 @@ void ALidarCamera::configureSourceStencilSegmentationCapture()
 		return;
 	}
 
+	ensureSegmentationMaterial();
 	FObjectAnnotator::SetViewForSourceStencilAnnotationRender(capture_2D_segmentation_->ShowFlags);
 	capture_2D_segmentation_->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
 	capture_2D_segmentation_->ShowOnlyComponents.Empty();
@@ -384,6 +459,21 @@ void ALidarCamera::configureSourceStencilSegmentationCapture()
 	{
 		capture_2D_segmentation_->PostProcessSettings.RemoveBlendable(segmentation_material_);
 		capture_2D_segmentation_->PostProcessSettings.AddBlendable(segmentation_material_, 1.0f);
+	}
+}
+
+void ALidarCamera::configureIntensityCapture()
+{
+	if (capture_2D_intensity_ == nullptr)
+	{
+		return;
+	}
+
+	ensureIntensityMaterial();
+	if (IsValid(intensity_material_))
+	{
+		capture_2D_intensity_->PostProcessSettings.RemoveBlendable(intensity_material_);
+		capture_2D_intensity_->PostProcessSettings.AddBlendable(intensity_material_, 1.0f);
 	}
 }
 
@@ -401,6 +491,17 @@ void ALidarCamera::configureProxyAnnotationCapture(const TArray<TWeakObjectPtr<U
 	{
 		capture_2D_segmentation_->PostProcessSettings.RemoveBlendable(segmentation_material_);
 	}
+}
+
+float ALidarCamera::GetMaterialReflectance(uint8 material_id) const
+{
+	const auto material_entry = material_map_.find(material_id);
+	if (material_entry != material_map_.end())
+	{
+		return material_entry->second;
+	}
+
+	return 1.0f;
 }
 
 
@@ -431,8 +532,12 @@ void ALidarCamera::RotateCamera(float sensor_rotation_angle)
 	//	}, false);
 
 	capture_2D_depth_->SetRelativeRotation(FRotator(0, sensor_rotation_angle, 0));
-	capture_2D_segmentation_->SetRelativeRotation(FRotator(0, sensor_rotation_angle, 0));
-	capture_2D_intensity_->SetRelativeRotation(FRotator(0, sensor_rotation_angle, 0));
+	if (generate_groundtruth_) {
+		capture_2D_segmentation_->SetRelativeRotation(FRotator(0, sensor_rotation_angle, 0));
+	}
+	if (generate_intensity_) {
+		capture_2D_intensity_->SetRelativeRotation(FRotator(0, sensor_rotation_angle, 0));
+	}
 
 }
 
@@ -633,11 +738,12 @@ bool ALidarCamera::SampleRenders(float sensor_rotation_angle, float fov, msr::ai
 						// and therefore the Lambertian reflectance coefficient of that material and calculate together with the impact angle on that material the final intensity.
 						// Furthermroe, detract the rain-intensity based drop as well. 
 						// See the paper for more details
-						final_intensity = impact_angle * material_map_.at(value_intensity.A) * FMath::Exp(-2.0f * rain_constant_a_ * FMath::Pow(rain_max_intensity_ * rain_value, rain_constant_b_) * (depth / 100.0f));
+						const float material_reflectance = GetMaterialReflectance(value_intensity.A);
+						final_intensity = impact_angle * material_reflectance * FMath::Exp(-2.0f * rain_constant_a_ * FMath::Pow(rain_max_intensity_ * rain_value, rain_constant_b_) * (depth / 100.0f));
 
 						// if the intensity based on the surface material and the impact angle is below the (linear) reflectance limit function the point will be dropped
 						// See the paper for more details
-						if ((impact_angle * material_map_.at(value_intensity.A)) < (max_range_ / max_range_lambertian_percentage_ / 100) * depth / 100.0)threshold_enable = false;
+						if ((impact_angle * material_reflectance) < (max_range_ / max_range_lambertian_percentage_ / 100) * depth / 100.0)threshold_enable = false;
 
 						// If in the right debug drawing mode, draw the surface material type to screen in the final pointcloud formation
 						if (draw_debug_ && debug_draw_mode_ == 2 && threshold_enable) {

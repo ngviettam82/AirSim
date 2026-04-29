@@ -104,6 +104,10 @@ asphalt,0.1
 ```
 This needs to be saved as 'materials.csv' in your documents folder where also your settings json file resides.
 
+GPU LiDAR captures the segmentation render target only when `GroundTruth` is true, and captures the intensity render target only when `GenerateIntensity` is true. Disabled optional targets do not allocate render target resources, attach optional post-process materials, keep persistent scene-capture view state, or parse `materials.csv`.
+
+`GenerateIntensity` uses Unreal `CustomDepthStencilValue` to store surface material IDs. Built-in source-stencil segmentation and infrared use the same Unreal stencil slot for object IDs. If `InitialInstanceSegmentation` is true, those object IDs can replace the material IDs used for intensity reflectance, so do not combine GPU LiDAR intensity with source-stencil segmentation when material-accurate intensity is required.
+
 ## Server side visualization for debugging
 By default, the lidar points are not drawn on the viewport. To enable the drawing of hit laser points on the viewport, please enable setting 'DrawDebugPoints' via settings json. *This is only for testing purposes and will affect the data slightly. It also needs to be disabled when using multiple Lidar sensors to avoid artifacts!!*
 
