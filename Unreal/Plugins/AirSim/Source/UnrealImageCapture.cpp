@@ -4,6 +4,67 @@
 
 #include "RenderRequest.h"
 #include "common/ClockFactory.hpp"
+#include <limits>
+
+namespace
+{
+    using ImageType = msr::airlib::ImageCaptureBase::ImageType;
+    using AirSimSettings = msr::airlib::AirSimSettings;
+
+    struct EquirectangularExposureSettings
+    {
+        float compensation = std::numeric_limits<float>::quiet_NaN();
+        float min = std::numeric_limits<float>::quiet_NaN();
+        float max = std::numeric_limits<float>::quiet_NaN();
+    };
+
+    bool tryGetCaptureSetting(APIPCamera* camera, ImageType image_type, AirSimSettings::CaptureSetting& out)
+    {
+        if (camera == nullptr) {
+            return false;
+        }
+
+        const auto camera_params = camera->getParams();
+        const auto capture_setting = camera_params.capture_settings.find(static_cast<int>(image_type));
+        if (capture_setting == camera_params.capture_settings.end()) {
+            return false;
+        }
+
+        out = capture_setting->second;
+        return true;
+    }
+
+    float getMaxDepthMeters(APIPCamera* camera, ImageType image_type)
+    {
+        if (image_type != ImageType::DepthPlanar && image_type != ImageType::DepthPerspective) {
+            return 0.0f;
+        }
+
+        AirSimSettings::CaptureSetting capture_setting;
+        if (!tryGetCaptureSetting(camera, image_type, capture_setting)) {
+            return 0.0f;
+        }
+
+        const float max_depth_meters = capture_setting.max_depth_meters;
+        return FMath::IsFinite(max_depth_meters) && max_depth_meters > 0.0f ? max_depth_meters : 0.0f;
+    }
+
+    EquirectangularExposureSettings getEquirectangularExposureSettings(APIPCamera* camera, ImageType image_type)
+    {
+        EquirectangularExposureSettings result;
+        AirSimSettings::CaptureSetting capture_setting;
+        if (!tryGetCaptureSetting(camera, image_type, capture_setting)) {
+            return result;
+        }
+
+        result.compensation = FMath::IsFinite(capture_setting.equirectangular_exposure_compensation)
+            ? capture_setting.equirectangular_exposure_compensation
+            : capture_setting.auto_exposure_bias;
+        result.min = capture_setting.equirectangular_exposure_min;
+        result.max = capture_setting.equirectangular_exposure_max;
+        return result;
+    }
+}
 
 UnrealImageCapture::UnrealImageCapture(const common_utils::UniqueValueMap<std::string, APIPCamera*>* cameras)
     : cameras_(cameras)
@@ -41,12 +102,9 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
     for (unsigned int i = 0; i < requests.size(); ++i) {
         APIPCamera* camera = cameras_->at(requests.at(i).camera_name);
         //TODO: may be we should have these methods non-const?
-        if (requests[i].image_type == ImageType::Annotation) {
-            if (camera->GetAnnotationNameExist(requests[i].annotation_name)){
-                visibilityChanged = const_cast<UnrealImageCapture*>(this)->updateCameraVisibility(camera, requests[i]) || visibilityChanged;
-			}
-        }
-        else {
+        const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
+            camera->GetAnnotationNameExist(requests[i].annotation_name);
+        if (has_annotation) {
             visibilityChanged = const_cast<UnrealImageCapture*>(this)->updateCameraVisibility(camera, requests[i]) || visibilityChanged;
         }
     }
@@ -70,11 +128,33 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         ImageResponse& response = responses.at(i);          
         UTextureRenderTarget2D* textureTarget = nullptr;
         USceneCaptureComponent2D* capture = nullptr;
-        if (requests[i].image_type == ImageType::Annotation) {
-            if (camera->GetAnnotationNameExist(requests[i].annotation_name)) {
+        UTextureRenderTargetCube* equirectangularTextureTarget = nullptr;
+        USceneCaptureComponentCube* equirectangularCapture = nullptr;
+        bool useEquirectangular = false;
+        const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
+            camera->GetAnnotationNameExist(requests[i].annotation_name);
+
+        if (!has_annotation) {
+            response.message = "Can't take screenshot because the annotation name does not exist for this camera";
+        }
+        else {
+            useEquirectangular = camera->isEquirectangularCapture(requests[i].image_type, requests[i].annotation_name);
+            if (useEquirectangular) {
+                equirectangularCapture = camera->getEquirectangularCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
+                if (equirectangularCapture == nullptr) {
+                    response.message = "Can't take equirectangular screenshot because cube camera type is not active";
+                }
+                else if (equirectangularCapture->TextureTarget == nullptr) {
+                    response.message = "Can't take equirectangular screenshot because cube texture target is null";
+                }
+                else {
+                    equirectangularTextureTarget = equirectangularCapture->TextureTarget;
+                }
+            }
+            else {
                 capture = camera->getCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
                 if (capture == nullptr) {
-                    response.message = "Can't take screenshot because none camera type is not active";
+                    response.message = "Can't take screenshot because camera type is not active";
                 }
                 else if (capture->TextureTarget == nullptr) {
                     response.message = "Can't take screenshot because texture target is null";
@@ -82,27 +162,40 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
                 else
                     textureTarget = capture->TextureTarget;
             }
-            else {
-                response.message = "Can't take screenshot because none annotation name does not exist for this camera";
-            }
-        }
-        else {
-            capture = camera->getCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
-            if (capture == nullptr) {
-                response.message = "Can't take screenshot because none camera type is not active";
-            }
-            else if (capture->TextureTarget == nullptr) {
-                response.message = "Can't take screenshot because texture target is null";
-            }
-            else
-                textureTarget = capture->TextureTarget;
         }
         
         bool disable_gamma = false;
         if (requests[i].image_type == ImageCaptureBase::ImageType::Segmentation ||
             requests[i].image_type == ImageCaptureBase::ImageType::Annotation ||
             requests[i].image_type == ImageCaptureBase::ImageType::Infrared)disable_gamma = true;
-        render_params.push_back(std::make_shared<RenderRequest::RenderParams>(capture, textureTarget, requests[i].pixels_as_float, requests[i].compress, disable_gamma));
+        const float max_depth_meters = getMaxDepthMeters(camera, requests[i].image_type);
+        const EquirectangularExposureSettings equirectangular_exposure = getEquirectangularExposureSettings(camera, requests[i].image_type);
+        if (useEquirectangular) {
+            render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
+                equirectangularCapture,
+                equirectangularTextureTarget,
+                requests[i].pixels_as_float,
+                requests[i].compress,
+                disable_gamma,
+                requests[i].image_type,
+                max_depth_meters,
+                equirectangular_exposure.compensation,
+                equirectangular_exposure.min,
+                equirectangular_exposure.max));
+        }
+        else {
+            render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
+                capture,
+                textureTarget,
+                requests[i].pixels_as_float,
+                requests[i].compress,
+                disable_gamma,
+                requests[i].image_type,
+                max_depth_meters,
+                equirectangular_exposure.compensation,
+                equirectangular_exposure.min,
+                equirectangular_exposure.max));
+        }
     }
 
     if (nullptr == gameViewport) {

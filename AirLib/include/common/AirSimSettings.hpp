@@ -168,6 +168,13 @@ namespace airlib
 
         struct CaptureSetting
         {
+            enum class ProjectionModeType : int
+            {
+                Perspective = 0,
+                Orthographic = 1,
+                Equirectangular = 2
+            };
+
             //below settings_json are obtained by using Unreal console command (press ~):
             // ShowFlag.VisualizeHDR 1.
             //to replicate camera settings_json to SceneCapture2D
@@ -182,7 +189,14 @@ namespace airlib
             float fov_degrees = Utils::nan<float>(); //90.0f
             float target_gamma = Utils::nan<float>(); //1.0f; //This would be reset to kSceneTargetGamma for scene as default
             int projection_mode = 0; // ECameraProjectionMode::Perspective
+            ProjectionModeType projection_mode_type = ProjectionModeType::Perspective;
             float ortho_width = Utils::nan<float>();
+            float max_depth_meters = Utils::nan<float>();
+
+            bool isEquirectangular() const
+            {
+                return projection_mode_type == ProjectionModeType::Equirectangular;
+            }
 
             // Motion blur
             float motion_blur_amount = Utils::nan<float>();
@@ -205,6 +219,9 @@ namespace airlib
             float auto_exposure_high_percent = Utils::nan<float>();
             float auto_exposure_histogram_log_min = Utils::nan<float>();
             float auto_exposure_histogram_log_max = Utils::nan<float>();
+            float equirectangular_exposure_compensation = Utils::nan<float>();
+            float equirectangular_exposure_min = Utils::nan<float>();
+            float equirectangular_exposure_max = Utils::nan<float>();
 
             // Chromatic aberration settings
             float chromatic_aberration_intensity = Utils::nan<float>();
@@ -1532,14 +1549,23 @@ namespace airlib
                                                                   capture_setting.image_type == 0 ? CaptureSetting::kSceneTargetGamma : Utils::nan<float>());
 		    capture_setting.ignore_marked = settings_json.getBool("IgnoreMarked", capture_setting.ignore_marked);
             std::string projection_mode = Utils::toLower(settings_json.getString("ProjectionMode", ""));
-            if (projection_mode == "" || projection_mode == "perspective")
+            if (projection_mode == "" || projection_mode == "perspective") {
                 capture_setting.projection_mode = 0; // Perspective
-            else if (projection_mode == "orthographic")
+                capture_setting.projection_mode_type = CaptureSetting::ProjectionModeType::Perspective;
+            }
+            else if (projection_mode == "orthographic") {
                 capture_setting.projection_mode = 1; // Orthographic
+                capture_setting.projection_mode_type = CaptureSetting::ProjectionModeType::Orthographic;
+            }
+            else if (projection_mode == "equirectangular") {
+                capture_setting.projection_mode = 0; // Cube captures are always perspective internally.
+                capture_setting.projection_mode_type = CaptureSetting::ProjectionModeType::Equirectangular;
+            }
             else
                 throw std::invalid_argument(std::string("CaptureSettings projection_mode has invalid value in settings_json ") + projection_mode);
 
             capture_setting.ortho_width = settings_json.getFloat("OrthoWidth", capture_setting.ortho_width);
+            capture_setting.max_depth_meters = settings_json.getFloat("MaxDepthMeters", capture_setting.max_depth_meters);
 
             capture_setting.lumen_gi_enabled = settings_json.getBool("LumenGIEnable", capture_setting.lumen_gi_enabled);
             capture_setting.lumen_reflections_enabled = settings_json.getBool("LumenReflectionEnable", capture_setting.lumen_reflections_enabled);
@@ -1558,6 +1584,9 @@ namespace airlib
             capture_setting.auto_exposure_high_percent = settings_json.getFloat("AutoExposureHighPercent", capture_setting.auto_exposure_high_percent);
             capture_setting.auto_exposure_histogram_log_min = settings_json.getFloat("AutoExposureHistogramLogMin", capture_setting.auto_exposure_histogram_log_min);
             capture_setting.auto_exposure_histogram_log_max = settings_json.getFloat("AutoExposureHistogramLogMax", capture_setting.auto_exposure_histogram_log_max);
+            capture_setting.equirectangular_exposure_compensation = settings_json.getFloat("EquirectangularExposureCompensation", capture_setting.equirectangular_exposure_compensation);
+            capture_setting.equirectangular_exposure_min = settings_json.getFloat("EquirectangularExposureMin", capture_setting.equirectangular_exposure_min);
+            capture_setting.equirectangular_exposure_max = settings_json.getFloat("EquirectangularExposureMax", capture_setting.equirectangular_exposure_max);
 
             capture_setting.motion_blur_amount = settings_json.getFloat("MotionBlurAmount", capture_setting.motion_blur_amount);
             capture_setting.motion_blur_max = settings_json.getFloat("MotionBlurMax", capture_setting.motion_blur_max);

@@ -353,7 +353,15 @@ For example, `CaptureSettings` element is json array so you can add settings for
 
 ### CaptureSettings
 The `CaptureSettings` in the settings.json file for either the `CameraDefaults` or specific camera settings determines how different image types such as scene, depth, disparity, surface normals and segmentation views are rendered.
-The Width, Height and FOV settings should be self-explanatory. The `ProjectionMode` decides the projection used by the capture camera and can take value "perspective" (default) or "orthographic". If projection mode is "orthographic" then `OrthoWidth` determines width of projected area captured in meters.
+The Width, Height and FOV settings should be self-explanatory. The `ProjectionMode` decides the projection used by the capture camera and can take value "Perspective" (default), "Orthographic", or "Equirectangular". If projection mode is "Orthographic" then `OrthoWidth` determines width of projected area captured in meters. If projection mode is "Equirectangular", the requested existing `ImageType` is captured as a 360 degree equirectangular image: `Height` is used as the cube-face size and output height, output width is always `2 * Height`, and `Width`, `FOV_Degrees`, and `OrthoWidth` are ignored.
+
+Equirectangular is a projection mode, not a separate image type. For example, setting `ProjectionMode` to `"Equirectangular"` on `ImageType` 0 returns a scene equirectangular image, while setting it on `ImageType` 5 returns a segmentation equirectangular image. `DepthPerspective` is the recommended 360 depth type. `DepthPlanar` remains face-local planar depth because a single global camera plane does not exist for a full 360 degree equirectangular projection.
+
+For `Scene` and `Lighting` equirectangular captures, AirSim captures the six cube faces as HDR scene color and applies one global exposure and tonemap after unwrapping. This avoids per-face eye-adaptation and local-exposure seams. View-local post effects such as bloom, lens flares, vignette, and depth of field are not applied per cube face in this mode.
+
+For `DepthPlanar` and `DepthPerspective`, `MaxDepthMeters` can be set to a positive value to clamp returned float depth pixels to that maximum range. It is optional and leaves depth output unchanged when omitted.
+
+When the scene camera is configured as equirectangular, `simGetCameraInfo` returns `NaN` values in `proj_mat` because the camera has no single perspective projection matrix. The pose remains valid.
 
 To disable the rendering of certain objects on specific cameras or all, use the `IgnoreMarked` boolean setting. This requires to mark individual objects that have to be ignore using an Unreal Tag called _MarkedIgnore_.
 
@@ -373,8 +381,9 @@ They are settings that are directly transferred to the post-processing settings 
 * **ImageType**: The type of image being captured (e.g., scene, depth, etc.). (Default: 0)
 * **TargetGamma**: The gamma value applied to the captured image.
 * **IgnoreMarked**: Whether to ignore objects marked for a specific purpose (e.g., segmentation). (Default: false)
-* **ProjectionMode**: The camera's projection mode ("Perspective" or "Orthographic"). (Default: "Perspective")
+* **ProjectionMode**: The camera's projection mode ("Perspective", "Orthographic", or "Equirectangular"). (Default: "Perspective")
 * **OrthoWidth**: The width of the orthographic view frustum.
+* **MaxDepthMeters**: Optional positive clamp for returned `DepthPlanar` and `DepthPerspective` float pixels.
 * **ForceUpdate**: Force a camera to update the render target every frame. Costly on performance! Only works for scene camera type. (Default: false)
 
 #### Lumen Global Illumination and Reflections
@@ -411,6 +420,9 @@ They are settings that are directly transferred to the post-processing settings 
 * **AutoExposureHighPercent**: The higher percentage for the luminance histogram used in auto exposure.
 * **AutoExposureHistogramLogMin**: Minimum value for the auto exposure histogram (expressed in Log2(Luminance) or EV100).
 * **AutoExposureHistogramLogMax**: Maximum value for the auto exposure histogram (expressed in Log2(Luminance) or EV100).
+* **EquirectangularExposureCompensation**: Log2 exposure compensation for equirectangular `Scene` and `Lighting` captures. If omitted, `AutoExposureCompensation` is used. 1 is 2x brighter, -1 is 2x darker.
+* **EquirectangularExposureMin**: Minimum global exposure multiplier for equirectangular `Scene` and `Lighting` captures. Default is 0.02.
+* **EquirectangularExposureMax**: Maximum global exposure multiplier for equirectangular `Scene` and `Lighting` captures. Default is 20.0.
 
 #### Motion Blur
 * **MotionBlurAmount**: The strength of motion blur applied to the image. 0: off.

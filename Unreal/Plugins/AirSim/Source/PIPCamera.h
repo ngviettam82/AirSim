@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/SceneCaptureComponent2D.h"
+#include "Components/SceneCaptureComponentCube.h"
 #include "Camera/CameraActor.h"
 #include "Materials/Material.h"
 #include "Runtime/Core/Public/PixelFormat.h"
@@ -10,6 +11,7 @@
 #include "common/common_utils/Utils.hpp"
 #include "Components/StaticMeshComponent.h"
 #include <Engine/StaticMesh.h>
+#include "Engine/TextureRenderTargetCube.h"
 #include "common/AirSimSettings.hpp"
 #include "NedTransform.h"
 #include "DetectionComponent.h"
@@ -89,6 +91,9 @@ public:
 
     USceneCaptureComponent2D* getCaptureComponent(const ImageType type, bool if_active, std::string annotation_name = "");
     UTextureRenderTarget2D* getRenderTarget(const ImageType type, bool if_active, std::string annotation_name = "");
+    bool isEquirectangularCapture(const ImageType type, std::string annotation_name = "") const;
+    USceneCaptureComponentCube* getEquirectangularCaptureComponent(const ImageType type, bool if_active, std::string annotation_name = "");
+    UTextureRenderTargetCube* getEquirectangularRenderTarget(const ImageType type, bool if_active, std::string annotation_name = "");
     UDetectionComponent* getDetectionComponent(const ImageType type, bool if_active, std::string annotation_name = "") const;
 
     msr::airlib::Pose getPose() const;
@@ -103,6 +108,10 @@ private: //members
     TArray<USceneCaptureComponent2D*> captures_;
     UPROPERTY()
     TArray<UTextureRenderTarget2D*> render_targets_;
+    UPROPERTY()
+    TArray<USceneCaptureComponentCube*> equirectangular_captures_;
+    UPROPERTY()
+    TArray<UTextureRenderTargetCube*> equirectangular_render_targets_;
     UPROPERTY()
     TArray<UDetectionComponent*> detections_;
 
@@ -163,9 +172,15 @@ private: //methods
     static unsigned int imageTypeCount();
     unsigned int cameraCaptureCount();
     void enableCaptureComponent(const ImageType type, bool is_enabled, std::string annotation_name = "");
+    void setEquirectangularCaptureUpdate(USceneCaptureComponentCube* capture, bool nodisplay);
+    void ensureEquirectangularCapture(int render_index, const FString& name);
     static void updateCaptureComponentSetting(USceneCaptureComponent2D* capture, UTextureRenderTarget2D* render_target,
                                               bool auto_format, const EPixelFormat& pixel_format, const CaptureSetting& setting, const NedTransform& ned_transform,
                                               bool force_linear_gamma);
+    static void updateEquirectangularCaptureComponentSetting(USceneCaptureComponentCube* capture, UTextureRenderTargetCube* render_target,
+                                                      bool auto_format, const EPixelFormat& pixel_format, const CaptureSetting& setting,
+                                                      bool force_linear_gamma);
+    void syncEquirectangularCaptureFrom2D(int render_index);
     void setNoiseMaterial(int image_type, UObject* outer, FPostProcessSettings& obj, const NoiseSetting& settings);
     void setDistortionMaterial(int image_type, UObject* outer, FPostProcessSettings& obj);
     static void updateCameraPostProcessingSetting(FPostProcessSettings& obj, const CaptureSetting& setting);
@@ -180,5 +195,6 @@ private: //methods
     static void updateCameraSetting(UCineCameraComponent* camera, const CaptureSetting& setting, const NedTransform& ned_transform);
     void copyCameraSettingsToAllSceneCapture(UCameraComponent* camera);
     void copyCameraSettingsToSceneCapture(UCameraComponent* src, USceneCaptureComponent2D* dst);
+    void copySceneCaptureSettingsToCubeCapture(USceneCaptureComponent2D* src, USceneCaptureComponentCube* dst);
     //end CinemAirSim
 };
