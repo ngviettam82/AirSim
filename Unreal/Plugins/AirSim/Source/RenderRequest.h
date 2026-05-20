@@ -2,11 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "Engine/TextureRenderTargetCube.h"
 #include "common/WorkerThread.hpp"
 #include "Components/SceneCaptureComponent2D.h"
+#include "Components/SceneCaptureComponentCube.h"
 #include "Engine/GameViewportClient.h"
 #include <memory>
 #include "common/Common.hpp"
+#include "common/ImageCaptureBase.hpp"
 
 
 class RenderRequest : public FRenderCommand
@@ -15,13 +18,56 @@ public:
     struct RenderParams {
         USceneCaptureComponent2D * const render_component;
         UTextureRenderTarget2D* render_target;
+        USceneCaptureComponentCube* const render_component_cube;
+        UTextureRenderTargetCube* render_target_cube;
         bool pixels_as_float;
         bool compress;
         bool disable_gamma;
+        msr::airlib::ImageCaptureBase::ImageType image_type;
+        float max_depth_meters;
+        float equirectangular_exposure_compensation;
+        float equirectangular_exposure_min;
+        float equirectangular_exposure_max;
 
-        RenderParams(USceneCaptureComponent2D * render_component_val, UTextureRenderTarget2D* render_target_val, bool pixels_as_float_val, bool compress_val, bool disable_gamma_val)
-            : render_component(render_component_val), render_target(render_target_val), pixels_as_float(pixels_as_float_val), compress(compress_val), disable_gamma(disable_gamma_val)
+        RenderParams(USceneCaptureComponent2D * render_component_val, UTextureRenderTarget2D* render_target_val,
+                     bool pixels_as_float_val, bool compress_val, bool disable_gamma_val,
+                     msr::airlib::ImageCaptureBase::ImageType image_type_val,
+                     float max_depth_meters_val,
+                     float equirectangular_exposure_compensation_val,
+                     float equirectangular_exposure_min_val,
+                     float equirectangular_exposure_max_val)
+            : render_component(render_component_val), render_target(render_target_val),
+              render_component_cube(nullptr), render_target_cube(nullptr),
+              pixels_as_float(pixels_as_float_val), compress(compress_val),
+              disable_gamma(disable_gamma_val), image_type(image_type_val),
+              max_depth_meters(max_depth_meters_val),
+              equirectangular_exposure_compensation(equirectangular_exposure_compensation_val),
+              equirectangular_exposure_min(equirectangular_exposure_min_val),
+              equirectangular_exposure_max(equirectangular_exposure_max_val)
         {
+        }
+
+        RenderParams(USceneCaptureComponentCube* render_component_val, UTextureRenderTargetCube* render_target_val,
+                     bool pixels_as_float_val, bool compress_val, bool disable_gamma_val,
+                     msr::airlib::ImageCaptureBase::ImageType image_type_val,
+                     float max_depth_meters_val,
+                     float equirectangular_exposure_compensation_val,
+                     float equirectangular_exposure_min_val,
+                     float equirectangular_exposure_max_val)
+            : render_component(nullptr), render_target(nullptr),
+              render_component_cube(render_component_val), render_target_cube(render_target_val),
+              pixels_as_float(pixels_as_float_val), compress(compress_val),
+              disable_gamma(disable_gamma_val), image_type(image_type_val),
+              max_depth_meters(max_depth_meters_val),
+              equirectangular_exposure_compensation(equirectangular_exposure_compensation_val),
+              equirectangular_exposure_min(equirectangular_exposure_min_val),
+              equirectangular_exposure_max(equirectangular_exposure_max_val)
+        {
+        }
+
+        bool isEquirectangular() const
+        {
+            return render_component_cube != nullptr || render_target_cube != nullptr;
         }
     };
     struct RenderResult {
@@ -39,6 +85,7 @@ public:
 
 private:
     static FReadSurfaceDataFlags setupRenderResource(const FTextureRenderTargetResource* rt_resource, const RenderParams* params, RenderResult* result, FIntPoint& size);
+    static void setupEquirectangularRenderResource(const UTextureRenderTargetCube* render_target, FIntPoint& cube_size);
 
     std::shared_ptr<RenderParams>* params_;
     std::shared_ptr<RenderResult>* results_;
