@@ -172,6 +172,7 @@ namespace airlib
             {
                 Perspective = 0,
                 Orthographic = 1,
+                // Runtime cube capture unwrapped to a 2:1 equirectangular response.
                 Equirectangular = 2
             };
 
@@ -191,6 +192,7 @@ namespace airlib
             int projection_mode = 0; // ECameraProjectionMode::Perspective
             ProjectionModeType projection_mode_type = ProjectionModeType::Perspective;
             float ortho_width = Utils::nan<float>();
+            // Optional response clamp for metric depth image types. NaN or <= 0 keeps raw depth.
             float max_depth_meters = Utils::nan<float>();
 
             bool isEquirectangular() const

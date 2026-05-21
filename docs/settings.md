@@ -94,6 +94,10 @@ Note this does not include most sensor types.
         "TargetGamma": 1.0,
         "ProjectionMode": "",
         "OrthoWidth": 5.12,
+        "MaxDepthMeters": 0,
+        "EquirectangularExposureCompensation": 0,
+        "EquirectangularExposureMin": 0.02,
+        "EquirectangularExposureMax": 20.0,
         "MotionBlurAmount": 1,
         "MotionBlurMax": 10,
         "ChromaticAberrationScale": 2,
@@ -363,6 +367,8 @@ For `DepthPlanar` and `DepthPerspective`, `MaxDepthMeters` can be set to a posit
 
 When the scene camera is configured as equirectangular, `simGetCameraInfo` returns `NaN` values in `proj_mat` because the camera has no single perspective projection matrix. The pose remains valid.
 
+See [Equirectangular Captures](equirectangular_capture.md) for examples, supported image types, exposure behavior, and validation tools.
+
 To disable the rendering of certain objects on specific cameras or all, use the `IgnoreMarked` boolean setting. This requires to mark individual objects that have to be ignore using an Unreal Tag called _MarkedIgnore_.
 
 Unreal 5 introduces Lumen lightning. Due to the cameras using scene capture components enabling Lumen for them can be costly on performance. Settings have been added specfically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
@@ -381,9 +387,9 @@ They are settings that are directly transferred to the post-processing settings 
 * **ImageType**: The type of image being captured (e.g., scene, depth, etc.). (Default: 0)
 * **TargetGamma**: The gamma value applied to the captured image.
 * **IgnoreMarked**: Whether to ignore objects marked for a specific purpose (e.g., segmentation). (Default: false)
-* **ProjectionMode**: The camera's projection mode ("Perspective", "Orthographic", or "Equirectangular"). (Default: "Perspective")
+* **ProjectionMode**: The camera's projection mode ("Perspective", "Orthographic", or "Equirectangular"). (Default: "Perspective"). Equirectangular applies to the configured `ImageType`; it is not a separate image type.
 * **OrthoWidth**: The width of the orthographic view frustum.
-* **MaxDepthMeters**: Optional positive clamp for returned `DepthPlanar` and `DepthPerspective` float pixels.
+* **MaxDepthMeters**: Optional positive clamp for returned `DepthPlanar` and `DepthPerspective` float pixels, for both normal and equirectangular projections.
 * **ForceUpdate**: Force a camera to update the render target every frame. Costly on performance! Only works for scene camera type. (Default: false)
 
 #### Lumen Global Illumination and Reflections

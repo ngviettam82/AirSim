@@ -34,8 +34,9 @@ namespace
             return;
         }
 
-        // Capture all cube faces before view-local post processing. The unwrap path
-        // applies one global exposure and tonemap after all faces are sampled.
+        // Capture all cube faces before view-local post processing. Per-face
+        // exposure, local exposure, bloom, and lens effects create visible seams;
+        // the unwrap path applies one global exposure and tonemap after sampling.
         capture->CaptureSource = ESceneCaptureSource::SCS_SceneColorHDRNoAlpha;
         capture->ShowFlags.SetPostProcessing(false);
         capture->ShowFlags.SetTonemapper(false);
@@ -1108,6 +1109,9 @@ void APIPCamera::syncEquirectangularCaptureFrom2D(int render_index)
 
     copySceneCaptureSettingsToCubeCapture(captures_[render_index], equirectangular_captures_[render_index]);
 
+    // Scene and Lighting use a seam-safe HDR path. Other image types keep the
+    // source capture settings so labels, depth units, and annotation views match
+    // the normal 2D capture as closely as possible.
     if (UsesGlobalEquirectangularScenePipeline(render_index)) {
         ApplyGlobalEquirectangularSceneSettings(equirectangular_captures_[render_index]);
     }
