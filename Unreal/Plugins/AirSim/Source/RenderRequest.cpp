@@ -28,6 +28,18 @@ namespace
         float PixelY;
     };
 
+    struct FEquirectangularSamplingMap
+    {
+        int32 CubeSize = 0;
+        int32 OutputWidth = 0;
+        int32 OutputHeight = 0;
+        TArray<uint8> NearestFaces;
+        TArray<int32> NearestPixelIndices;
+        TArray<uint8> BilinearFaces;
+        TArray<int32> BilinearPixelIndices;
+        TArray<float> BilinearWeights;
+    };
+
     const FCubeFaceBasis& GetCubeFaceBasis(ECubeFace face)
     {
         // Matches UE's CalcCubeFaceTransform: right = up ^ dir.
@@ -156,93 +168,138 @@ namespace
                cube_faces[face_index].Num() >= expected_pixel_count;
     }
 
-    FColor ReadCubeColorNearest(const TArray<FColor>* cube_faces, ECubeFace face, int32 x, int32 y, int32 cube_size)
+    void SetNearestCubePixelRef(const FEquirectangularCubeSample& sample, int32 cube_size, uint8& out_face, int32& out_pixel_index)
     {
-        const int32 face_index = FaceIndex(face);
-        if (!HasCubeFacePixels(cube_faces, face_index, cube_size)) {
-            return FColor::Black;
-        }
-
-        const int32 clamped_x = FMath::Clamp(x, 0, cube_size - 1);
-        const int32 clamped_y = FMath::Clamp(y, 0, cube_size - 1);
-        FColor color = cube_faces[face_index][clamped_y * cube_size + clamped_x];
-        color.A = 255;
-        return color;
+        const int32 x = FMath::Clamp(FMath::RoundToInt(sample.PixelX), 0, cube_size - 1);
+        const int32 y = FMath::Clamp(FMath::RoundToInt(sample.PixelY), 0, cube_size - 1);
+        out_face = static_cast<uint8>(FaceIndex(sample.Face));
+        out_pixel_index = y * cube_size + x;
     }
 
-    FColor ReadCubeColorTap(const TArray<FColor>* cube_faces, ECubeFace face, int32 x, int32 y, int32 cube_size)
+    void SetCubeTapPixelRef(ECubeFace face, int32 x, int32 y, int32 cube_size, uint8& out_face, int32& out_pixel_index)
     {
         if (x >= 0 && x < cube_size && y >= 0 && y < cube_size) {
-            return ReadCubeColorNearest(cube_faces, face, x, y, cube_size);
+            out_face = static_cast<uint8>(FaceIndex(face));
+            out_pixel_index = y * cube_size + x;
+            return;
         }
 
         const FVector tap_direction = FaceTexelToDirection(face, x, y, cube_size);
         const FEquirectangularCubeSample remapped = DirectionToCubeSample(tap_direction, cube_size);
-        return ReadCubeColorNearest(
-            cube_faces,
-            remapped.Face,
-            FMath::RoundToInt(remapped.PixelX),
-            FMath::RoundToInt(remapped.PixelY),
-            cube_size);
+        SetNearestCubePixelRef(remapped, cube_size, out_face, out_pixel_index);
     }
 
-    FColor SampleCubeColorNearest(const TArray<FColor>* cube_faces, const FEquirectangularCubeSample& sample, int32 cube_size)
+    void BuildEquirectangularSamplingMap(int32 cube_size, FEquirectangularSamplingMap& map)
     {
-        return ReadCubeColorNearest(
-            cube_faces,
-            sample.Face,
-            FMath::RoundToInt(sample.PixelX),
-            FMath::RoundToInt(sample.PixelY),
-            cube_size);
+        map.CubeSize = cube_size;
+        map.OutputWidth = cube_size * 2;
+        map.OutputHeight = cube_size;
+
+        const int32 output_pixel_count = map.OutputWidth * map.OutputHeight;
+        map.NearestFaces.SetNumUninitialized(output_pixel_count);
+        map.NearestPixelIndices.SetNumUninitialized(output_pixel_count);
+        map.BilinearFaces.SetNumUninitialized(output_pixel_count * 4);
+        map.BilinearPixelIndices.SetNumUninitialized(output_pixel_count * 4);
+        map.BilinearWeights.SetNumUninitialized(output_pixel_count * 4);
+
+        for (int32 y = 0; y < map.OutputHeight; ++y) {
+            for (int32 x = 0; x < map.OutputWidth; ++x) {
+                const int32 output_index = y * map.OutputWidth + x;
+                const FVector direction = EquirectangularPixelToDirection(x, y, map.OutputWidth, map.OutputHeight);
+                const FEquirectangularCubeSample sample = DirectionToCubeSample(direction, cube_size);
+                SetNearestCubePixelRef(
+                    sample,
+                    cube_size,
+                    map.NearestFaces[output_index],
+                    map.NearestPixelIndices[output_index]);
+
+                const int32 x0 = FMath::FloorToInt(sample.PixelX);
+                const int32 y0 = FMath::FloorToInt(sample.PixelY);
+                const float tx = sample.PixelX - x0;
+                const float ty = sample.PixelY - y0;
+                const float weights[4] = {
+                    (1.0f - tx) * (1.0f - ty),
+                    tx * (1.0f - ty),
+                    (1.0f - tx) * ty,
+                    tx * ty
+                };
+                const int32 tap_x[4] = { x0, x0 + 1, x0, x0 + 1 };
+                const int32 tap_y[4] = { y0, y0, y0 + 1, y0 + 1 };
+                const int32 tap_base = output_index * 4;
+                for (int32 tap = 0; tap < 4; ++tap) {
+                    SetCubeTapPixelRef(
+                        sample.Face,
+                        tap_x[tap],
+                        tap_y[tap],
+                        cube_size,
+                        map.BilinearFaces[tap_base + tap],
+                        map.BilinearPixelIndices[tap_base + tap]);
+                    map.BilinearWeights[tap_base + tap] = weights[tap];
+                }
+            }
+        }
     }
 
-    FColor SampleCubeColorBilinear(const TArray<FColor>* cube_faces, const FEquirectangularCubeSample& sample, int32 cube_size)
+    const FEquirectangularSamplingMap& GetEquirectangularSamplingMap(int32 cube_size)
     {
-        const int32 x0 = FMath::FloorToInt(sample.PixelX);
-        const int32 y0 = FMath::FloorToInt(sample.PixelY);
-        const float tx = sample.PixelX - x0;
-        const float ty = sample.PixelY - y0;
+        static FCriticalSection sampling_map_lock;
+        static TMap<int32, TUniquePtr<FEquirectangularSamplingMap>> sampling_maps;
 
-        const FColor c00 = ReadCubeColorTap(cube_faces, sample.Face, x0, y0, cube_size);
-        const FColor c10 = ReadCubeColorTap(cube_faces, sample.Face, x0 + 1, y0, cube_size);
-        const FColor c01 = ReadCubeColorTap(cube_faces, sample.Face, x0, y0 + 1, cube_size);
-        const FColor c11 = ReadCubeColorTap(cube_faces, sample.Face, x0 + 1, y0 + 1, cube_size);
+        FScopeLock lock(&sampling_map_lock);
+        TUniquePtr<FEquirectangularSamplingMap>& map = sampling_maps.FindOrAdd(cube_size);
+        if (!map.IsValid()) {
+            map = MakeUnique<FEquirectangularSamplingMap>();
+            BuildEquirectangularSamplingMap(cube_size, *map);
+        }
+        return *map;
+    }
 
-        auto bilerp = [tx, ty](uint8 v00, uint8 v10, uint8 v01, uint8 v11) -> uint8 {
-            const float top = FMath::Lerp(static_cast<float>(v00), static_cast<float>(v10), tx);
-            const float bottom = FMath::Lerp(static_cast<float>(v01), static_cast<float>(v11), tx);
-            return static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(FMath::Lerp(top, bottom, ty)), 0, 255));
-        };
+    FColor ReadMappedCubeColor(const TArray<FColor>* cube_faces, const FEquirectangularSamplingMap& map, int32 output_index)
+    {
+        const int32 face_index = static_cast<int32>(map.NearestFaces[output_index]);
+        if (!HasCubeFacePixels(cube_faces, face_index, map.CubeSize)) {
+            return FColor::Black;
+        }
+
+        FColor color = cube_faces[face_index][map.NearestPixelIndices[output_index]];
+        color.A = 255;
+        return color;
+    }
+
+    FColor SampleMappedCubeColorBilinear(const TArray<FColor>* cube_faces, const FEquirectangularSamplingMap& map, int32 output_index)
+    {
+        float r = 0.0f;
+        float g = 0.0f;
+        float b = 0.0f;
+        const int32 tap_base = output_index * 4;
+        for (int32 tap = 0; tap < 4; ++tap) {
+            const int32 tap_index = tap_base + tap;
+            const int32 face_index = static_cast<int32>(map.BilinearFaces[tap_index]);
+            if (!HasCubeFacePixels(cube_faces, face_index, map.CubeSize)) {
+                continue;
+            }
+
+            const FColor color = cube_faces[face_index][map.BilinearPixelIndices[tap_index]];
+            const float weight = map.BilinearWeights[tap_index];
+            r += static_cast<float>(color.R) * weight;
+            g += static_cast<float>(color.G) * weight;
+            b += static_cast<float>(color.B) * weight;
+        }
 
         return FColor(
-            bilerp(c00.R, c10.R, c01.R, c11.R),
-            bilerp(c00.G, c10.G, c01.G, c11.G),
-            bilerp(c00.B, c10.B, c01.B, c11.B),
+            static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(r), 0, 255)),
+            static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(g), 0, 255)),
+            static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(b), 0, 255)),
             255);
     }
 
-    FFloat16Color SampleCubeFloatNearest(const TArray<FFloat16Color>* cube_faces, const FEquirectangularCubeSample& sample, int32 cube_size)
+    FLinearColor ReadMappedCubeLinear(const TArray<FFloat16Color>* cube_faces, const FEquirectangularSamplingMap& map, int32 face_index, int32 pixel_index)
     {
-        const int32 face_index = FaceIndex(sample.Face);
-        if (!HasCubeFacePixels(cube_faces, face_index, cube_size)) {
-            return FFloat16Color();
-        }
-
-        const int32 x = FMath::Clamp(FMath::RoundToInt(sample.PixelX), 0, cube_size - 1);
-        const int32 y = FMath::Clamp(FMath::RoundToInt(sample.PixelY), 0, cube_size - 1);
-        return cube_faces[face_index][y * cube_size + x];
-    }
-
-    FLinearColor ReadCubeLinearNearest(const TArray<FFloat16Color>* cube_faces, ECubeFace face, int32 x, int32 y, int32 cube_size)
-    {
-        const int32 face_index = FaceIndex(face);
-        if (!HasCubeFacePixels(cube_faces, face_index, cube_size)) {
+        if (!HasCubeFacePixels(cube_faces, face_index, map.CubeSize)) {
             return FLinearColor::Black;
         }
 
-        const int32 clamped_x = FMath::Clamp(x, 0, cube_size - 1);
-        const int32 clamped_y = FMath::Clamp(y, 0, cube_size - 1);
-        const FFloat16Color color = cube_faces[face_index][clamped_y * cube_size + clamped_x];
+        const FFloat16Color color = cube_faces[face_index][pixel_index];
         return FLinearColor(
             FMath::Max(0.0f, color.R.GetFloat()),
             FMath::Max(0.0f, color.G.GetFloat()),
@@ -250,37 +307,30 @@ namespace
             1.0f);
     }
 
-    FLinearColor ReadCubeLinearTap(const TArray<FFloat16Color>* cube_faces, ECubeFace face, int32 x, int32 y, int32 cube_size)
+    FLinearColor SampleMappedCubeLinearBilinear(const TArray<FFloat16Color>* cube_faces, const FEquirectangularSamplingMap& map, int32 output_index)
     {
-        if (x >= 0 && x < cube_size && y >= 0 && y < cube_size) {
-            return ReadCubeLinearNearest(cube_faces, face, x, y, cube_size);
+        FLinearColor result = FLinearColor::Black;
+        const int32 tap_base = output_index * 4;
+        for (int32 tap = 0; tap < 4; ++tap) {
+            const int32 tap_index = tap_base + tap;
+            result += ReadMappedCubeLinear(
+                cube_faces,
+                map,
+                static_cast<int32>(map.BilinearFaces[tap_index]),
+                map.BilinearPixelIndices[tap_index]) * map.BilinearWeights[tap_index];
         }
-
-        const FVector tap_direction = FaceTexelToDirection(face, x, y, cube_size);
-        const FEquirectangularCubeSample remapped = DirectionToCubeSample(tap_direction, cube_size);
-        return ReadCubeLinearNearest(
-            cube_faces,
-            remapped.Face,
-            FMath::RoundToInt(remapped.PixelX),
-            FMath::RoundToInt(remapped.PixelY),
-            cube_size);
+        result.A = 1.0f;
+        return result;
     }
 
-    FLinearColor SampleCubeLinearBilinear(const TArray<FFloat16Color>* cube_faces, const FEquirectangularCubeSample& sample, int32 cube_size)
+    float ReadMappedCubeFloat(const TArray<FFloat16Color>* cube_faces, const FEquirectangularSamplingMap& map, int32 output_index)
     {
-        const int32 x0 = FMath::FloorToInt(sample.PixelX);
-        const int32 y0 = FMath::FloorToInt(sample.PixelY);
-        const float tx = sample.PixelX - x0;
-        const float ty = sample.PixelY - y0;
+        const int32 face_index = static_cast<int32>(map.NearestFaces[output_index]);
+        if (!HasCubeFacePixels(cube_faces, face_index, map.CubeSize)) {
+            return 0.0f;
+        }
 
-        const FLinearColor c00 = ReadCubeLinearTap(cube_faces, sample.Face, x0, y0, cube_size);
-        const FLinearColor c10 = ReadCubeLinearTap(cube_faces, sample.Face, x0 + 1, y0, cube_size);
-        const FLinearColor c01 = ReadCubeLinearTap(cube_faces, sample.Face, x0, y0 + 1, cube_size);
-        const FLinearColor c11 = ReadCubeLinearTap(cube_faces, sample.Face, x0 + 1, y0 + 1, cube_size);
-
-        const FLinearColor top = FMath::Lerp(c00, c10, tx);
-        const FLinearColor bottom = FMath::Lerp(c01, c11, tx);
-        return FMath::Lerp(top, bottom, ty);
+        return cube_faces[face_index][map.NearestPixelIndices[output_index]].R.GetFloat();
     }
 
     float Luminance(const FLinearColor& color)
@@ -356,40 +406,32 @@ namespace
 
     void ConvertCubeFacesToEquirectangularColor(const TArray<FColor>* cube_faces, int32 cube_size, bool use_bilinear, RenderRequest::RenderResult* result)
     {
-        const int32 output_width = cube_size * 2;
-        const int32 output_height = cube_size;
-        result->width = output_width;
-        result->height = output_height;
-        result->bmp.SetNum(output_width * output_height);
+        const FEquirectangularSamplingMap& map = GetEquirectangularSamplingMap(cube_size);
+        const int32 output_pixel_count = map.OutputWidth * map.OutputHeight;
+        result->width = map.OutputWidth;
+        result->height = map.OutputHeight;
+        result->bmp.SetNum(output_pixel_count);
 
-        for (int32 y = 0; y < output_height; ++y) {
-            for (int32 x = 0; x < output_width; ++x) {
-                const FVector direction = EquirectangularPixelToDirection(x, y, output_width, output_height);
-                const FEquirectangularCubeSample sample = DirectionToCubeSample(direction, cube_size);
-                result->bmp[y * output_width + x] = use_bilinear
-                    ? SampleCubeColorBilinear(cube_faces, sample, cube_size)
-                    : SampleCubeColorNearest(cube_faces, sample, cube_size);
-            }
+        for (int32 index = 0; index < output_pixel_count; ++index) {
+            result->bmp[index] = use_bilinear
+                ? SampleMappedCubeColorBilinear(cube_faces, map, index)
+                : ReadMappedCubeColor(cube_faces, map, index);
         }
     }
 
     void ConvertCubeFacesToEquirectangularSceneColor(const TArray<FFloat16Color>* cube_faces, int32 cube_size, const RenderRequest::RenderParams* params, RenderRequest::RenderResult* result)
     {
-        const int32 output_width = cube_size * 2;
-        const int32 output_height = cube_size;
+        const FEquirectangularSamplingMap& map = GetEquirectangularSamplingMap(cube_size);
+        const int32 output_pixel_count = map.OutputWidth * map.OutputHeight;
         TArray<FLinearColor> linear_pixels;
-        linear_pixels.SetNum(output_width * output_height);
+        linear_pixels.SetNum(output_pixel_count);
 
-        result->width = output_width;
-        result->height = output_height;
-        result->bmp.SetNum(output_width * output_height);
+        result->width = map.OutputWidth;
+        result->height = map.OutputHeight;
+        result->bmp.SetNum(output_pixel_count);
 
-        for (int32 y = 0; y < output_height; ++y) {
-            for (int32 x = 0; x < output_width; ++x) {
-                const FVector direction = EquirectangularPixelToDirection(x, y, output_width, output_height);
-                const FEquirectangularCubeSample sample = DirectionToCubeSample(direction, cube_size);
-                linear_pixels[y * output_width + x] = SampleCubeLinearBilinear(cube_faces, sample, cube_size);
-            }
+        for (int32 index = 0; index < output_pixel_count; ++index) {
+            linear_pixels[index] = SampleMappedCubeLinearBilinear(cube_faces, map, index);
         }
 
         const float exposure = ComputeEquirectangularExposure(linear_pixels, params);
@@ -398,20 +440,16 @@ namespace
         }
     }
 
-    void ConvertCubeFacesToEquirectangularFloat(const TArray<FFloat16Color>* cube_faces, int32 cube_size, RenderRequest::RenderResult* result)
+    void ConvertCubeFacesToEquirectangularFloat(const TArray<FFloat16Color>* cube_faces, int32 cube_size, const RenderRequest::RenderParams* params, RenderRequest::RenderResult* result)
     {
-        const int32 output_width = cube_size * 2;
-        const int32 output_height = cube_size;
-        result->width = output_width;
-        result->height = output_height;
-        result->bmp_float.SetNum(output_width * output_height);
+        const FEquirectangularSamplingMap& map = GetEquirectangularSamplingMap(cube_size);
+        const int32 output_pixel_count = map.OutputWidth * map.OutputHeight;
+        result->width = map.OutputWidth;
+        result->height = map.OutputHeight;
+        result->image_data_float.SetNumUninitialized(output_pixel_count);
 
-        for (int32 y = 0; y < output_height; ++y) {
-            for (int32 x = 0; x < output_width; ++x) {
-                const FVector direction = EquirectangularPixelToDirection(x, y, output_width, output_height);
-                const FEquirectangularCubeSample sample = DirectionToCubeSample(direction, cube_size);
-                result->bmp_float[y * output_width + x] = SampleCubeFloatNearest(cube_faces, sample, cube_size);
-            }
+        for (int32 index = 0; index < output_pixel_count; ++index) {
+            result->image_data_float[index] = ApplyMaxDepthMeters(ReadMappedCubeFloat(cube_faces, map, index), params);
         }
     }
 }
@@ -485,7 +523,7 @@ void RenderRequest::getScreenshot(std::shared_ptr<RenderParams> params[], std::v
                                 FReadSurfaceDataFlags flags(RCM_MinMax, static_cast<ECubeFace>(face));
                                 cube_resource->ReadPixels(cube_faces[face], flags);
                             }
-                            ConvertCubeFacesToEquirectangularFloat(cube_faces, cube_width, results[i].get());
+                            ConvertCubeFacesToEquirectangularFloat(cube_faces, cube_width, params[i].get(), results[i].get());
                         }
                     }
                 }
@@ -590,14 +628,15 @@ void RenderRequest::getScreenshot(std::shared_ptr<RenderParams> params[], std::v
                 }
             }
             else {
-                if (pixel_count > 0 && results[i]->bmp_float.Num() == pixel_count) {
+                const bool has_final_float_data = pixel_count > 0 && results[i]->image_data_float.Num() == pixel_count;
+                if (!has_final_float_data && pixel_count > 0 && results[i]->bmp_float.Num() == pixel_count) {
                     results[i]->image_data_float.SetNumUninitialized(pixel_count);
                     float* ptr = results[i]->image_data_float.GetData();
                     for (const auto& item : results[i]->bmp_float) {
                         *ptr++ = ApplyMaxDepthMeters(item.R.GetFloat(), params[i].get());
                     }
                 }
-                else {
+                else if (!has_final_float_data) {
                     results[i]->width = 0;
                     results[i]->height = 0;
                 }
@@ -682,7 +721,7 @@ void RenderRequest::ExecuteTask()
                                     flags);
                             }
 
-                            ConvertCubeFacesToEquirectangularFloat(cube_faces, cube_width, results_[i].get());
+                            ConvertCubeFacesToEquirectangularFloat(cube_faces, cube_width, params_[i].get(), results_[i].get());
                         }
                     }
                 }
