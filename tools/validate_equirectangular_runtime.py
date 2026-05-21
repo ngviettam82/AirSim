@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Runtime validation for CosysAirSim equirectangular captures inside the Unreal project."""
+"""Runtime validation for configured CosysAirSim equirectangular captures.
+
+The equirectangular camera and reference camera are both requested through the
+normal AirSim image API. Projection is selected entirely by settings.json.
+"""
 
 from __future__ import annotations
 
@@ -184,7 +188,7 @@ def save_png_bytes(path, payload):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ip", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=41451)
     parser.add_argument("--vehicle", default="drone_1")

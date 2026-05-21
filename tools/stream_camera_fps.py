@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Display a live AirSim camera stream and report capture FPS."""
+"""Display a live AirSim camera stream and report capture FPS.
+
+Use the same command for normal perspective/orthographic and equirectangular
+captures. Projection is selected by the camera's settings.json entry.
+"""
 
 from __future__ import annotations
 

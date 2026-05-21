@@ -33,6 +33,8 @@ namespace
         int32 CubeSize = 0;
         int32 OutputWidth = 0;
         int32 OutputHeight = 0;
+        // The mapping depends only on cube size, not camera pose or image data.
+        // It is cached so each frame reuses the same face/texel references.
         TArray<uint8> NearestFaces;
         TArray<int32> NearestPixelIndices;
         TArray<uint8> BilinearFaces;
@@ -446,6 +448,8 @@ namespace
         const int32 output_pixel_count = map.OutputWidth * map.OutputHeight;
         result->width = map.OutputWidth;
         result->height = map.OutputHeight;
+        // Float equirectangular data is already in final API layout, so bypass
+        // bmp_float and avoid the normal 2D post-packaging conversion pass.
         result->image_data_float.SetNumUninitialized(output_pixel_count);
 
         for (int32 index = 0; index < output_pixel_count; ++index) {
