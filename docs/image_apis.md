@@ -72,7 +72,7 @@ img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8)
 # reshape array to 4 channel image array H X W X 4
 img_rgb = img1d.reshape(response.height, response.width, 3)
 
-# original image is fliped vertically
+# original image is flipped vertically
 img_rgb = np.flipud(img_rgb)
 
 # write to png
@@ -80,13 +80,15 @@ airsim.write_png(os.path.normpath(filename + '.png'), img_rgb)
 ```
 
 #### Quick Tips
-- The API `simGetImage` returns `binary string literal` which means you can simply dump it in binary file to create a .png file. However if you want to process it in any other way than you can handy function `airsim.string_to_uint8_array`. This converts binary string literal to NumPy uint8 array.
+- The API `simGetImage` returns `binary string literal` which means you can simply dump it in binary file to create a .png file. However, if you want to process it in any other way, you can use the helper function `airsim.string_to_uint8_array`. This converts binary string literal to NumPy uint8 array.
 
 - The API `simGetImages` can accept request for multiple image types from any cameras in single call. You can specify if image is png compressed, RGB uncompressed or float array. For png compressed images, you get `binary string literal`. For float array you get Python list of float64. You can convert this float array to NumPy 2D array using
     ```
     airsim.list_to_2d_float_array(response.image_data_float, response.width, response.height)
     ```
     You can also save float array to .pfm file (Portable Float Map format) using `airsim.write_pfm()` function.
+
+- For exact `DepthPlanar` and `DepthPerspective`, `pixels_as_float=True, float_as_bytes=True` returns little-endian `float32` depth bytes in `image_data_uint8`. This is much faster for high-resolution depth transport. Decode it with `np.frombuffer(response.image_data_uint8, dtype="<f4").reshape(response.height, response.width)` or `airsim.response_to_2d_float_array(response)`.
 
 - If you are looking to query position and orientation information in sync with a call to one of the image APIs, you can use `client.simPause(True)` and `client.simPause(False)` to pause the simulation while calling the image API and querying the desired physics state, ensuring that the physics state remains the same immediately after the image API call.
 
@@ -102,16 +104,16 @@ response = client.simGetImages([
 ])[0]
 ```
 
-For float depth, request the normal depth image type with `pixels_as_float=True`:
+For float depth, request the normal depth image type with `pixels_as_float=True`. Use `float_as_bytes=True` for the packed exact-depth transport:
 
 ```python
 response = client.simGetImages([
-    airsim.ImageRequest("front_center", airsim.ImageType.DepthPerspective, True, False)
+    airsim.ImageRequest("front_center", airsim.ImageType.DepthPerspective, True, False, float_as_bytes=True)
 ])[0]
-depth = np.asarray(response.image_data_float, dtype=np.float32).reshape(response.height, response.width)
+depth = np.frombuffer(response.image_data_uint8, dtype="<f4").reshape(response.height, response.width)
 ```
 
-The equirectangular output height is the configured `Height`, and output width is always `2 * Height`. See [Equirectangular Captures](equirectangular_capture.md) for settings, exposure behavior, depth notes, and validation tools.
+The equirectangular output height is the configured `Height`, and output width is always `2 * Height`. See [Equirectangular Captures](equirectangular_capture.md) for settings, exposure behavior, depth notes, and operational notes.
 
 ### C++
 
@@ -169,10 +171,10 @@ Before AirSim v1.2, cameras were accessed using ID numbers instead of names. For
 
 ## "Computer Vision" Mode
 
-You can use AirSim in so-called "Computer Vision" mode. In this mode, physics engine is disabled and there is no vehicle, just cameras (If you want to have the vehicle but without its kinematics, you can use the Multirotor mode with the Physics Engine [ExternalPhysicsEngine](settings.md##physicsenginename)). You can move around using keyboard (use F1 to see help on keys). You can press Record button to continuously generate images. Or you can call APIs to move cameras around and take images.
+You can use AirSim in so-called "Computer Vision" mode. In this mode, physics engine is disabled and there is no vehicle, just cameras (If you want to have the vehicle but without its kinematics, you can use the Multirotor mode with the Physics Engine [ExternalPhysicsEngine](settings.md#physicsenginename)). You can move around using keyboard (use F1 to see help on keys). You can press Record button to continuously generate images. Or you can call APIs to move cameras around and take images.
 You can use AirSim in so-called "Computer Vision" mode. In this mode, physics engine is disabled. It has a standard set of cameras and can have any sensor added similar to other vehicles.  You can move around using keyboard (use F1 to see help on keys, additionally use left shift to go faster and spacebar to hold in place (handy for when moving camera manually). You can press Record button to continuously generate images. Or you can call APIs to move cameras around and take images.
 
-To active this mode, edit [settings.json](settings.md) that you can find in your `Documents\AirSim` folder (or `~/Documents/AirSim` on Linux) and make sure following values exist at root level:
+To activate this mode, edit [settings.json](settings.md) that you can find in your `Documents\AirSim` folder (or `~/Documents/AirSim` on Linux) and make sure following values exist at root level:
 
 ```json
 {
@@ -221,12 +223,12 @@ To change resolution, FOV etc, you can use [settings.json](settings.md). For exa
           "Width": 256,
           "Height": 144,
           "FOV_Degrees": 90,
-          "AutoExposureBias": 1.3,
+          "AutoExposureCompensation": 1.3,
           "AutoExposureMaxBrightness": 0.64,
           "AutoExposureMinBrightness": 0.03,
           "MotionBlurAmount": 1,
           "MotionBlurMax": 10,
-          "ChromaticAberrationScale": 2,
+          "ChromaticAberrationIntensity": 2,
           "LumenGIEnable": true,
           "LumenReflectionEnable": true,
           "LumenFinalQuality": 1,
@@ -257,9 +259,9 @@ To change resolution, FOV etc, you can use [settings.json](settings.md). For exa
 ```
 
 ### DepthPlanar and DepthPerspective
-You normally want to retrieve the depth image as float (i.e. set `pixels_as_float = true`) and specify `ImageType = DepthPlanar` or `ImageType = DepthPerspective` in `ImageRequest`. For `ImageType = DepthPlanar`, you get depth in camera plane, i.e., all points that are plane-parallel to the camera have same depth. For `ImageType = DepthPerspective`, you get depth from camera using a projection ray that hits that pixel. Depending on your use case, planner depth or perspective depth may be the ground truth image that you want. For example, you may be able to feed perspective depth to ROS package such as `depth_image_proc` to generate a point cloud. Or planner depth may be more compatible with estimated depth image generated by stereo algorithms such as SGM.
+You normally want to retrieve the depth image as float (i.e. set `pixels_as_float = true`) and specify `ImageType = DepthPlanar` or `ImageType = DepthPerspective` in `ImageRequest`. For `ImageType = DepthPlanar`, you get depth in camera plane, i.e., all points that are plane-parallel to the camera have same depth. For `ImageType = DepthPerspective`, you get depth from camera using a projection ray that hits that pixel. Depending on your use case, planar depth or perspective depth may be the ground truth image that you want. For example, you may be able to feed perspective depth to ROS package such as `depth_image_proc` to generate a point cloud. Or planar depth may be more compatible with estimated depth image generated by stereo algorithms such as SGM.
 
-For equirectangular depth, `DepthPerspective` is recommended because each pixel stores distance along that pixel's viewing ray. `DepthPlanar` is still supported, but it remains face-local planar depth because there is no single global camera plane for a full 360 degree image. The optional `MaxDepthMeters` setting clamps returned float pixels for both depth types.
+For equirectangular depth, `DepthPerspective` is recommended because each pixel stores distance along that pixel's viewing ray. `DepthPlanar` is still supported, but it remains face-local planar depth because there is no single global camera plane for a full 360 degree image. The optional `MaxDepthMeters` setting clamps returned float pixels for both depth types. For faster exact depth transport, request `pixels_as_float=True, float_as_bytes=True` and decode `image_data_uint8` as little-endian `float32`.
 
 ### DepthVis
 When you specify `ImageType = DepthVis` in `ImageRequest`, you get an image that helps depth visualization. In this case, each pixel value is interpolated from black to white depending on depth in camera plane in meters. The pixels with pure white means depth of 100m or more while pure black means depth of 0 meters.
@@ -378,5 +380,5 @@ Note that objects using transparent materials may still show their full diffuse 
 This can be useful to indicate what parts of an image are in shadow or how much light is received on certain objects by artificial or natural light sources.
 
 ## Lumen Lightning for Scene camera
-Unreal 5 introduces Lumen lightning. Due to the cameras using scene capture components enabling Lumen for them can be costly on performance. Settings have been added specfically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
-The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lightning in the scene.
+Unreal Engine 5 introduces Lumen lighting. Because these cameras use scene capture components, enabling Lumen can be costly for performance. Settings have been added specifically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
+The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lighting in the scene.

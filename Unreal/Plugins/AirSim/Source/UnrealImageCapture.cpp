@@ -181,7 +181,8 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
                 max_depth_meters,
                 equirectangular_exposure.compensation,
                 equirectangular_exposure.min,
-                equirectangular_exposure.max));
+                equirectangular_exposure.max,
+                requests[i].float_as_bytes));
         }
         else {
             render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
@@ -194,7 +195,8 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
                 max_depth_meters,
                 equirectangular_exposure.compensation,
                 equirectangular_exposure.min,
-                equirectangular_exposure.max));
+                equirectangular_exposure.max,
+                requests[i].float_as_bytes));
         }
     }
 
