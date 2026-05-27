@@ -15,9 +15,29 @@ def string_to_float_array(bstr):
     
 def list_to_2d_float_array(flst, width, height):
     return np.reshape(np.asarray(flst, np.float32), (height, width))
+
+def response_to_2d_float_array(response):
+    expected = response.width * response.height
+    arr = np.asarray(response.image_data_float, np.float32)
+    if arr.size == expected:
+        return np.reshape(arr, (response.height, response.width))
+
+    payload = response.image_data_uint8
+    if isinstance(payload, str):
+        payload = payload.encode("latin1")
+    if isinstance(payload, (bytes, bytearray, memoryview)):
+        raw = np.frombuffer(payload, dtype=np.uint8)
+    else:
+        raw = np.asarray(payload, dtype=np.uint8)
+    if raw.size != expected * 4:
+        raise ValueError(
+            "unexpected float payload length %s and packed byte length %s; expected %s floats or %s bytes"
+            % (arr.size, raw.size, expected, expected * 4)
+        )
+    return np.frombuffer(raw.tobytes(), dtype="<f4").reshape((response.height, response.width))
     
 def get_pfm_array(response):
-    return list_to_2d_float_array(response.image_data_float, response.width, response.height)
+    return response_to_2d_float_array(response)
 
     
 def get_public_fields(obj):
@@ -316,24 +336,20 @@ def get_image_bytes(data, cameraType):
     elif cameraType == "Segmentation":
         img_rgb_string = data.image_data_uint8
     elif cameraType == "DepthPerspective":
-        img_depth_float = data.image_data_float
-        img_depth_float32 = np.asarray(img_depth_float, dtype=np.float32)
+        img_depth_float32 = response_to_2d_float_array(data)
         img_rgb_string = img_depth_float32.tobytes()
     elif cameraType == "DepthPlanar":
-        img_depth_float = data.image_data_float
-        img_depth_float32 = np.asarray(img_depth_float, dtype=np.float32)
+        img_depth_float32 = response_to_2d_float_array(data)
         img_rgb_string = img_depth_float32.tobytes()
     elif cameraType == "DepthVis":
-        img_depth_float = data.image_data_float
-        img_depth_float32 = np.asarray(img_depth_float, dtype=np.float32)
+        img_depth_float32 = response_to_2d_float_array(data)
         img_rgb_string = img_depth_float32.tobytes()
     elif cameraType == "Infrared":
         img_rgb_string = data.image_data_uint8
     elif cameraType == "SurfaceNormals":
         img_rgb_string = data.image_data_uint8
     elif cameraType == "DisparityNormalized":
-        img_depth_float = data.image_data_float
-        img_depth_float32 = np.asarray(img_depth_float, dtype=np.float32)
+        img_depth_float32 = response_to_2d_float_array(data)
         img_rgb_string = img_depth_float32.tobytes()
     elif cameraType == "OpticalFlow":
         img_rgb_string = data.image_data_uint8

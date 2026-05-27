@@ -8,6 +8,7 @@
 #include "Runtime/Launch/Resources/Version.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "LandscapeComponent.h"
 #include "LandscapeProxy.h"
 #include "AnnotationComponent.h"
@@ -135,9 +136,9 @@ namespace
 	{
 		if (const UStaticMeshComponent* static_mesh_component = Cast<UStaticMeshComponent>(component))
 		{
-			if (IsValid(static_mesh_component->GetStaticMesh()))
+			if (UStaticMesh* static_mesh = static_mesh_component->GetStaticMesh())
 			{
-				return static_mesh_component->GetStaticMesh()->GetName();
+				return static_mesh->GetName();
 			}
 		}
 

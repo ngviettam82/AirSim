@@ -341,14 +341,16 @@ class ImageRequest(MsgpackMixin):
     pixels_as_float = False
     compress = False
     annotation_name = ""
+    float_as_bytes = False
 
-    def __init__(self, camera_name, image_type, pixels_as_float = False, compress = True, annotation_name = ""):
+    def __init__(self, camera_name, image_type, pixels_as_float = False, compress = True, annotation_name = "", float_as_bytes = False):
         # todo: in future remove str(), it's only for compatibility to pre v1.2
         self.camera_name = str(camera_name)
         self.image_type = image_type
         self.pixels_as_float = pixels_as_float
         self.compress = compress
         self.annotation_name = annotation_name
+        self.float_as_bytes = float_as_bytes
 
 class ImageResponse(MsgpackMixin):
     image_data_uint8 = np.uint8(0)

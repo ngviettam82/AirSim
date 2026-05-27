@@ -521,8 +521,9 @@ namespace airlib_rpclib
             bool pixels_as_float;
             bool compress;
             std::string annotation_name;
+            bool float_as_bytes = false;
 
-            MSGPACK_DEFINE_MAP(camera_name, image_type, pixels_as_float, compress, annotation_name);
+            MSGPACK_DEFINE_MAP(camera_name, image_type, pixels_as_float, compress, annotation_name, float_as_bytes);
 
             ImageRequest()
             {
@@ -533,13 +534,14 @@ namespace airlib_rpclib
                 , image_type(s.image_type)
                 , pixels_as_float(s.pixels_as_float)
                 , compress(s.compress)
-				, annotation_name(s.annotation_name)
+                , annotation_name(s.annotation_name)
+                , float_as_bytes(s.float_as_bytes)
             {
             }
 
             msr::airlib::ImageCaptureBase::ImageRequest to() const
             {
-                return { camera_name, image_type, pixels_as_float, compress, annotation_name };
+                return { camera_name, image_type, pixels_as_float, compress, annotation_name, float_as_bytes };
             }
 
             static std::vector<ImageRequest> from(
@@ -610,10 +612,8 @@ namespace airlib_rpclib
 
                 d.pixels_as_float = pixels_as_float;
 
-                if (!pixels_as_float)
-                    d.image_data_uint8 = image_data_uint8;
-                else
-                    d.image_data_float = image_data_float;
+                d.image_data_uint8 = image_data_uint8;
+                d.image_data_float = image_data_float;
 
                 d.camera_name = camera_name;
                 d.camera_position = camera_position.to();

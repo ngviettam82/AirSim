@@ -22,6 +22,7 @@ public:
         UTextureRenderTargetCube* render_target_cube;
         bool pixels_as_float;
         bool compress;
+        bool float_as_bytes;
         bool disable_gamma;
         msr::airlib::ImageCaptureBase::ImageType image_type;
         float max_depth_meters;
@@ -35,10 +36,11 @@ public:
                      float max_depth_meters_val,
                      float equirectangular_exposure_compensation_val,
                      float equirectangular_exposure_min_val,
-                     float equirectangular_exposure_max_val)
+                     float equirectangular_exposure_max_val,
+                     bool float_as_bytes_val)
             : render_component(render_component_val), render_target(render_target_val),
               render_component_cube(nullptr), render_target_cube(nullptr),
-              pixels_as_float(pixels_as_float_val), compress(compress_val),
+              pixels_as_float(pixels_as_float_val), compress(compress_val), float_as_bytes(float_as_bytes_val),
               disable_gamma(disable_gamma_val), image_type(image_type_val),
               max_depth_meters(max_depth_meters_val),
               equirectangular_exposure_compensation(equirectangular_exposure_compensation_val),
@@ -53,10 +55,11 @@ public:
                      float max_depth_meters_val,
                      float equirectangular_exposure_compensation_val,
                      float equirectangular_exposure_min_val,
-                     float equirectangular_exposure_max_val)
+                     float equirectangular_exposure_max_val,
+                     bool float_as_bytes_val)
             : render_component(nullptr), render_target(nullptr),
               render_component_cube(render_component_val), render_target_cube(render_target_val),
-              pixels_as_float(pixels_as_float_val), compress(compress_val),
+              pixels_as_float(pixels_as_float_val), compress(compress_val), float_as_bytes(float_as_bytes_val),
               disable_gamma(disable_gamma_val), image_type(image_type_val),
               max_depth_meters(max_depth_meters_val),
               equirectangular_exposure_compensation(equirectangular_exposure_compensation_val),
@@ -112,8 +115,8 @@ public:
         RETURN_QUICK_DECLARE_CYCLE_STAT(RenderRequest, STATGROUP_RenderThreadCommands);
     }
 
-    // read pixels from render target using render thread, then compress the result into PNG
-    // argument on the thread that calls this method.
+    // Read pixels from render target using render thread, then package the result
+    // on the thread that calls this method.
     void getScreenshot(
         std::shared_ptr<RenderParams> params[], std::vector<std::shared_ptr<RenderResult>>& results, unsigned int req_size, bool use_safe_method);
 

@@ -86,11 +86,12 @@ Note this does not include most sensor types.
         "Width": 256,
         "Height": 144,
         "FOV_Degrees": 90,
-        "AutoExposureSpeed": 100,
-        "AutoExposureBias": 0,
+        "AutoExposureSpeedUp": 100,
+        "AutoExposureSpeedDown": 100,
+        "AutoExposureCompensation": 0,
+        "AutoExposureApplyPhysicalCameraExposure": true,
         "AutoExposureMaxBrightness": 0.64,
         "AutoExposureMinBrightness": 0.03,
-        "MotionBlurAmount": 0,
         "TargetGamma": 1.0,
         "ProjectionMode": "",
         "OrthoWidth": 5.12,
@@ -100,7 +101,7 @@ Note this does not include most sensor types.
         "EquirectangularExposureMax": 20.0,
         "MotionBlurAmount": 1,
         "MotionBlurMax": 10,
-        "ChromaticAberrationScale": 2,
+        "ChromaticAberrationIntensity": 2,
         "IgnoreMarked": false,
         "LumenGIEnable": true,
         "LumenReflectionEnable": true,
@@ -310,7 +311,7 @@ The recording feature allows you to record data such as position, orientation, v
 * `RecordOnMove`: specifies that do not record frame if there was vehicle's position or orientation hasn't changed.
 * `Folder`: Parent folder where timestamped subfolder with recordings are created. Absolute path of the directory must be specified. If not used, then `Documents/AirSim` folder will be used. E.g. `"Folder": "/home/<user>/Documents"`
 * `Enabled`: Whether Recording should start from the beginning itself, setting to `true` will start recording automatically when the simulation starts. By default, it's set to `false`
-* `Cameras`: this element controls which cameras are used to capture images. By default scene image from camera 0 is recorded as compressed png format. This setting is json array so you can specify multiple cameras to capture images, each with potentially different [image types](settings.md#image-capture-settings).
+* `Cameras`: this element controls which cameras are used to capture images. By default scene image from camera 0 is recorded as compressed png format. This setting is json array so you can specify multiple cameras to capture images, each with potentially different [image types](image_apis.md#available-imagetype-values).
     * When `PixelsAsFloat` is true, image is saved as [pfm](pfm.md) file instead of png file.
     * `VehicleName` option allows you to specify separate cameras for individual vehicles. If the `Cameras` element isn't present, `Scene` image from the default camera of each vehicle will be recorded.
     * If you don't want to record any images and just the vehicle's physics data, then specify the `Cameras` element but leave it empty, like this: `"Cameras": []`
@@ -363,18 +364,18 @@ Equirectangular is a projection mode, not a separate image type. For example, se
 
 For `Scene` and `Lighting` equirectangular captures, AirSim captures the six cube faces as HDR scene color and applies one global exposure and tonemap after unwrapping. This avoids per-face eye-adaptation and local-exposure seams. View-local post effects such as bloom, lens flares, vignette, and depth of field are not applied per cube face in this mode.
 
-For `DepthPlanar` and `DepthPerspective`, `MaxDepthMeters` can be set to a positive value to clamp returned float depth pixels to that maximum range. It is optional and leaves depth output unchanged when omitted.
+For `DepthPlanar` and `DepthPerspective`, `MaxDepthMeters` can be set to a positive value to clamp returned float depth pixels to that maximum range. It is optional and leaves depth output unchanged when omitted. Exact depth requests can use `pixels_as_float=true, float_as_bytes=true` to return little-endian `float32` bytes in `image_data_uint8`.
 
 When the scene camera is configured as equirectangular, `simGetCameraInfo` returns `NaN` values in `proj_mat` because the camera has no single perspective projection matrix. The pose remains valid.
 
-See [Equirectangular Captures](equirectangular_capture.md) for examples, supported image types, exposure behavior, and validation tools.
+See [Equirectangular Captures](equirectangular_capture.md) for examples, supported image types, exposure behavior, and operational notes.
 
-To disable the rendering of certain objects on specific cameras or all, use the `IgnoreMarked` boolean setting. This requires to mark individual objects that have to be ignore using an Unreal Tag called _MarkedIgnore_.
+To disable the rendering of certain objects on specific cameras or all, use the `IgnoreMarked` boolean setting. This requires marking individual objects that should be ignored with an Unreal Tag called _MarkedIgnore_.
 
-Unreal 5 introduces Lumen lightning. Due to the cameras using scene capture components enabling Lumen for them can be costly on performance. Settings have been added specfically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
-The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lightning in the scene.
+Unreal Engine 5 introduces Lumen lighting. Because these cameras use scene capture components, enabling Lumen can be costly for performance. Settings have been added specifically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
+The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lighting in the scene.
 
-`ForceUpdate` can be enabled to force a camera (only works for scene) to update the render target every frame. This is costly on performance but can solve issues with with exposure settings not applying for example.
+`ForceUpdate` can be enabled to force a camera (only works for scene) to update the render target every frame. This is costly on performance but can solve issues with exposure settings not applying, for example.
 
 Below you can find a list of all available settings and their purpose.
 They are settings that are directly transferred to the post-processing settings of cameras of which more documentation can be found [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/post-process-effects-in-unreal-engine).
@@ -529,7 +530,7 @@ Each simulation mode will go through the list of vehicles specified in this sett
 
 ### Common Vehicle Setting
 - `VehicleType`: This could be either `PhysXCar`, `ArduRover` or `BoxCar` for the Car SimMode, `SimpleFlight`, `ArduCopter` or `PX4Multirotor` for the MultiRotor SimMode, `ComputerVision` for the ComputerVision SimMode and `CPHusky` or `Pioneer` for SkidVehicle SimMode. you can use There is no default value therefore this element must be specified.
-- `PawnPath`: This allows to override the pawn blueprint to use for the vehicle. For example, you may create new pawn blueprint derived from ACarPawn for a warehouse robot in your own project outside the Cosys-AirSim code and then specify its path here. See also [PawnPaths](settings.md#PawnPaths). Note that you have to specify your custom pawn blueprint class path inside the global `PawnPaths` object using your proprietarily defined object name, and quote that name inside the `Vehicles` setting. For example,
+- `PawnPath`: This allows to override the pawn blueprint to use for the vehicle. For example, you may create new pawn blueprint derived from ACarPawn for a warehouse robot in your own project outside the Cosys-AirSim code and then specify its path here. See also [PawnPaths](settings.md#pawnpaths). Note that you have to specify your custom pawn blueprint class path inside the global `PawnPaths` object using your proprietarily defined object name, and quote that name inside the `Vehicles` setting. For example,
 ```json
     {
       ...
@@ -551,7 +552,7 @@ Each simulation mode will go through the list of vehicles specified in this sett
 - `X, Y, Z, Yaw, Roll, Pitch`: These elements allows you to specify the initial position and orientation of the vehicle. Position is in NED coordinates in SI units with origin set to Player Start location in Unreal environment. The orientation is specified in degrees.
 - `Sensors`: This element specifies the sensors associated with the vehicle, see [Sensors](sensors.md) page for details.
 - `IsFpvVehicle`: This setting allows to specify which vehicle camera will follow and the view that will be shown when ViewMode is set to Fpv. By default, Cosys-AirSim selects the first vehicle in settings as FPV vehicle.
-- `Cameras`: This element specifies camera settings for vehicle. The key in this element is name of the [available camera](image_apis.md#available_cameras) and the value is same as `CameraDefaults` as described above. For example, to change FOV for the front center camera to 120 degrees, you can use this for `Vehicles` setting:
+- `Cameras`: This element specifies camera settings for vehicle. The key in this element is name of the [available camera](image_apis.md#available-cameras) and the value is same as `CameraDefaults` as described above. For example, to change FOV for the front center camera to 120 degrees, you can use this for `Vehicles` setting:
 
 ```json
 "Vehicles": {

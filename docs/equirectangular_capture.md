@@ -49,7 +49,7 @@ client.confirmConnection()
 responses = client.simGetImages(
     [
         airsim.ImageRequest("front_center", airsim.ImageType.Scene, False, False),
-        airsim.ImageRequest("front_center", airsim.ImageType.DepthPerspective, True, False),
+        airsim.ImageRequest("front_center", airsim.ImageType.DepthPerspective, True, False, float_as_bytes=True),
         airsim.ImageRequest("front_center", airsim.ImageType.Segmentation, False, False),
     ],
     vehicle_name="drone_1",
@@ -57,6 +57,13 @@ responses = client.simGetImages(
 ```
 
 `simGetImage()` also works for compressed non-float image types. Float depth output requires `simGetImages()` with `pixels_as_float=True`.
+
+For exact depth, request `pixels_as_float=True, float_as_bytes=True`. This returns the same exact `float32` depth values as little-endian raw bytes in `image_data_uint8` and leaves `image_data_float` empty:
+
+```python
+depth_response = responses[1]
+depth = airsim.response_to_2d_float_array(depth_response)
+```
 
 ## Image Types
 
@@ -100,21 +107,16 @@ Normal perspective and orthographic captures continue to use their existing Unre
 
 ## Camera Info
 
-When a camera image type is configured as equirectangular, `simGetCameraInfo` still returns the camera pose. The projection matrix is returned as `NaN` values because a 360 degree equirectangular image has no single perspective projection matrix.
+When the scene image type for a camera is configured as equirectangular, `simGetCameraInfo` still returns the camera pose. The projection matrix is returned as `NaN` values because a 360 degree equirectangular image has no single perspective projection matrix.
 
 ## Platform Notes
 
 The validated runtime target is Windows with D3D11 or D3D12. UE 5.5 Vulkan has known cube-face readback limitations in this path, so equirectangular capture reports an error on Vulkan instead of treating it as supported.
 
-## Validation And Debug Tools
+## Operational Notes
 
-Useful local tools:
+Each equirectangular image type owns a cube render target. High resolutions can therefore consume much more GPU memory than a normal perspective camera, especially when several equirectangular image types are enabled on the same camera. If memory pressure is a concern, configure only the image types needed for that run or split captures across separate camera/settings profiles.
 
-```powershell
-python tools\validate_equirectangular_projection.py
-python tools\validate_equirectangular_runtime.py --vehicle drone_1 --equirectangular-camera front_center --ref-camera front_center_ref --expected-height 720
-python tools\capture_equirectangular_three_types.py --vehicle drone_1 --camera front_center
-python tools\stream_camera_fps.py --vehicle drone_1 --camera front_center --image-type Scene --display-width 1440 --display-height 720
-```
+Exact `DepthPlanar` and `DepthPerspective` responses should use `float_as_bytes=True` for high-resolution captures. This keeps the same `float32` values while avoiding the very slow RPC path that serializes one float object per pixel.
 
-The runtime validation script expects one configured equirectangular camera and one normal reference camera. The capture script writes `Scene`, `DepthPerspective`, and `Segmentation` artifacts plus a summary JSON file under `Documents/AirSim`.
+Annotation output depends on the configured annotation layer. Untagged objects may share the layer default color, so an all-black annotation image usually means the requested layer exists but no object has a non-default annotation value for that layer.

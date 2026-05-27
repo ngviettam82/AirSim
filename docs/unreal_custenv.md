@@ -180,7 +180,7 @@ Once you have your environment using above instructions, you should frequently u
 4. Right-click on your .uproject file and chose "Generate Visual Studio project files" option. This is not required for Linux.
 
 ## Choosing Your Vehicle: Car or Multirotor
-By default, AirSim prompts user for which vehicle to use. You can easily change this by setting [SimMode](settings.md#SimMode). Please see [using car](using_car.md) guide.
+By default, AirSim prompts user for which vehicle to use. You can easily change this by setting [SimMode](settings.md#simmode). Please see [using car](using_car.md) guide.
 
 ## Unreal Scene camera bug
 Note that Unreal 5.3 and higher breaks camera scene rendering when Effects is not set to the Epic scalability preset. You can use the console command r.DetailMode 2 to fix this at runtime!

@@ -40,6 +40,7 @@ namespace airlib
             bool pixels_as_float = false;
             bool compress = true;
             std::string annotation_name;
+            bool float_as_bytes = false;
 
             ImageRequest()
             {
@@ -49,12 +50,14 @@ namespace airlib
                          ImageCaptureBase::ImageType image_type_val,
                          bool pixels_as_float_val = false,
                          bool compress_val = true,
-                         const std::string& annotation_name_val = "")
+                         const std::string& annotation_name_val = "",
+                         bool float_as_bytes_val = false)
                 : camera_name(camera_name_val)
                 , image_type(image_type_val)
                 , pixels_as_float(pixels_as_float_val)
                 , compress(compress_val)
-				, annotation_name(annotation_name_val)
+                , annotation_name(annotation_name_val)
+                , float_as_bytes(float_as_bytes_val)
             {
             }
         };

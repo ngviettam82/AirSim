@@ -81,8 +81,10 @@
                 "Width": 960,
                 "Height": 540,
                 "FOV_Degrees": 90,
-                "AutoExposureSpeed": 100,
-                "AutoExposureBias": 0,
+                "AutoExposureSpeedUp": 100,
+                "AutoExposureSpeedDown": 100,
+                "AutoExposureCompensation": 0,
+                "AutoExposureApplyPhysicalCameraExposure": true,
                 "AutoExposureMaxBrightness": 0.64,
                 "AutoExposureMinBrightness": 0.03,
                 "MotionBlurAmount": 1,
@@ -90,8 +92,11 @@
                 "TargetGamma": 1,
                 "ProjectionMode": "",
                 "OrthoWidth": 5.12,
-                "ChromaticAberrationScale": 2,
+                "ChromaticAberrationIntensity": 2,
                 "IgnoreMarked": false,
+                "EquirectangularExposureCompensation": 0,
+                "EquirectangularExposureMin": 0.02,
+                "EquirectangularExposureMax": 20.0,
                 "LumenGIEnable": true,
                 "LumenReflectionEnable": true,
                 "LumenFinalQuality": 1,
@@ -106,6 +111,7 @@
                 "TargetGamma": 1,
                 "ProjectionMode": "",
                 "OrthoWidth": 5.12,
+                "MaxDepthMeters": 0,
                 "IgnoreMarked": false
             },
             {
@@ -116,6 +122,7 @@
                 "TargetGamma": 1,
                 "ProjectionMode": "",
                 "OrthoWidth": 5.12,
+                "MaxDepthMeters": 0,
                 "IgnoreMarked": false
             },
             {
@@ -196,7 +203,10 @@
                 "TargetGamma": 1,
                 "ProjectionMode": "",
                 "OrthoWidth": 5.12,
-                "IgnoreMarked": false
+                "IgnoreMarked": false,
+                "EquirectangularExposureCompensation": 0,
+                "EquirectangularExposureMin": 0.02,
+                "EquirectangularExposureMax": 20.0
             },
             {
                 "ImageType": 11,

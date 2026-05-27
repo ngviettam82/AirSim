@@ -82,6 +82,16 @@ namespace
                image_type == ImageType::DepthPerspective;
     }
 
+    bool ShouldPackFloatDepthAsBytes(const RenderRequest::RenderParams* params)
+    {
+        // Opt-in float depth bytes avoid serializing one msgpack float
+        // object per pixel through RPC.
+        return params != nullptr &&
+               params->pixels_as_float &&
+               params->float_as_bytes &&
+               IsDepthMetersImage(params->image_type);
+    }
+
     float ApplyMaxDepthMeters(float value, const RenderRequest::RenderParams* params)
     {
         if (params != nullptr &&
@@ -456,6 +466,21 @@ namespace
             result->image_data_float[index] = ApplyMaxDepthMeters(ReadMappedCubeFloat(cube_faces, map, index), params);
         }
     }
+
+    void PackFloatDepthAsBytes(RenderRequest::RenderResult* result)
+    {
+        if (result == nullptr || result->image_data_float.Num() <= 0) {
+            return;
+        }
+
+        const int32 byte_count = result->image_data_float.Num() * static_cast<int32>(sizeof(float));
+        result->image_data_uint8.SetNumUninitialized(byte_count, false);
+        FMemory::Memcpy(
+            result->image_data_uint8.GetData(),
+            result->image_data_float.GetData(),
+            byte_count);
+        result->image_data_float.Reset();
+    }
 }
 
 RenderRequest::RenderRequest(UGameViewportClient* game_viewport, std::function<void()>&& query_camera_pose_cb)
@@ -467,8 +492,8 @@ RenderRequest::~RenderRequest()
 {
 }
 
-// read pixels from render target using render thread, then compress the result into PNG
-// argument on the thread that calls this method.
+// Read pixels from render target using render thread, then package the result
+// on the thread that calls this method.
 void RenderRequest::getScreenshot(std::shared_ptr<RenderParams> params[], std::vector<std::shared_ptr<RenderResult>>& results, unsigned int req_size, bool use_safe_method)
 {
     //TODO: is below really needed?
@@ -643,6 +668,12 @@ void RenderRequest::getScreenshot(std::shared_ptr<RenderParams> params[], std::v
                 else if (!has_final_float_data) {
                     results[i]->width = 0;
                     results[i]->height = 0;
+                }
+
+                if (ShouldPackFloatDepthAsBytes(params[i].get()) &&
+                    pixel_count > 0 &&
+                    results[i]->image_data_float.Num() == pixel_count) {
+                    PackFloatDepthAsBytes(results[i].get());
                 }
             }
         }
