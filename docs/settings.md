@@ -285,6 +285,8 @@ This setting determines what is shown in each of 3 subwindows which are visible 
 * `VehicleName`: string allows you to specify the vehicle to use the camera from, used when multiple vehicles are specified in the settings. First vehicle's camera will be used if there are any mistakes such as incorrect vehicle name, or only a single vehicle.
 * `Annotation`: string allows you to specify the annotation layer to use for the camera. This is only if using the Annotation camera type for `ImageType` (value is 11).
 
+If the selected camera and image type are configured with `ProjectionMode: "Equirectangular"`, the subwindow displays a GPU equirectangular preview target. This preview is meant for display or streaming; exact depth, segmentation, infrared, and annotation data should still be read through the image APIs.
+
 For example, for a single car vehicle, below shows driver view, front bumper view and rear view as scene, depth and surface normals respectively.
 ```json
   "SubWindows": [
