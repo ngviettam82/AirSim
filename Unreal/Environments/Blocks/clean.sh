@@ -14,6 +14,9 @@ rm -rf Saved
 rm -rf Plugins/AirSim/Binaries
 rm -rf Plugins/AirSim/Intermediate
 rm -rf Plugins/AirSim/Saved
+rm -rf Plugins/AirSimShaders/Binaries
+rm -rf Plugins/AirSimShaders/Intermediate
+rm -rf Plugins/AirSimShaders/Saved
 rm -f CMakeLists.txt
 rm -f Makefile
 
