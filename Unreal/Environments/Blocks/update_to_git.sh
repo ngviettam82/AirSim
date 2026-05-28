@@ -9,6 +9,7 @@ set -e
 set -x
 
 rsync -a  --exclude 'temp' --delete Plugins/AirSim ../../Plugins/
+rsync -a  --exclude 'temp' --delete Plugins/AirSimShaders ../../Plugins/
 rsync -a  --exclude 'temp' --delete Plugins/AirSim/Source/AirLib ../../../
 
 popd >/dev/null

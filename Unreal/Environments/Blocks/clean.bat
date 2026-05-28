@@ -6,5 +6,7 @@ mkdir Saved\logs
 rd /s/q Plugins\AirSim\Binaries
 rd /s/q Plugins\AirSim\Intermediate
 rd /s/q Plugins\AirSim\Saved
+rd /s/q Plugins\AirSimShaders\Binaries
+rd /s/q Plugins\AirSimShaders\Intermediate
+rd /s/q Plugins\AirSimShaders\Saved
 del *.sln
-

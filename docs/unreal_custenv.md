@@ -20,7 +20,7 @@ There is no `Epic Games Launcher` for Linux which means that if you need to crea
 
         The Landscape Mountains project is supported up to Unreal Engine version 4.24. If you do not have 4.24 installed, you should see a dialog titled `Select Unreal Engine Version` with a dropdown to select from installed versions. Select 5.X to migrate the project to a supported engine version. If you have 4.24 installed, you can manually migrate the project by navigating to the corresponding .uproject file in Windows Explorer, right-clicking it, and selecting the `Switch Unreal Engine version...` option. 
 
-4. Go to the `LandscapeMountains` project folder and create a new subfolder called `Plugins`. Now copy the precompiled AirSim Plugin folder into this newly created folder. This way now your own Unreal project has AirSim plugin.
+4. Go to the `LandscapeMountains` project folder and create a new subfolder called `Plugins`. Copy all plugin folders included with the precompiled Cosys-AirSim release into this folder. The release includes the main `AirSim` plugin and may include support plugins such as `AirSimShaders`.
 
 5. Edit the `LandscapeMountains.uproject` so that you add the AirSim plugin (and the required plugin ChaosVehiclesPlugin to avoid build issues) to the list of plugins to load.
 
@@ -86,7 +86,7 @@ There is no `Epic Games Launcher` for Linux which means that if you need to crea
 
 4. From the `File menu` select `New C++ class`, leave default `None` on the type of class, click `Next`, leave default name `MyClass`, and click `Create Class`. We need to do this because Unreal requires at least one source file in project. It should trigger compile and open up Visual Studio solution `LandscapeMountains.sln`.
 
-5. Go to your folder for AirSim repo and copy `Unreal\Plugins` folder in to your `LandscapeMountains` folder. This way now your own Unreal project has AirSim plugin.
+5. Go to your folder for AirSim repo and copy the `Unreal\Plugins` folder into your `LandscapeMountains` folder. This keeps the main `AirSim` plugin and support plugins such as `AirSimShaders` together.
 
     !!!note
 
