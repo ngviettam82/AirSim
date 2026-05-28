@@ -6,6 +6,10 @@
 #include <functional>
 #include "SimHUDWidget.generated.h"
 
+class UCanvasPanelSlot;
+class UTextureRenderTarget2D;
+class UWidget;
+
 UCLASS()
 class AIRSIM_API USimHUDWidget : public UUserWidget
 {
@@ -26,6 +30,7 @@ public:
     void toggleHelpVisibility();
 
     void setOnToggleRecordingHandler(OnToggleRecording handler);
+    void setSubwindowRenderTargetSize(int window_index, UTextureRenderTarget2D* render_target);
 
 public:
     //below are implemented in Blueprint. The return value is forced to be
@@ -59,5 +64,9 @@ protected:
     bool setReportText(const FString& text);
 
 private:
+    FVector2D getBaseSubwindowSlotSize(const FName& widget_name, UCanvasPanelSlot* canvas_slot);
+    void applySubwindowAspectSize(UWidget* widget, float aspect_ratio, bool restore);
+
     OnToggleRecording on_toggle_recording_;
+    TMap<FName, FVector2D> subwindow_base_slot_sizes_;
 };

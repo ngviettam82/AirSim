@@ -23,7 +23,7 @@ You can switch to manual camera control by pressing the M key. While manual came
 
 ## Configuring Sub-Windows
 
-Now you can select what is shown by each of above sub windows. For instance, you can choose to show surface normals in first window (instead of depth) and disparity in second window (instead of segmentation). If the selected camera image type is configured with `ProjectionMode: "Equirectangular"`, the subwindow displays a 2:1 equirectangular preview for that image type. Below is the settings value you can use in [settings.json](settings.md):
+Now you can select what is shown by each of above sub windows. For instance, you can choose to show surface normals in first window (instead of depth) and disparity in second window (instead of segmentation). Each subwindow keeps the aspect ratio of the render target attached to that subwindow. Perspective and orthographic subwindows follow the configured 2D camera render target size. If the selected camera image type is configured with `ProjectionMode: "Equirectangular"`, the preview target is `2 * Height` by `Height`, so the displayed subwindow is 2:1. Below is the settings value you can use in [settings.json](settings.md):
 
 ```
 {

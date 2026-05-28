@@ -22,21 +22,25 @@ There is no `Epic Games Launcher` for Linux which means that if you need to crea
 
 4. Go to the `LandscapeMountains` project folder and create a new subfolder called `Plugins`. Copy all plugin folders included with the precompiled Cosys-AirSim release into this folder. The release includes the main `AirSim` plugin and may include support plugins such as `AirSimShaders`.
 
-5. Edit the `LandscapeMountains.uproject` so that you add the AirSim plugin (and the required plugin ChaosVehiclesPlugin to avoid build issues) to the list of plugins to load.
+5. Edit the `LandscapeMountains.uproject` so that you add the AirSim plugin, the AirSim support plugin, and the required plugin ChaosVehiclesPlugin to the list of plugins to load.
 
     ```json
     {
-    	...
-    	"Plugins": [
-    		{
-    			"Name": "AirSim",
-    			"Enabled": true
-    		},
-       		{
-			"Name": "ChaosVehiclesPlugin",
-			"Enabled": true
-    		}
-    	]
+        ...
+        "Plugins": [
+            {
+                "Name": "AirSim",
+                "Enabled": true
+            },
+            {
+                "Name": "AirSimShaders",
+                "Enabled": true
+            },
+            {
+                "Name": "ChaosVehiclesPlugin",
+                "Enabled": true
+            }
+        ]
         ...
     }
     ```
@@ -86,44 +90,48 @@ There is no `Epic Games Launcher` for Linux which means that if you need to crea
 
 4. From the `File menu` select `New C++ class`, leave default `None` on the type of class, click `Next`, leave default name `MyClass`, and click `Create Class`. We need to do this because Unreal requires at least one source file in project. It should trigger compile and open up Visual Studio solution `LandscapeMountains.sln`.
 
-5. Go to your folder for AirSim repo and copy the `Unreal\Plugins` folder into your `LandscapeMountains` folder. This keeps the main `AirSim` plugin and support plugins such as `AirSimShaders` together.
+5. Go to your folder for AirSim repo and copy the complete `Unreal\Plugins` folder into your `LandscapeMountains` folder. This keeps the main `AirSim` plugin and support plugins such as `AirSimShaders` together. Do not copy only `Unreal\Plugins\AirSim`; shader-backed features such as equirectangular subwindow previews require the support plugin set to travel with it.
 
     !!!note
 
-        If the AirSim installation is fresh, i.e, hasn't been built before, make sure that you run `build.cmd` from the root directory once before copying `Unreal\Plugins` folder so that `AirLib` files are also included. If you have made some changes in the Blocks environment, make sure to run `update_to_git.bat` from `Unreal\Environments\Blocks` to update the files in `Unreal\Plugins`.
+        If the AirSim installation is fresh, i.e, hasn't been built before, make sure that you run `build.cmd` from the root directory once before copying the `Unreal\Plugins` folder so that `AirLib` files are also included. If you have made some changes in the Blocks environment, make sure to run `update_to_git.bat` from `Unreal\Environments\Blocks` to update the files in `Unreal\Plugins`.
 
 6. Edit the `LandscapeMountains.uproject` so that it looks like this
 
     ```json
     {
-    	"FileVersion": 3,
-    	"EngineAssociation": "",
-    	"Category": "Samples",
-    	"Description": "",
-    	"Modules": [
-    		{
-    			"Name": "LandscapeMountains",
-    			"Type": "Runtime",
-    			"LoadingPhase": "Default",
-    			"AdditionalDependencies": [
-    				"AirSim"
-    			]
-    		}
-    	],
-    	"TargetPlatforms": [
-    		"MacNoEditor",
-    		"WindowsNoEditor"
-    	],
-    	"Plugins": [
-    		{
-    			"Name": "AirSim",
-    			"Enabled": true
-    		},
-          	{
-			"Name": "ChaosVehiclesPlugin",
-			"Enabled": true
-    		}
-    	]
+        "FileVersion": 3,
+        "EngineAssociation": "",
+        "Category": "Samples",
+        "Description": "",
+        "Modules": [
+            {
+                "Name": "LandscapeMountains",
+                "Type": "Runtime",
+                "LoadingPhase": "Default",
+                "AdditionalDependencies": [
+                    "AirSim"
+                ]
+            }
+        ],
+        "TargetPlatforms": [
+            "MacNoEditor",
+            "WindowsNoEditor"
+        ],
+        "Plugins": [
+            {
+                "Name": "AirSim",
+                "Enabled": true
+            },
+            {
+                "Name": "AirSimShaders",
+                "Enabled": true
+            },
+            {
+                "Name": "ChaosVehiclesPlugin",
+                "Enabled": true
+            }
+        ]
     }
     ```
     
@@ -178,6 +186,20 @@ Once you have your environment using above instructions, you should frequently u
 2. Do `git pull` in your AirSim repo followed by `build.cmd` (or `./build.sh` for Linux users).
 3. Replace [your project]/Plugins folder with AirSim/Unreal/Plugins folder.
 4. Right-click on your .uproject file and chose "Generate Visual Studio project files" option. This is not required for Linux.
+
+#### Production clone and copy workflow
+
+When setting up another machine or another Unreal project from source, validate the workflow from tracked files rather than from local generated folders:
+
+1. Clone Cosys-AirSim on the new machine.
+2. Install the documented Unreal Engine version, Visual Studio or compiler toolchain, and platform SDK.
+3. Build Cosys-AirSim from the repository root with `build.cmd` on Windows, or `./setup.sh` and `./build.sh` on Linux.
+4. Copy the complete `Unreal/Plugins` folder into `<YourProject>/Plugins`.
+5. Confirm `<YourProject>/Plugins/AirSim` and `<YourProject>/Plugins/AirSimShaders` both exist.
+6. Regenerate project files for your project and build the editor target.
+7. Open the project, set `AirSimGameMode`, press Play, and confirm the HUD, API server, and configured subwindows work.
+
+Avoid relying on `Unreal/Environments/Blocks/Plugins` as source of truth. That folder is a generated project-local copy populated by `update_from_git.*` and is intentionally ignored by git.
 
 ## Choosing Your Vehicle: Car or Multirotor
 By default, AirSim prompts user for which vehicle to use. You can easily change this by setting [SimMode](settings.md#simmode). Please see [using car](using_car.md) guide.
@@ -237,6 +259,10 @@ and the `Plugins` section to the top level object:
 "Plugins": [
     {
         "Name": "AirSim",
+        "Enabled": true
+    },
+    {
+        "Name": "AirSimShaders",
         "Enabled": true
     },
     {

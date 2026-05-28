@@ -111,7 +111,7 @@ When the scene image type for a camera is configured as equirectangular, `simGet
 
 ## Subwindow Preview
 
-Unreal subwindows can display equirectangular capture settings. Normal perspective and orthographic subwindows use the existing 2D render target. Equirectangular subwindows use a GPU preview target generated from the cube capture, so the displayed image is a 2:1 equirectangular view without routing through `simGetImage` or `simGetImages`.
+Unreal subwindows can display equirectangular capture settings. Normal perspective and orthographic subwindows use the existing 2D render target. Equirectangular subwindows use a GPU preview target generated from the cube capture. The HUD sizes each subwindow from the actual render target attached to it, so normal subwindows keep their configured 2D camera aspect ratio and equirectangular subwindows display as a 2:1 view without routing through `simGetImage` or `simGetImages`.
 
 The subwindow output is a visual preview. Exact float depth values, exact segmentation IDs, exact annotation labels, and exact infrared values remain the responsibility of the image APIs. Depth subwindows are displayed as a range-mapped grayscale preview using `MaxDepthMeters` when it is set, or 100 meters when it is omitted.
 

@@ -403,4 +403,7 @@ PythonClient/docs/_build
 docker/LinuxBlocks/*
 /cosys-airsim-data-scripts/
 /local_tests/
+
+# Local agent instructions are workstation-specific; keep durable workflow
+# requirements in tracked docs instead.
 /agent.md
