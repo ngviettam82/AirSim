@@ -109,12 +109,14 @@ void ASimHUD::updateWidgetSubwindowVisibility()
                 if (camera != nullptr) {
                     camera->setCameraTypeEnabled(camera_type, is_visible, annotation_name);
                     //sub-window captures don't count as a request, set bCaptureEveryFrame and bCaptureOnMovement to display so we can show correctly the subwindow
-                    camera->setCameraTypeUpdate(camera_type, false, annotation_name);
+                    camera->setCameraTypeUpdate(camera_type, !is_visible, annotation_name);
                 }
 
+                UTextureRenderTarget2D* render_target = is_visible ? camera->getPreviewRenderTarget(camera_type, false, annotation_name) : nullptr;
                 widget_->setSubwindowVisibility(window_index,
                     is_visible,
-                    is_visible ? camera->getPreviewRenderTarget(camera_type, false, annotation_name) : nullptr);
+                    render_target);
+                widget_->setSubwindowRenderTargetSize(window_index, render_target);
             }
         }
         else {
@@ -123,12 +125,14 @@ void ASimHUD::updateWidgetSubwindowVisibility()
             if (camera != nullptr) {
                 camera->setCameraTypeEnabled(camera_type, is_visible, annotation_name);
                 //sub-window captures don't count as a request, set bCaptureEveryFrame and bCaptureOnMovement to display so we can show correctly the subwindow
-                camera->setCameraTypeUpdate(camera_type, false, annotation_name);
+                camera->setCameraTypeUpdate(camera_type, !is_visible, annotation_name);
             }
 
+            UTextureRenderTarget2D* render_target = is_visible ? camera->getPreviewRenderTarget(camera_type, false, annotation_name) : nullptr;
             widget_->setSubwindowVisibility(window_index,
                 is_visible,
-                is_visible ? camera->getPreviewRenderTarget(camera_type, false, annotation_name) : nullptr);
+                render_target);
+            widget_->setSubwindowRenderTargetSize(window_index, render_target);
         }
     }
 }
