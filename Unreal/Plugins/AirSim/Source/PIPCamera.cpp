@@ -1,4 +1,5 @@
 #include "PIPCamera.h"
+#include "AirSimEquirectangularPreview.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SceneCaptureComponentCube.h"
@@ -54,6 +55,34 @@ namespace
         capture->ShowFlags.SetLensFlares(false);
         capture->ShowFlags.SetDepthOfField(false);
         capture->ShowFlags.SetVignette(false);
+    }
+
+    bool UsesNearestEquirectangularPreview(APIPCamera::ImageType image_type)
+    {
+        return image_type == APIPCamera::ImageType::Segmentation ||
+               image_type == APIPCamera::ImageType::Infrared ||
+               image_type == APIPCamera::ImageType::Annotation;
+    }
+
+    bool UsesDepthEquirectangularPreview(APIPCamera::ImageType image_type)
+    {
+        return image_type == APIPCamera::ImageType::DepthPlanar ||
+               image_type == APIPCamera::ImageType::DepthPerspective;
+    }
+
+    AirSimEquirectangularPreview::EPreviewMode GetEquirectangularPreviewMode(APIPCamera::ImageType image_type)
+    {
+        if (image_type == APIPCamera::ImageType::Scene ||
+            image_type == APIPCamera::ImageType::Lighting) {
+            return AirSimEquirectangularPreview::EPreviewMode::SceneColor;
+        }
+        if (UsesDepthEquirectangularPreview(image_type)) {
+            return AirSimEquirectangularPreview::EPreviewMode::DepthMeters;
+        }
+        if (UsesNearestEquirectangularPreview(image_type)) {
+            return AirSimEquirectangularPreview::EPreviewMode::ColorNearest;
+        }
+        return AirSimEquirectangularPreview::EPreviewMode::ColorBilinear;
     }
 }
 
@@ -178,6 +207,8 @@ void APIPCamera::PostInitializeComponents()
     render_targets_.Init(nullptr, imageTypeCount());
     equirectangular_captures_.Init(nullptr, imageTypeCount());
     equirectangular_render_targets_.Init(nullptr, imageTypeCount());
+    equirectangular_preview_targets_.Init(nullptr, imageTypeCount());
+    equirectangular_preview_updates_.Init(false, imageTypeCount());
     detections_.Init(nullptr, imageTypeCount());
 
     captures_[Utils::toNumeric(ImageType::Scene)] =
@@ -374,6 +405,7 @@ void APIPCamera::Tick(float DeltaTime)
         UAirBlueprintLib::DrawPoint(this->GetWorld(), this->GetActorTransform().GetLocation(), 5, FColor::Black, false, 0.3);
         UAirBlueprintLib::DrawCoordinateSystem(this->GetWorld(), this->GetActorLocation(), this->GetActorRotation(), 25, false, 0.3, 10);
     }
+    drawEquirectangularPreviews();
 }
 
 void APIPCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -480,12 +512,15 @@ void APIPCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
         render_targets_[current_camera] = nullptr;
         equirectangular_captures_[current_camera] = nullptr;
         equirectangular_render_targets_[current_camera] = nullptr;
+        equirectangular_preview_targets_[current_camera] = nullptr;
         detections_[current_camera] = nullptr;
     }
     captures_.Empty();
 	render_targets_.Empty();
     equirectangular_captures_.Empty();
     equirectangular_render_targets_.Empty();
+    equirectangular_preview_targets_.Empty();
+    equirectangular_preview_updates_.Empty();
 	detections_.Empty();
 }
 
@@ -497,6 +532,97 @@ unsigned int APIPCamera::imageTypeCount()
 unsigned int APIPCamera::cameraCaptureCount()
 {
     return static_cast<unsigned int>(captures_.Num());
+}
+
+void APIPCamera::updateActorTickEnabled()
+{
+    SetActorTickEnabled(gimbal_stabilization_ > 0 || sensor_params_.draw_sensor || hasActiveEquirectangularPreview());
+}
+
+bool APIPCamera::hasActiveEquirectangularPreview() const
+{
+    for (bool enabled : equirectangular_preview_updates_) {
+        if (enabled) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void APIPCamera::setEquirectangularPreviewUpdate(int render_index, bool enabled)
+{
+    if (render_index < 0) {
+        return;
+    }
+    if (!equirectangular_preview_updates_.IsValidIndex(render_index)) {
+        equirectangular_preview_updates_.SetNum(render_index + 1);
+    }
+    equirectangular_preview_updates_[render_index] = enabled &&
+        equirectangular_preview_targets_.IsValidIndex(render_index) &&
+        equirectangular_preview_targets_[render_index] != nullptr;
+    updateActorTickEnabled();
+}
+
+void APIPCamera::ensureEquirectangularPreviewTarget(int render_index, const CaptureSetting& setting, ImageType type)
+{
+    if (render_index < 0) {
+        return;
+    }
+    if (!equirectangular_preview_targets_.IsValidIndex(render_index)) {
+        equirectangular_preview_targets_.SetNum(render_index + 1);
+    }
+    if (!equirectangular_preview_updates_.IsValidIndex(render_index)) {
+        equirectangular_preview_updates_.SetNum(render_index + 1);
+    }
+
+    UTextureRenderTarget2D*& preview_target = equirectangular_preview_targets_[render_index];
+    if (preview_target == nullptr) {
+        preview_target = NewObject<UTextureRenderTarget2D>(this);
+    }
+
+    const int32 output_height = FMath::Max(1, static_cast<int32>(setting.height));
+    const int32 output_width = output_height * 2;
+    if (preview_target->SizeX != output_width || preview_target->SizeY != output_height ||
+        preview_target->GetFormat() != EPixelFormat::PF_B8G8R8A8) {
+        preview_target->InitCustomFormat(output_width, output_height, EPixelFormat::PF_B8G8R8A8, false);
+    }
+
+    if (UsesNearestEquirectangularPreview(type) || UsesDepthEquirectangularPreview(type)) {
+        preview_target->TargetGamma = 1.0f;
+    }
+}
+
+void APIPCamera::drawEquirectangularPreviews()
+{
+    for (int render_index = 0; render_index < equirectangular_preview_updates_.Num(); ++render_index) {
+        if (!equirectangular_preview_updates_[render_index] ||
+            !equirectangular_captures_.IsValidIndex(render_index) ||
+            !equirectangular_render_targets_.IsValidIndex(render_index) ||
+            !equirectangular_preview_targets_.IsValidIndex(render_index) ||
+            equirectangular_captures_[render_index] == nullptr ||
+            equirectangular_render_targets_[render_index] == nullptr ||
+            equirectangular_preview_targets_[render_index] == nullptr) {
+            continue;
+        }
+
+        const ImageType image_type = render_index < static_cast<int>(imageTypeCount())
+            ? Utils::toEnum<ImageType>(render_index)
+            : ImageType::Annotation;
+        const int setting_index = image_type == ImageType::Annotation
+            ? Utils::toNumeric(ImageType::Annotation)
+            : render_index;
+        if (setting_index < 0 || setting_index >= static_cast<int>(sensor_params_.capture_settings.size())) {
+            continue;
+        }
+
+        const CaptureSetting& setting = sensor_params_.capture_settings.at(setting_index);
+        AirSimEquirectangularPreview::Draw(
+            equirectangular_render_targets_[render_index],
+            equirectangular_preview_targets_[render_index],
+            GetEquirectangularPreviewMode(image_type),
+            setting.max_depth_meters,
+            setting.equirectangular_exposure_compensation);
+    }
 }
 
 void APIPCamera::showToScreen()
@@ -603,6 +729,11 @@ void APIPCamera::setCameraTypeUpdate(ImageType type, bool nodisplay, std::string
     if (isEquirectangularCapture(type, annotation_name)) {
         USceneCaptureComponentCube* cube_capture = getEquirectangularCaptureComponent(type, false, annotation_name);
         setEquirectangularCaptureUpdate(cube_capture, nodisplay);
+        int render_index = Utils::toNumeric(type);
+        if (type == ImageType::Annotation && annotator_name_to_index_map_.Contains(FString(annotation_name.c_str()))) {
+            render_index = annotator_name_to_index_map_[FString(annotation_name.c_str())];
+        }
+        setEquirectangularPreviewUpdate(render_index, !nodisplay && getCameraTypeEnabled(type, annotation_name));
     }
     else {
         USceneCaptureComponent2D* capture = getCaptureComponent(type, false, annotation_name);
@@ -856,6 +987,8 @@ void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorTy
     render_targets_.Add(NewObject<UTextureRenderTarget2D>());
     equirectangular_captures_.Add(nullptr);
     equirectangular_render_targets_.Add(nullptr);
+    equirectangular_preview_targets_.Add(nullptr);
+    equirectangular_preview_updates_.Add(false);
     int render_index = render_targets_.Num() - 1;
     if (type == FObjectAnnotator::AnnotatorType::RGB ||
         type == FObjectAnnotator::AnnotatorType::InstanceSegmentation ||
@@ -930,17 +1063,11 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
 
     gimbal_stabilization_ = Utils::clip(camera_setting.gimbal.stabilization, 0.0f, 1.0f);
     if (gimbal_stabilization_ > 0) {
-        this->SetActorTickEnabled(true);
         gimbald_rotator_.Pitch = camera_setting.gimbal.rotation.pitch;
         gimbald_rotator_.Roll = camera_setting.gimbal.rotation.roll;
         gimbald_rotator_.Yaw = camera_setting.gimbal.rotation.yaw;
     }
-    else
-        this->SetActorTickEnabled(false);
-
-    if (sensor_params_.draw_sensor) {
-        this->SetActorTickEnabled(true);
-    }
+    updateActorTickEnabled();
 
     if (sensor_params_.external) {
         this->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
@@ -1385,6 +1512,10 @@ void APIPCamera::enableCaptureComponent(const APIPCamera::ImageType type, bool i
                     cube_capture->Deactivate();
                     cube_capture->TextureTarget = nullptr;
                 }
+                const int render_index = type == ImageType::Annotation
+                    ? annotator_name_to_index_map_[FString(annotation_name.c_str())]
+                    : Utils::toNumeric(type);
+                setEquirectangularPreviewUpdate(render_index, false);
             }
 
             if (type == ImageType::Annotation)
@@ -1440,6 +1571,42 @@ UTextureRenderTarget2D* APIPCamera::getRenderTarget(const APIPCamera::ImageType 
             return render_targets_[image_type];
     }    
     return nullptr;
+}
+
+UTextureRenderTarget2D* APIPCamera::getPreviewRenderTarget(const APIPCamera::ImageType type, bool if_active, std::string annotation_name)
+{
+    if (!isEquirectangularCapture(type, annotation_name)) {
+        return getRenderTarget(type, if_active, annotation_name);
+    }
+
+    int render_index = Utils::toNumeric(type);
+    int setting_index = render_index;
+    if (type == ImageType::Annotation) {
+        if (!annotator_name_to_index_map_.Contains(FString(annotation_name.c_str()))) {
+            return nullptr;
+        }
+        render_index = annotator_name_to_index_map_[FString(annotation_name.c_str())];
+        setting_index = Utils::toNumeric(ImageType::Annotation);
+    }
+
+    if (render_index < 0 || render_index >= static_cast<int>(camera_type_enabled_.size())) {
+        return nullptr;
+    }
+
+    if (if_active && !camera_type_enabled_[render_index]) {
+        return nullptr;
+    }
+
+    if (setting_index < 0 || setting_index >= static_cast<int>(sensor_params_.capture_settings.size())) {
+        return nullptr;
+    }
+
+    ensureEquirectangularPreviewTarget(render_index, sensor_params_.capture_settings.at(setting_index), type);
+    setEquirectangularPreviewUpdate(render_index, camera_type_enabled_[render_index]);
+
+    return equirectangular_preview_targets_.IsValidIndex(render_index)
+        ? equirectangular_preview_targets_[render_index]
+        : nullptr;
 }
 
 bool APIPCamera::isEquirectangularCapture(const APIPCamera::ImageType type, std::string annotation_name) const

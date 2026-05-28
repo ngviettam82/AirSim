@@ -114,7 +114,7 @@ void ASimHUD::updateWidgetSubwindowVisibility()
 
                 widget_->setSubwindowVisibility(window_index,
                     is_visible,
-                    is_visible ? camera->getRenderTarget(camera_type, false, annotation_name) : nullptr);
+                    is_visible ? camera->getPreviewRenderTarget(camera_type, false, annotation_name) : nullptr);
             }
         }
         else {
@@ -128,7 +128,7 @@ void ASimHUD::updateWidgetSubwindowVisibility()
 
             widget_->setSubwindowVisibility(window_index,
                 is_visible,
-                is_visible ? camera->getRenderTarget(camera_type, false, annotation_name) : nullptr);
+                is_visible ? camera->getPreviewRenderTarget(camera_type, false, annotation_name) : nullptr);
         }
     }
 }

@@ -109,6 +109,12 @@ Normal perspective and orthographic captures continue to use their existing Unre
 
 When the scene image type for a camera is configured as equirectangular, `simGetCameraInfo` still returns the camera pose. The projection matrix is returned as `NaN` values because a 360 degree equirectangular image has no single perspective projection matrix.
 
+## Subwindow Preview
+
+Unreal subwindows can display equirectangular capture settings. Normal perspective and orthographic subwindows use the existing 2D render target. Equirectangular subwindows use a GPU preview target generated from the cube capture, so the displayed image is a 2:1 equirectangular view without routing through `simGetImage` or `simGetImages`.
+
+The subwindow output is a visual preview. Exact float depth values, exact segmentation IDs, exact annotation labels, and exact infrared values remain the responsibility of the image APIs. Depth subwindows are displayed as a range-mapped grayscale preview using `MaxDepthMeters` when it is set, or 100 meters when it is omitted.
+
 ## Platform Notes
 
 The validated runtime target is Windows with D3D11 or D3D12. UE 5.5 Vulkan has known cube-face readback limitations in this path, so equirectangular capture reports an error on Vulkan instead of treating it as supported.
@@ -116,6 +122,8 @@ The validated runtime target is Windows with D3D11 or D3D12. UE 5.5 Vulkan has k
 ## Operational Notes
 
 Each equirectangular image type owns a cube render target. High resolutions can therefore consume much more GPU memory than a normal perspective camera, especially when several equirectangular image types are enabled on the same camera. If memory pressure is a concern, configure only the image types needed for that run or split captures across separate camera/settings profiles.
+
+When copying Cosys-AirSim into another Unreal project, copy the complete `Unreal/Plugins` plugin set. Equirectangular subwindow previews depend on the `AirSimShaders` plugin in addition to the main `AirSim` plugin.
 
 Exact `DepthPlanar` and `DepthPerspective` responses should use `float_as_bytes=True` for high-resolution captures. This keeps the same `float32` values while avoiding the very slow RPC path that serializes one float object per pixel.
 

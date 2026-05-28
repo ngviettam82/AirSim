@@ -91,6 +91,7 @@ public:
 
     USceneCaptureComponent2D* getCaptureComponent(const ImageType type, bool if_active, std::string annotation_name = "");
     UTextureRenderTarget2D* getRenderTarget(const ImageType type, bool if_active, std::string annotation_name = "");
+    UTextureRenderTarget2D* getPreviewRenderTarget(const ImageType type, bool if_active, std::string annotation_name = "");
     bool isEquirectangularCapture(const ImageType type, std::string annotation_name = "") const;
     USceneCaptureComponentCube* getEquirectangularCaptureComponent(const ImageType type, bool if_active, std::string annotation_name = "");
     UTextureRenderTargetCube* getEquirectangularRenderTarget(const ImageType type, bool if_active, std::string annotation_name = "");
@@ -112,6 +113,9 @@ private: //members
     TArray<USceneCaptureComponentCube*> equirectangular_captures_;
     UPROPERTY()
     TArray<UTextureRenderTargetCube*> equirectangular_render_targets_;
+    UPROPERTY()
+    TArray<UTextureRenderTarget2D*> equirectangular_preview_targets_;
+
     UPROPERTY()
     TArray<UDetectionComponent*> detections_;
 
@@ -154,6 +158,7 @@ private: //members
     TMap<FString, TWeakObjectPtr<UPrimitiveComponent>> sphere_annotation_component_map_;
 
     std::vector<bool> camera_type_enabled_;
+    TArray<bool> equirectangular_preview_updates_;
     FRotator gimbald_rotator_;
     float gimbal_stabilization_;
     const NedTransform* ned_transform_;
@@ -172,6 +177,11 @@ private: //methods
     static unsigned int imageTypeCount();
     unsigned int cameraCaptureCount();
     void enableCaptureComponent(const ImageType type, bool is_enabled, std::string annotation_name = "");
+    void updateActorTickEnabled();
+    bool hasActiveEquirectangularPreview() const;
+    void setEquirectangularPreviewUpdate(int render_index, bool enabled);
+    void ensureEquirectangularPreviewTarget(int render_index, const CaptureSetting& setting, ImageType type);
+    void drawEquirectangularPreviews();
     void setEquirectangularCaptureUpdate(USceneCaptureComponentCube* capture, bool nodisplay);
     void ensureEquirectangularCapture(int render_index, const FString& name);
     static void updateCaptureComponentSetting(USceneCaptureComponent2D* capture, UTextureRenderTarget2D* render_target,

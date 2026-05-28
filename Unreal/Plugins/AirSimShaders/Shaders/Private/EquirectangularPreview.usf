@@ -1,0 +1,76 @@
+#include "/Engine/Private/Common.ush"
+
+static const float2 QuadPos[6] =
+{
+    float2(-1.0,  1.0),
+    float2( 1.0,  1.0),
+    float2( 1.0, -1.0),
+    float2(-1.0, -1.0),
+    float2( 1.0, -1.0),
+    float2(-1.0,  1.0)
+};
+
+static const float2 QuadUV[6] =
+{
+    float2(0.0, 0.0),
+    float2(1.0, 0.0),
+    float2(1.0, 1.0),
+    float2(0.0, 1.0),
+    float2(1.0, 1.0),
+    float2(0.0, 0.0)
+};
+
+TextureCube SourceCube;
+SamplerState SourceSampler;
+uint PreviewMode;
+float MaxDepthMeters;
+float ExposureMultiplier;
+
+void MainVS(in uint VertexId : SV_VertexID, out float2 OutUV : TEXCOORD0, out float4 OutPosition : SV_POSITION)
+{
+    OutPosition = float4(QuadPos[VertexId], 0.0, 1.0);
+    OutUV = QuadUV[VertexId];
+}
+
+float3 EquirectangularDirection(float2 UV)
+{
+    const float Yaw = (UV.x - 0.5) * 2.0 * PI;
+    const float Pitch = (0.5 - UV.y) * PI;
+    const float CosPitch = cos(Pitch);
+    return float3(CosPitch * cos(Yaw), CosPitch * sin(Yaw), sin(Pitch));
+}
+
+float3 TonemapAces(float3 Color)
+{
+    const float A = 2.51;
+    const float B = 0.03;
+    const float C = 2.43;
+    const float D = 0.59;
+    const float E = 0.14;
+    return saturate((Color * (A * Color + B)) / (Color * (C * Color + D) + E));
+}
+
+float3 LinearToSrgb(float3 Color)
+{
+    return pow(saturate(Color), 1.0 / 2.2);
+}
+
+void MainPS(in noperspective float2 UV : TEXCOORD0, in float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
+{
+    const float3 Direction = EquirectangularDirection(UV);
+    const float4 CubeColor = SourceCube.SampleLevel(SourceSampler, Direction, 0.0);
+
+    if (PreviewMode == 2)
+    {
+        OutColor = float4(LinearToSrgb(TonemapAces(max(CubeColor.rgb, 0.0) * ExposureMultiplier)), 1.0);
+    }
+    else if (PreviewMode == 3)
+    {
+        const float Depth = saturate(CubeColor.r / max(MaxDepthMeters, 0.001));
+        OutColor = float4(Depth, Depth, Depth, 1.0);
+    }
+    else
+    {
+        OutColor = float4(CubeColor.rgb, 1.0);
+    }
+}

@@ -23,6 +23,10 @@
   ],
   "Plugins": [
     {
+      "Name": "AirSimShaders",
+      "Enabled": true
+    },
+    {
       "Name": "ChaosVehiclesPlugin",
       "Enabled": true
     }
