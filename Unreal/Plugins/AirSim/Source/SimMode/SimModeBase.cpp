@@ -10,6 +10,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Misc/FileHelper.h"
 #include <memory>
+#include <set>
 #include "AirBlueprintLib.h"
 #include "Annotation/ObjectAnnotator.h"
 #include "LidarCamera.h"
@@ -209,6 +210,8 @@ void ASimModeBase::BeginPlay()
     InitializeInstanceSegmentation();
 
     InitializeAnnotation();
+
+    startCameraStreamServer();
 }
 
 const NedTransform& ASimModeBase::getGlobalNedTransform()
@@ -1551,6 +1554,7 @@ bool ASimModeBase::SetWorldLightIntensity(const std::string& light_name, float i
 
 void ASimModeBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    stopCameraStreamServer();
     FRecordingThread::stopRecording();
     FRecordingThread::killRecording();
     world_sim_api_.reset();
@@ -1573,6 +1577,89 @@ void ASimModeBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
     annotators_.Empty();
 
     Super::EndPlay(EndPlayReason);
+}
+
+void ASimModeBase::startCameraStreamServer()
+{
+    std::vector<FAirSimHostedCamera> hosted_cameras;
+    std::set<PawnSimApi*> visited_vehicles;
+
+    for (const auto& vehicle_entry : getApiProvider()->getVehicleSimApis().getMap()) {
+        if (vehicle_entry.first.empty())
+            continue;
+
+        PawnSimApi* vehicle = static_cast<PawnSimApi*>(vehicle_entry.second);
+        if (vehicle == nullptr || !visited_vehicles.insert(vehicle).second)
+            continue;
+
+        const UnrealImageCapture* image_capture = vehicle->getImageCapture();
+        for (const std::string& camera_name : vehicle->getCameraNames()) {
+            APIPCamera* camera = vehicle->getCamera(camera_name);
+            if (camera == nullptr)
+                continue;
+
+            const AirSimSettings::CameraSetting camera_settings = camera->getParams();
+            for (const auto& capture_entry : camera_settings.capture_settings) {
+                const int32 image_type = capture_entry.first;
+                const AirSimSettings::CaptureSetting& capture_setting = capture_entry.second;
+                if (!capture_setting.host)
+                    continue;
+
+                if (image_type < 0 || image_type >= static_cast<int32>(msr::airlib::ImageCaptureBase::ImageType::Count)) {
+                    UE_LOG(LogTemp, Error, TEXT("AirSim camera host ignored invalid ImageType %d on %s/%s"),
+                           image_type, UTF8_TO_TCHAR(vehicle_entry.first.c_str()), UTF8_TO_TCHAR(camera_name.c_str()));
+                    continue;
+                }
+                if (image_type == static_cast<int32>(msr::airlib::ImageCaptureBase::ImageType::Annotation) &&
+                    capture_setting.host_annotation_name.empty()) {
+                    UE_LOG(LogTemp, Error, TEXT("AirSim camera host requires HostAnnotation for Annotation on %s/%s"),
+                           UTF8_TO_TCHAR(vehicle_entry.first.c_str()), UTF8_TO_TCHAR(camera_name.c_str()));
+                    continue;
+                }
+                if (image_type == static_cast<int32>(msr::airlib::ImageCaptureBase::ImageType::Annotation) &&
+                    !camera->GetAnnotationNameExist(capture_setting.host_annotation_name)) {
+                    UE_LOG(LogTemp, Error, TEXT("AirSim camera host ignored unknown annotation %s on %s/%s"),
+                           UTF8_TO_TCHAR(capture_setting.host_annotation_name.c_str()),
+                           UTF8_TO_TCHAR(vehicle_entry.first.c_str()), UTF8_TO_TCHAR(camera_name.c_str()));
+                    continue;
+                }
+
+                // Capture components must be activated on the game thread.
+                // Activating lazily from the host worker can register tick
+                // functions during PIE tick dispatch and assert in UE 5.5.
+                const msr::airlib::ImageCaptureBase::ImageType hosted_image_type =
+                    static_cast<msr::airlib::ImageCaptureBase::ImageType>(image_type);
+                camera->setCameraTypeEnabled(hosted_image_type, true, capture_setting.host_annotation_name);
+                // The host triggers CaptureSceneDeferred only while clients
+                // are subscribed. Disable automatic per-frame and movement
+                // capture so an idle hosted route has no rendering workload.
+                camera->setCameraTypeUpdate(hosted_image_type, true, capture_setting.host_annotation_name);
+
+                FAirSimHostedCamera hosted;
+                hosted.VehicleName = UTF8_TO_TCHAR(vehicle_entry.first.c_str());
+                hosted.CameraName = UTF8_TO_TCHAR(camera_name.c_str());
+                hosted.AnnotationName = UTF8_TO_TCHAR(capture_setting.host_annotation_name.c_str());
+                hosted.ImageType = image_type;
+                hosted.ImageCapture = image_capture;
+                hosted_cameras.push_back(std::move(hosted));
+            }
+        }
+    }
+
+    if (hosted_cameras.empty())
+        return;
+
+    camera_stream_server_ = std::make_unique<FCameraStreamServer>(getSettings().camera_host, std::move(hosted_cameras));
+    if (!camera_stream_server_->Start())
+        camera_stream_server_.reset();
+}
+
+void ASimModeBase::stopCameraStreamServer()
+{
+    if (camera_stream_server_) {
+        camera_stream_server_->Stop();
+        camera_stream_server_.reset();
+    }
 }
 
 void ASimModeBase::initializeTimeOfDay()

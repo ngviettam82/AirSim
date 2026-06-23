@@ -19,6 +19,7 @@
 #include "common/StateReporterWrapper.hpp"
 #include "LoadingScreenWidget.h"
 #include "UnrealImageCapture.h"
+#include "CameraStreamServer.h"
 #include "Beacons/TemplateBeacon.h"
 #include "Beacons/FiducialBeacon.h"
 #include "SimModeBase.generated.h"
@@ -322,6 +323,7 @@ private:
     std::unique_ptr<msr::airlib::WorldSimApiBase> world_sim_api_;
     std::unique_ptr<msr::airlib::ApiProvider> api_provider_;
     std::unique_ptr<msr::airlib::ApiServerBase> api_server_;
+    std::unique_ptr<FCameraStreamServer> camera_stream_server_;
     msr::airlib::StateReporterWrapper debug_reporter_;
 
     std::vector<std::unique_ptr<msr::airlib::VehicleSimApiBase>> vehicle_sim_apis_;
@@ -354,6 +356,8 @@ private:
     void advanceTimeOfDay();
     void setSunRotation(FRotator rotation);
     void setupPhysicsLoopPeriod();
+    void startCameraStreamServer();
+    void stopCameraStreamServer();
     void showClockStats();
     void drawDistanceSensorDebugPoints();
 };

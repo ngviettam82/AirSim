@@ -14,6 +14,8 @@
 
 class RenderRequest : public FRenderCommand
 {
+    struct FCancellableRequestState;
+
 public:
     struct RenderParams {
         USceneCaptureComponent2D * const render_component;
@@ -118,7 +120,11 @@ public:
     // Read pixels from render target using render thread, then package the result
     // on the thread that calls this method.
     void getScreenshot(
-        std::shared_ptr<RenderParams> params[], std::vector<std::shared_ptr<RenderResult>>& results, unsigned int req_size, bool use_safe_method);
+        std::shared_ptr<RenderParams> params[],
+        std::vector<std::shared_ptr<RenderResult>>& results,
+        unsigned int req_size,
+        bool use_safe_method,
+        const std::shared_ptr<std::atomic<bool>>& cancellation = nullptr);
 
-    void ExecuteTask();
+    void ExecuteTask(bool signal_completion = true);
 };

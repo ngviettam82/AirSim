@@ -1,4 +1,6 @@
 #include "PawnSimApi.h"
+#include <algorithm>
+#include <map>
 #include "Engine/World.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
@@ -407,6 +409,35 @@ const UnrealImageCapture* PawnSimApi::getImageCapture() const
 int PawnSimApi::getCameraCount()
 {
     return cameras_.valsSize();
+}
+
+std::vector<std::string> PawnSimApi::getCameraNames() const
+{
+    // Camera maps also contain numeric and empty backward-compatibility aliases.
+    // Return one human-readable name per physical camera. "fpv" is retained for
+    // car driver cameras, but loses to another name when it aliases that camera.
+    std::map<const APIPCamera*, std::string> names_by_camera;
+    for (const auto& pair : cameras_.getMap()) {
+        const std::string& name = pair.first;
+        const APIPCamera* camera = pair.second;
+        bool numeric_alias = !name.empty();
+        for (const char character : name)
+            numeric_alias = numeric_alias && character >= '0' && character <= '9';
+
+        if (camera == nullptr || name.empty() || numeric_alias)
+            continue;
+
+        const auto existing = names_by_camera.find(camera);
+        if (existing == names_by_camera.end() || (existing->second == "fpv" && name != "fpv"))
+            names_by_camera[camera] = name;
+    }
+
+    std::vector<std::string> names;
+    names.reserve(names_by_camera.size());
+    for (const auto& pair : names_by_camera)
+        names.push_back(pair.second);
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 bool PawnSimApi::testLineOfSightToPoint(const msr::airlib::GeoPoint& lla) const

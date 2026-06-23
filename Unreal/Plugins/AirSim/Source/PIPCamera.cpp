@@ -522,6 +522,8 @@ void APIPCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
     equirectangular_preview_targets_.Empty();
     equirectangular_preview_updates_.Empty();
 	detections_.Empty();
+
+    Super::EndPlay(EndPlayReason);
 }
 
 unsigned int APIPCamera::imageTypeCount()

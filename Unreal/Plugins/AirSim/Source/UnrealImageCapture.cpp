@@ -90,8 +90,26 @@ void UnrealImageCapture::getImages(const std::vector<msr::airlib::ImageCaptureBa
         getSceneCaptureImage(requests, responses, false);
 }
 
+void UnrealImageCapture::getImages(
+    const std::vector<msr::airlib::ImageCaptureBase::ImageRequest>& requests,
+    std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
+    const std::shared_ptr<std::atomic<bool>>& cancellation) const
+{
+    if (cameras_->valsSize() == 0) {
+        for (size_t index = 0; index < requests.size(); ++index) {
+            responses.emplace_back();
+            responses.back().message = "camera is not set";
+        }
+    }
+    else {
+        getSceneCaptureImage(requests, responses, false, cancellation);
+    }
+}
+
 void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::ImageCaptureBase::ImageRequest>& requests,
-                                              std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses, bool use_safe_method) const
+                                              std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
+                                              bool use_safe_method,
+                                              const std::shared_ptr<std::atomic<bool>>& cancellation) const
 {
     std::vector<std::shared_ptr<RenderRequest::RenderParams>> render_params;
     std::vector<std::shared_ptr<RenderRequest::RenderResult>> render_results;
@@ -104,7 +122,9 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         //TODO: may be we should have these methods non-const?
         const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
             camera->GetAnnotationNameExist(requests[i].annotation_name);
-        if (has_annotation) {
+        // Settings-hosted captures are pre-enabled by ASimModeBase on the
+        // game thread. Do not activate components from the host worker.
+        if (has_annotation && cancellation == nullptr) {
             visibilityChanged = const_cast<UnrealImageCapture*>(this)->updateCameraVisibility(camera, requests[i]) || visibilityChanged;
         }
     }
@@ -217,7 +237,7 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
     };
     RenderRequest render_request{ gameViewport, std::move(query_camera_pose_cb) };
 
-    render_request.getScreenshot(render_params.data(), render_results, render_params.size(), use_safe_method);
+    render_request.getScreenshot(render_params.data(), render_results, render_params.size(), use_safe_method, cancellation);
 
     for (unsigned int i = 0; i < requests.size(); ++i) {
         const ImageRequest& request = requests.at(i);
