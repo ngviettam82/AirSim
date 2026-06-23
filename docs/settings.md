@@ -388,12 +388,16 @@ They are settings that are directly transferred to the post-processing settings 
 * **Height**: The height of the captured image in pixels. (Default: 144)
 * **FOV_Degrees**: The horizontal field of view of the camera in degrees.
 * **ImageType**: The type of image being captured (e.g., scene, depth, etc.). (Default: 0)
+* **Host**: Expose this camera/image-type through the native camera host. (Default: false)
+* **HostAnnotation**: Annotation layer to expose when `ImageType` is 11. Required for a hosted Annotation capture.
 * **TargetGamma**: The gamma value applied to the captured image.
 * **IgnoreMarked**: Whether to ignore objects marked for a specific purpose (e.g., segmentation). (Default: false)
 * **ProjectionMode**: The camera's projection mode ("Perspective", "Orthographic", or "Equirectangular"). (Default: "Perspective"). Equirectangular applies to the configured `ImageType`; it is not a separate image type.
 * **OrthoWidth**: The width of the orthographic view frustum.
 * **MaxDepthMeters**: Optional positive clamp for returned `DepthPlanar` and `DepthPerspective` float pixels, for both normal and equirectangular projections.
 * **ForceUpdate**: Force a camera to update the render target every frame. Costly on performance! Only works for scene camera type. (Default: false)
+
+See [Native Camera Host](camera_host.md) for the root-level `CameraHost` settings, per-camera URLs, dashboard, and raw frame format.
 
 #### Lumen Global Illumination and Reflections
 * **LumenGIEnable**: Whether Lumen Global Illumination is enabled. (Default: false)

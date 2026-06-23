@@ -126,6 +126,7 @@ public: //Unreal specific methods
     const APIPCamera* getCamera(const std::string& camera_name) const;
     APIPCamera* getCamera(const std::string& camera_name);
     int getCameraCount();
+    std::vector<std::string> getCameraNames() const;
 
     const ALight* getLight(const std::string& light_name) const;
     ALight* getLight(const std::string& light_name);

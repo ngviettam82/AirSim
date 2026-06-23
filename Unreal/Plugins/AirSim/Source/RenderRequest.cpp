@@ -492,9 +492,27 @@ RenderRequest::~RenderRequest()
 {
 }
 
+struct RenderRequest::FCancellableRequestState
+{
+    std::mutex Mutex;
+    std::mutex WaitMutex;
+    std::condition_variable Condition;
+    RenderRequest* Request = nullptr;
+    std::shared_ptr<std::atomic<bool>> Cancellation;
+    std::atomic<bool> Complete{ false };
+    std::atomic<bool> CleanupQueued{ false };
+    bool RenderCommandQueued = false;
+    bool ViewportModified = false;
+};
+
 // Read pixels from render target using render thread, then package the result
 // on the thread that calls this method.
-void RenderRequest::getScreenshot(std::shared_ptr<RenderParams> params[], std::vector<std::shared_ptr<RenderResult>>& results, unsigned int req_size, bool use_safe_method)
+void RenderRequest::getScreenshot(
+    std::shared_ptr<RenderParams> params[],
+    std::vector<std::shared_ptr<RenderResult>>& results,
+    unsigned int req_size,
+    bool use_safe_method,
+    const std::shared_ptr<std::atomic<bool>>& cancellation)
 {
     //TODO: is below really needed?
     for (unsigned int i = 0; i < req_size; ++i) {
@@ -575,7 +593,7 @@ void RenderRequest::getScreenshot(std::shared_ptr<RenderParams> params[], std::v
             }
         }
     }
-    else {
+    else if (cancellation == nullptr) {
         //wait for render thread to pick up our task
         params_ = params;
         results_ = results.data();
@@ -626,6 +644,123 @@ void RenderRequest::getScreenshot(std::shared_ptr<RenderParams> params[], std::v
             // lamda function still references a few objects for which there is no refcount.
             // Walking away will cause memory corruption, which is much more difficult to debug.
             UE_LOG(LogTemp, Warning, TEXT("Failed: timeout waiting for screenshot"));
+        }
+    }
+    else {
+        params_ = params;
+        results_ = results.data();
+        req_size_ = req_size;
+
+        const std::shared_ptr<FCancellableRequestState> state = std::make_shared<FCancellableRequestState>();
+        state->Request = this;
+        state->Cancellation = cancellation;
+
+        AsyncTask(ENamedThreads::GameThread, [state]() {
+            std::lock_guard<std::mutex> state_lock(state->Mutex);
+            RenderRequest* request = state->Request;
+            if (request == nullptr)
+                return;
+            if (state->Cancellation->load()) {
+                state->Request = nullptr;
+                state->Complete = true;
+                state->Condition.notify_all();
+                return;
+            }
+
+            request->saved_DisableWorldRendering_ = request->game_viewport_->bDisableWorldRendering;
+            request->game_viewport_->bDisableWorldRendering = 0;
+            state->ViewportModified = true;
+            request->end_draw_handle_ = request->game_viewport_->OnEndDraw().AddLambda([state]() {
+                std::lock_guard<std::mutex> end_draw_lock(state->Mutex);
+                RenderRequest* active_request = state->Request;
+                if (active_request == nullptr)
+                    return;
+
+                if (state->Cancellation->load()) {
+                    if (state->ViewportModified) {
+                        active_request->game_viewport_->bDisableWorldRendering = active_request->saved_DisableWorldRendering_;
+                        state->ViewportModified = false;
+                    }
+                    if (active_request->end_draw_handle_.IsValid()) {
+                        active_request->game_viewport_->OnEndDraw().Remove(active_request->end_draw_handle_);
+                        active_request->end_draw_handle_.Reset();
+                    }
+                    state->Request = nullptr;
+                    state->Complete = true;
+                    state->Condition.notify_all();
+                    return;
+                }
+
+                active_request->query_camera_pose_cb_();
+                state->RenderCommandQueued = true;
+                ENQUEUE_RENDER_COMMAND(SceneDrawCompletionCancellable)
+                (
+                    [state](FRHICommandListImmediate& RHICmdList) {
+                        std::lock_guard<std::mutex> render_lock(state->Mutex);
+                        RenderRequest* render_request = state->Request;
+                        if (render_request != nullptr) {
+                            render_request->ExecuteTask(false);
+                            state->Request = nullptr;
+                        }
+                        state->Complete = true;
+                        state->Condition.notify_all();
+                    });
+
+                if (state->ViewportModified) {
+                    active_request->game_viewport_->bDisableWorldRendering = active_request->saved_DisableWorldRendering_;
+                    state->ViewportModified = false;
+                }
+                if (active_request->end_draw_handle_.IsValid()) {
+                    active_request->game_viewport_->OnEndDraw().Remove(active_request->end_draw_handle_);
+                    active_request->end_draw_handle_.Reset();
+                }
+            });
+
+            for (unsigned int index = 0; index < request->req_size_; ++index) {
+                if (request->params_[index]->isEquirectangular() &&
+                    request->params_[index]->render_target_cube != nullptr &&
+                    request->params_[index]->render_component_cube != nullptr) {
+                    request->params_[index]->render_component_cube->CaptureSceneDeferred();
+                }
+                else if (request->params_[index]->render_target != nullptr &&
+                         request->params_[index]->render_component != nullptr) {
+                    request->params_[index]->render_component->CaptureSceneDeferred();
+                }
+            }
+        });
+
+        double next_warning_time = FPlatformTime::Seconds() + 5.0;
+        while (!state->Complete.load()) {
+            if (cancellation->load() && !state->CleanupQueued.exchange(true)) {
+                AsyncTask(ENamedThreads::GameThread, [state]() {
+                    std::lock_guard<std::mutex> cleanup_lock(state->Mutex);
+                    RenderRequest* active_request = state->Request;
+                    if (active_request == nullptr || state->Complete.load() || state->RenderCommandQueued)
+                        return;
+
+                    if (state->ViewportModified) {
+                        active_request->game_viewport_->bDisableWorldRendering = active_request->saved_DisableWorldRendering_;
+                        state->ViewportModified = false;
+                    }
+                    if (active_request->end_draw_handle_.IsValid()) {
+                        active_request->game_viewport_->OnEndDraw().Remove(active_request->end_draw_handle_);
+                        active_request->end_draw_handle_.Reset();
+                    }
+                    state->Request = nullptr;
+                    state->Complete = true;
+                    state->Condition.notify_all();
+                });
+            }
+
+            const double now = FPlatformTime::Seconds();
+            if (!cancellation->load() && now >= next_warning_time) {
+                UE_LOG(LogTemp, Warning, TEXT("Failed: timeout waiting for cancellable screenshot"));
+                next_warning_time = now + 5.0;
+            }
+            std::unique_lock<std::mutex> wait_lock(state->WaitMutex);
+            state->Condition.wait_for(wait_lock, std::chrono::milliseconds(1), [state]() {
+                return state->Complete.load();
+            });
         }
     }
 
@@ -697,7 +832,7 @@ void RenderRequest::setupEquirectangularRenderResource(const UTextureRenderTarge
     cube_size = FIntPoint(size, size);
 }
 
-void RenderRequest::ExecuteTask()
+void RenderRequest::ExecuteTask(bool signal_completion)
 {
     if (params_ != nullptr && req_size_ > 0) {
         for (unsigned int i = 0; i < req_size_; ++i) {
@@ -797,6 +932,7 @@ void RenderRequest::ExecuteTask()
         params_ = nullptr;
         results_ = nullptr;
 
-        wait_signal_->signal();
+        if (signal_completion)
+            wait_signal_->signal();
     }
 }

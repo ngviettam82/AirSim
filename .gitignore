@@ -407,3 +407,4 @@ docker/LinuxBlocks/*
 # Local agent instructions are workstation-specific; keep durable workflow
 # requirements in tracked docs instead.
 /agent.md
+/AGENTS.md

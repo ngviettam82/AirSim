@@ -25,6 +25,7 @@ nav:
   - "Using AirSim":
     - "Core APIs": 'apis.md'
     - "Image APIs": 'image_apis.md'
+    - "Native Camera Host": 'camera_host.md'
     - "Equirectangular Captures": 'equirectangular_capture.md'
     - "C++ APIs": 'apis_cpp.md'
     - "Instance Segmentation": 'instance_segmentation.md'

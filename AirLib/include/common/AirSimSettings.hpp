@@ -184,6 +184,11 @@ namespace airlib
 
             int image_type = 0;
 
+            // Expose this camera/image-type through the native camera HTTP host.
+            bool host = false;
+            // Required for hosted ImageType::Annotation captures.
+            std::string host_annotation_name = "";
+
             bool force_update = false; // Force updating the capture every frame, costly for performance!
 
             unsigned int width = 256, height = 144; //960 X 540
@@ -347,6 +352,16 @@ namespace airlib
             Vector3r position = VectorMath::nanVector();
             Rotation rotation = Rotation::nanRotation();
             float follow_distance = Utils::nan<float>();
+        };
+
+        struct CameraHostSetting
+        {
+            std::string bind_address = "127.0.0.1";
+            int port = 8080;
+            float target_fps = 30.0f;
+            int jpeg_quality = 85;
+            float float_preview_max = 100.0f;
+            int max_connections = 64;
         };
 
         struct SensorSetting
@@ -625,6 +640,7 @@ namespace airlib
         std::map<std::string, PawnPath> pawn_paths; //path for pawn blueprint
         std::map<std::string, std::unique_ptr<VehicleSetting>> vehicles;
         CameraSetting camera_defaults;
+        CameraHostSetting camera_host;
         CameraDirectorSetting camera_director;
         std::map<std::string, std::unique_ptr<BeaconSetting>> beacons;
         std::map<std::string, std::unique_ptr<PassiveEchoBeaconSetting>> passive_echo_beacons;
@@ -662,6 +678,7 @@ namespace airlib
             loadCoreSimModeSettings(settings_json, simmode_getter);
             loadLevelSettings(settings_json);
             loadDefaultCameraSetting(settings_json, camera_defaults);
+            loadCameraHostSetting(settings_json, camera_host);
             loadCameraDirectorSetting(settings_json, camera_director, simmode_name);
             loadSubWindowsSettings(settings_json, subwindow_settings);
             loadAnnotatorSettings(settings_json, annotator_settings);
@@ -1542,6 +1559,8 @@ namespace airlib
         static void createCaptureSettings(const msr::airlib::Settings& settings_json, CaptureSetting& capture_setting)
         {
             capture_setting.force_update = settings_json.getBool("ForceUpdate", capture_setting.force_update);
+            capture_setting.host = settings_json.getBool("Host", capture_setting.host);
+            capture_setting.host_annotation_name = settings_json.getString("HostAnnotation", capture_setting.host_annotation_name);
             capture_setting.width = settings_json.getInt("Width", capture_setting.width);
             capture_setting.height = settings_json.getInt("Height", capture_setting.height);            
             capture_setting.fov_degrees = settings_json.getFloat("FOV_Degrees", capture_setting.fov_degrees);
@@ -1616,6 +1635,25 @@ namespace airlib
             capture_setting.depth_of_field_depth_blur_amount = settings_json.getFloat("DepthOfFieldDepthBlurAmount", capture_setting.depth_of_field_depth_blur_amount);
             capture_setting.depth_of_field_depth_blur_radius = settings_json.getFloat("DepthOfFieldDepthBlurRadius", capture_setting.depth_of_field_depth_blur_radius);
             capture_setting.depth_of_field_use_hair_depth = settings_json.getFloat("DepthOfFieldUseHairDepth", capture_setting.depth_of_field_use_hair_depth);
+        }
+
+        static void loadCameraHostSetting(const Settings& settings_json, CameraHostSetting& camera_host)
+        {
+            Settings host_json;
+            if (settings_json.getChild("CameraHost", host_json)) {
+                camera_host.bind_address = host_json.getString("BindAddress", camera_host.bind_address);
+                camera_host.port = host_json.getInt("Port", camera_host.port);
+                camera_host.target_fps = host_json.getFloat("TargetFps", camera_host.target_fps);
+                camera_host.jpeg_quality = host_json.getInt("JpegQuality", camera_host.jpeg_quality);
+                camera_host.float_preview_max = host_json.getFloat("FloatPreviewMax", camera_host.float_preview_max);
+                camera_host.max_connections = host_json.getInt("MaxConnections", camera_host.max_connections);
+
+                camera_host.port = std::max(1, std::min(65535, camera_host.port));
+                camera_host.target_fps = std::max(0.1f, camera_host.target_fps);
+                camera_host.jpeg_quality = std::max(1, std::min(100, camera_host.jpeg_quality));
+                camera_host.float_preview_max = std::max(0.000001f, camera_host.float_preview_max);
+                camera_host.max_connections = std::max(1, std::min(1024, camera_host.max_connections));
+            }
         }
 
         static void loadSubWindowsSettings(const Settings& settings_json, std::vector<SubwindowSetting>& subwindow_settings)
