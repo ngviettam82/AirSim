@@ -10,16 +10,55 @@ set "buildMode="
 REM //check VS version
 if "%VisualStudioVersion%" == "" (
     echo(
-    echo oh oh... You need to run this command from x64 Native Tools Command Prompt for VS 2022.
+    echo Run this command from an x64 Native Tools Command Prompt for Visual Studio 2022 or 2026.
     goto :buildfailed_nomsg
 )
 if "%VisualStudioVersion%" lss "17.0" (
     echo(
-    echo Hello there! We just upgraded AirSim to Unreal Engine 5.4 and Visual Studio 2022.
-    echo Here are few easy steps for upgrade so everything is new and shiny:
-    echo https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/docs/unreal_upgrade.md
+    echo Unreal Engine 5.5 requires Visual Studio 2022 or Visual Studio 2026 with the VS 2022 C++ toolset.
+    echo Open the matching x64 Native Tools Command Prompt and run build.cmd again.
     goto :buildfailed_nomsg
 )
+
+set "REQUIRED_MSVC_FAMILY=14.38"
+set "MIN_MSVC_BUILD=33130"
+set "VS_MAJOR=17"
+set "CMAKE_GENERATOR=Visual Studio 17 2022"
+set "PLATFORM_TOOLSET=v143"
+
+if "%VCINSTALLDIR%" == "" (
+    echo(
+    echo Visual Studio C++ environment was not initialized.
+    echo Open an x64 Native Tools Command Prompt and run build.cmd again.
+    goto :buildfailed_nomsg
+)
+
+set "REQUIRED_MSVC_VERSION="
+for /f "delims=" %%V in ('dir /b /ad /o-n "%VCINSTALLDIR%Tools\MSVC\%REQUIRED_MSVC_FAMILY%.*" 2^>nul') do if not defined REQUIRED_MSVC_VERSION set "REQUIRED_MSVC_VERSION=%%V"
+
+if not defined REQUIRED_MSVC_VERSION (
+    echo(
+    echo Required MSVC %REQUIRED_MSVC_FAMILY%.x toolset was not found.
+    echo Unreal Engine 5.5 requires MSVC %REQUIRED_MSVC_FAMILY%.x build %MIN_MSVC_BUILD% or newer.
+    echo Install the matching VS 2022 C++ toolset, then run build.cmd again.
+    goto :buildfailed_nomsg
+)
+
+for /f "tokens=1-3 delims=." %%A in ("%REQUIRED_MSVC_VERSION%") do set "MSVC_BUILD=%%C"
+if "%MSVC_BUILD%" == "" (
+    echo Invalid MSVC toolset directory: %REQUIRED_MSVC_VERSION%
+    goto :buildfailed_nomsg
+)
+if %MSVC_BUILD% LSS %MIN_MSVC_BUILD% (
+    echo(
+    echo Installed MSVC %REQUIRED_MSVC_VERSION% is too old.
+    echo Unreal Engine 5.5 requires MSVC %REQUIRED_MSVC_FAMILY%.x build %MIN_MSVC_BUILD% or newer.
+    echo Update the matching VS 2022 C++ toolset, then run build.cmd again.
+    goto :buildfailed_nomsg
+)
+
+echo Using MSVC toolset %REQUIRED_MSVC_VERSION%
+set "VCToolsVersion=%REQUIRED_MSVC_VERSION%"
 
 if "%1"=="" goto noargs
 if "%1"=="--no-full-poly-car" set "noFullPolyCar=y"
@@ -97,18 +136,21 @@ IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER% (
 
 REM //---------- Build rpclib ------------
 ECHO Starting cmake to build rpclib...
-IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER%\build mkdir external\rpclib\%RPC_VERSION_FOLDER%\build
-cd external\rpclib\%RPC_VERSION_FOLDER%\build
-cmake -G"Visual Studio 17 2022" ..
+set "RPCLIB_BUILD_DIR=build-vs%VS_MAJOR%-msvc-%REQUIRED_MSVC_VERSION%"
+IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR% mkdir external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%
+cd external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%
+cmake -G"%CMAKE_GENERATOR%" -T "%PLATFORM_TOOLSET%" ..
+if ERRORLEVEL 1 goto :buildfailed
 
 if "%buildMode%" == "" (
-cmake --build . 
-cmake --build . --config Release
-) else (
-cmake --build . --config %buildMode%
-)
-
+cmake --build . -- /p:VCToolsVersion=%REQUIRED_MSVC_VERSION%
 if ERRORLEVEL 1 goto :buildfailed
+cmake --build . --config Release -- /p:VCToolsVersion=%REQUIRED_MSVC_VERSION%
+if ERRORLEVEL 1 goto :buildfailed
+) else (
+cmake --build . --config %buildMode% -- /p:VCToolsVersion=%REQUIRED_MSVC_VERSION%
+if ERRORLEVEL 1 goto :buildfailed
+)
 chdir /d %ROOT_DIR% 
 
 REM //---------- copy rpclib binaries and include folder inside AirLib folder ----------
@@ -119,10 +161,10 @@ if NOT exist %RPCLIB_TARGET_INCLUDE% mkdir %RPCLIB_TARGET_INCLUDE%
 robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\include %RPCLIB_TARGET_INCLUDE%
 
 if "%buildMode%" == "" (
-robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\build\Debug %RPCLIB_TARGET_LIB%\Debug
-robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\build\Release %RPCLIB_TARGET_LIB%\Release
+robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%\Debug %RPCLIB_TARGET_LIB%\Debug
+robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%\Release %RPCLIB_TARGET_LIB%\Release
 ) else (
-robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\build\%buildMode% %RPCLIB_TARGET_LIB%\%buildMode%
+robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%\%buildMode% %RPCLIB_TARGET_LIB%\%buildMode%
 )
 
 REM //---------- get High PolyCount SUV Car Model ------------
@@ -182,12 +224,12 @@ IF NOT EXIST AirLib\deps\eigen3 goto :buildfailed
 
 REM //---------- now we have all dependencies to compile AirSim.sln which will also compile MavLinkCom ----------
 if "%buildMode%" == "" (
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Debug AirSim.sln
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Debug /p:PlatformToolset=%PLATFORM_TOOLSET% /p:VCToolsVersion=%REQUIRED_MSVC_VERSION% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Release AirSim.sln 
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Release /p:PlatformToolset=%PLATFORM_TOOLSET% /p:VCToolsVersion=%REQUIRED_MSVC_VERSION% AirSim.sln 
 if ERRORLEVEL 1 goto :buildfailed
 ) else (
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=%buildMode% AirSim.sln
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=%buildMode% /p:PlatformToolset=%PLATFORM_TOOLSET% /p:VCToolsVersion=%REQUIRED_MSVC_VERSION% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
 )
 
@@ -214,6 +256,4 @@ echo #### Build failed - see messages above. 1>&2
 :buildfailed_nomsg
 chdir /d %ROOT_DIR% 
 exit /b 1
-
-
 
