@@ -7,7 +7,7 @@ set OutPath=%1
 set ToolPath=%2
 set UEVer=%3
 
-if "%UEVer%"=="" set "UEVer=5.5"
+if "%UEVer%"=="" set "UEVer=5.7"
 
 set "_ToolPath=%PROGRAMFILES%\Epic Games\UE_%UEVer%\Engine\Build\BatchFiles"
 if "%ToolPath%"=="" set ToolPath=%_ToolPath%
@@ -59,6 +59,5 @@ exit /b 1
 
 :done
 if "%1"=="" pause
-
 
 

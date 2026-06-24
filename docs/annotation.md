@@ -23,7 +23,7 @@ The annotation system uses actor and/or component tags to set these values for t
   * For instanced static mesh components, one source component receives one annotation ID/color; per-instance IDs inside the same component are not supported yet.
   * For landscapes in built-in segmentation/infrared, each `ULandscapeComponent` is listed separately, while the owning `ALandscapeProxy` name is used as a shared label key for grouped ID updates.
   * UE foliage painted as instanced static mesh foliage is covered by source-stencil indexed paths because `UFoliageInstancedStaticMeshComponent` derives from `UInstancedStaticMeshComponent`. It still receives one ID/color per foliage component, not per individual tree/grass instance.
-  * Brush objects aren't supported. In Unreal Engine 5.5, `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, so brushes are skipped by the current object discovery path. As a work-around, convert them to StaticMesh assets.
+  * Brush objects aren't supported. In Unreal Engine 5, `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, so brushes are skipped by the current object discovery path. As a work-around, convert them to StaticMesh assets.
   * Other unsupported primitive types, such as decals, text, non-instanced foliage systems, and non-mesh custom primitives, generally will not render in annotation captures unless they are added to a supported backend.
 
 ## Usage

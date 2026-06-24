@@ -117,7 +117,7 @@ The subwindow output is a visual preview. Exact float depth values, exact segmen
 
 ## Platform Notes
 
-The validated runtime target is Windows with D3D11 or D3D12. UE 5.5 Vulkan has known cube-face readback limitations in this path, so equirectangular capture reports an error on Vulkan instead of treating it as supported.
+The validated production baseline is UE 5.5 on Windows with D3D11 or D3D12. UE 5.5 Vulkan has known cube-face readback limitations in this path, so equirectangular capture reports an error on Vulkan instead of treating it as supported. UE 5.7 support remains provisional until the migration validation matrix passes.
 
 ## Operational Notes
 

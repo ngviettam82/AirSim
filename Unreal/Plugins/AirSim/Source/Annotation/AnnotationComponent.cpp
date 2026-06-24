@@ -244,7 +244,7 @@ public:
 			Material = AnnotationRenderProxy;
 		}
 
-		const FMaterialRelevance AnnotationMaterialRelevance = AnnotationBaseMaterial->GetRelevance_Concurrent(GetScene().GetFeatureLevel());
+		const FMaterialRelevance AnnotationMaterialRelevance = AnnotationBaseMaterial->GetRelevance_Concurrent(GetScene().GetShaderPlatform());
 		MaterialRelevances.Init(AnnotationMaterialRelevance, FMath::Max(1, MaterialRelevances.Num()));
 
 		bVerifyUsedMaterials = false;

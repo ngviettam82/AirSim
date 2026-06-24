@@ -7,32 +7,37 @@ REM // Check command line arguments
 set "noFullPolyCar="
 set "buildMode="
 
-REM //check VS version
+REM //check VS version and select the matching CMake generator
 if "%VisualStudioVersion%" == "" (
     echo(
-    echo oh oh... You need to run this command from x64 Native Tools Command Prompt for VS 2022.
+    echo Run this command from an x64 Native Tools Command Prompt for Visual Studio 2022 or 2026.
     goto :buildfailed_nomsg
 )
-if "%VisualStudioVersion%" lss "17.0" (
+
+set "VS_MAJOR=%VisualStudioVersion:~0,2%"
+if "%VS_MAJOR%"=="17" (
+    set "CMAKE_GENERATOR=Visual Studio 17 2022"
+    set "PLATFORM_TOOLSET=v143"
+) else if "%VS_MAJOR%"=="18" (
+    set "CMAKE_GENERATOR=Visual Studio 18 2026"
+    set "PLATFORM_TOOLSET=v145"
+) else (
     echo(
-    echo Hello there! We just upgraded AirSim to Unreal Engine 5.4 and Visual Studio 2022.
-    echo Here are few easy steps for upgrade so everything is new and shiny:
-    echo https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/docs/unreal_upgrade.md
+    echo Unreal Engine 5.7 requires Visual Studio 2022 or Visual Studio 2026.
+    echo Open the matching x64 Native Tools Command Prompt and run build.cmd again.
     goto :buildfailed_nomsg
 )
 
-if "%1"=="" goto noargs
-if "%1"=="--no-full-poly-car" set "noFullPolyCar=y"
-if "%1"=="--Debug" set "buildMode=Debug"
-if "%1"=="--Release" set "buildMode=Release"
-if "%1"=="--RelWithDebInfo" set "buildMode=RelWithDebInfo"
+:parse_args
+if "%~1"=="" goto args_parsed
+if /I "%~1"=="--no-full-poly-car" set "noFullPolyCar=y"
+if /I "%~1"=="--Debug" set "buildMode=Debug"
+if /I "%~1"=="--Release" set "buildMode=Release"
+if /I "%~1"=="--RelWithDebInfo" set "buildMode=RelWithDebInfo"
+shift
+goto parse_args
 
-if "%2"=="" goto noargs
-if "%2"=="--Debug" set "buildMode=Debug"
-if "%2"=="--Release" set "buildMode=Release"
-if "%2"=="--RelWithDebInfo" set "buildMode=RelWithDebInfo"
-
-:noargs
+:args_parsed
 
 set powershell=powershell
 where powershell > nul 2>&1
@@ -97,9 +102,10 @@ IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER% (
 
 REM //---------- Build rpclib ------------
 ECHO Starting cmake to build rpclib...
-IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER%\build mkdir external\rpclib\%RPC_VERSION_FOLDER%\build
-cd external\rpclib\%RPC_VERSION_FOLDER%\build
-cmake -G"Visual Studio 17 2022" ..
+set "RPCLIB_BUILD_DIR=build-vs%VS_MAJOR%"
+IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR% mkdir external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%
+cd external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%
+cmake -G"%CMAKE_GENERATOR%" ..
 
 if "%buildMode%" == "" (
 cmake --build . 
@@ -119,10 +125,10 @@ if NOT exist %RPCLIB_TARGET_INCLUDE% mkdir %RPCLIB_TARGET_INCLUDE%
 robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\include %RPCLIB_TARGET_INCLUDE%
 
 if "%buildMode%" == "" (
-robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\build\Debug %RPCLIB_TARGET_LIB%\Debug
-robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\build\Release %RPCLIB_TARGET_LIB%\Release
+robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%\Debug %RPCLIB_TARGET_LIB%\Debug
+robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%\Release %RPCLIB_TARGET_LIB%\Release
 ) else (
-robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\build\%buildMode% %RPCLIB_TARGET_LIB%\%buildMode%
+robocopy /MIR external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%\%buildMode% %RPCLIB_TARGET_LIB%\%buildMode%
 )
 
 REM //---------- get High PolyCount SUV Car Model ------------
@@ -130,14 +136,14 @@ IF NOT EXIST Unreal\Plugins\AirSim\Content\VehicleAdv mkdir Unreal\Plugins\AirSi
 IF NOT EXIST Unreal\Plugins\AirSim\Content\VehicleAdv\SUV\v1.2.0 (
     IF NOT DEFINED noFullPolyCar (
         REM //leave some blank lines because %powershell% shows download banner at top of console
-        ECHO(   
-        ECHO(   
-        ECHO(   
+        ECHO(
+        ECHO(
+        ECHO(
         ECHO *****************************************************************************************
         ECHO Downloading high-poly car assets.... The download is ~37MB and can take some time.
         ECHO To install without this assets, re-run build.cmd with the argument --no-full-poly-car
         ECHO *****************************************************************************************
-       
+
         IF EXIST suv_download_tmp rmdir suv_download_tmp /q /s
         mkdir suv_download_tmp
         @echo on
@@ -152,7 +158,7 @@ IF NOT EXIST Unreal\Plugins\AirSim\Content\VehicleAdv\SUV\v1.2.0 (
         rmdir /S /Q Unreal\Plugins\AirSim\Content\VehicleAdv\SUV
         %powershell% -command "Expand-Archive -Path suv_download_tmp\car_assets.zip -DestinationPath Unreal\Plugins\AirSim\Content\VehicleAdv"
         rmdir suv_download_tmp /q /s
-        
+
         REM //Don't fail the build if the high-poly car is unable to be downloaded
         REM //Instead, just notify users that the gokart will be used.
         IF NOT EXIST Unreal\Plugins\AirSim\Content\VehicleAdv\SUV ECHO Unable to download high-polycount SUV. Your AirSim build will use the default vehicle.
@@ -182,12 +188,12 @@ IF NOT EXIST AirLib\deps\eigen3 goto :buildfailed
 
 REM //---------- now we have all dependencies to compile AirSim.sln which will also compile MavLinkCom ----------
 if "%buildMode%" == "" (
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Debug AirSim.sln
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Debug /p:PlatformToolset=%PLATFORM_TOOLSET% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Release AirSim.sln 
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Release /p:PlatformToolset=%PLATFORM_TOOLSET% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
 ) else (
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=%buildMode% AirSim.sln
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=%buildMode% /p:PlatformToolset=%PLATFORM_TOOLSET% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
 )
 
@@ -214,6 +220,3 @@ echo #### Build failed - see messages above. 1>&2
 :buildfailed_nomsg
 chdir /d %ROOT_DIR% 
 exit /b 1
-
-
-

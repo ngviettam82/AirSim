@@ -4,6 +4,7 @@ setlocal
 set ROOT_DIR=%~dp0
 
 set AirSimPath=%1
+set UnrealRoot=%2
 
 REM default path works for Blocks environment
 if "%AirSimPath%"=="" set "AirSimPath=..\..\.."
@@ -23,12 +24,15 @@ robocopy  /njh /njs /ndl /np "%AirSimPath%\Unreal\Environments\Blocks" "." *.sh
 rem robocopy /njh /njs /ndl /np "%AirSimPath%" "." *.gitignore
 
 cmd /c clean.bat
-cmd /c GenerateProjectFiles.bat
+if ERRORLEVEL 1 goto :failed
+call GenerateProjectFiles.bat "%UnrealRoot%"
+if ERRORLEVEL 1 goto :failed
 
 goto :done
 
 :failed
-echo Error occured while updating.
+echo Error occurred while updating.
+echo Usage: update_from_git.bat [AirSim repository path] [Unreal Engine root]
 exit /b 1
 
 :done

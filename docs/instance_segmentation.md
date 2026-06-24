@@ -12,7 +12,7 @@ Current indexed instance segmentation supports regular static meshes, skeletal m
   * One `UInstancedStaticMeshComponent` receives one segmentation ID/color. Per-instance IDs inside the same instanced component are not supported yet.
   * One `ALandscapeProxy` receives one segmentation ID/color by default. Internally, each `ULandscapeComponent` has its own listed component ID, but the owning landscape proxy name is used as the shared label key so `simSetSegmentationObjectID("<LandscapeProxyName>", ...)` updates all components of that landscape together.
   * UE foliage painted as instanced static mesh foliage is covered by the instanced static mesh path because `UFoliageInstancedStaticMeshComponent` derives from `UInstancedStaticMeshComponent`. It still receives one ID/color per foliage component, not per individual tree/grass instance.
-  * Brush objects aren't supported. In Unreal Engine 5.5, `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, so brushes are skipped by the current object discovery path. As a work-around, convert them to StaticMesh assets.
+  * Brush objects aren't supported. In Unreal Engine 5, `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, so brushes are skipped by the current object discovery path. As a work-around, convert them to StaticMesh assets.
   * Other unsupported primitive types, such as decals, text, non-instanced foliage systems, and non-mesh custom primitives, generally will not render in segmentation/infrared unless they are added to the supported object discovery path and receive a stencil label.
 
 ## Usage

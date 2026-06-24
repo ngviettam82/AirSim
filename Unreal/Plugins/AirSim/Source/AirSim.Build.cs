@@ -82,7 +82,7 @@ public class AirSim : ModuleRules
         bEnableExceptions = true;
 
         PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "ImageWrapper", "RenderCore", "RHI", "AssetRegistry", "PhysicsCore", "ChaosVehicles", "Landscape", "CinematicCamera", "Sockets", "Networking" });
-        PrivateDependencyModuleNames.AddRange(new string[] { "UMG", "Slate", "SlateCore", "RenderCore", "ChaosVehicles", "AirSimShaders" });
+        PrivateDependencyModuleNames.AddRange(new string[] { "UMG", "Slate", "SlateCore", "RenderCore", "Renderer", "ChaosVehicles", "AirSimShaders" });
 
         if (Target.bBuildEditor)
         {
@@ -93,6 +93,11 @@ public class AirSim : ModuleRules
         PublicDefinitions.Add("_SCL_SECURE_NO_WARNINGS=1");
         PublicDefinitions.Add("_CRT_SECURE_NO_WARNINGS=1");
         PublicDefinitions.Add("HMD_MODULE_INCLUDED=0");
+
+        // rpclib 2.3.1's bundled optional-lite header checks the misspelled
+        // variant_HAVE_CONDITIONAL macro. UE 5.7 V6 treats undefined macros as
+        // errors; this module is C++20 and always has std::conditional.
+        PrivateDefinitions.Add("variant_HAVE_CONDITIONAL=1");
 
         PublicIncludePaths.Add(Path.Combine(AirLibPath, "include"));
         PublicIncludePaths.Add(Path.Combine(AirLibPath, "deps", "eigen3"));
@@ -105,12 +110,8 @@ public class AirSim : ModuleRules
     {
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
-            // for SHGetFolderPath.
-            PublicAdditionalLibraries.Add("Shell32.lib");
-
-            //for joystick support
-            PublicAdditionalLibraries.Add("dinput8.lib");
-            PublicAdditionalLibraries.Add("dxguid.lib");
+            // Windows SDK import libraries: SHGetFolderPath and joystick support.
+            PublicSystemLibraries.AddRange(new string[] { "Shell32.lib", "dinput8.lib", "dxguid.lib" });
         }
 
         if (Target.Platform == UnrealTargetPlatform.Linux)

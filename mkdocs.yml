@@ -19,6 +19,7 @@ nav:
     - "Download and install from precompiled plugin": 'install_precompiled.md'
     - "Install from Source on Windows": 'install_windows.md'
     - "Install from Source on Linux": 'install_linux.md'
+    - "Unreal Engine 5.7 Migration": 'ue57_migration.md'
     - "Using Docker on Ubuntu": 'docker_ubuntu.md'
     - "Custom Unreal Environment": 'unreal_custenv.md'
     - "Dynamic Objects": 'dynamic_objects.md'

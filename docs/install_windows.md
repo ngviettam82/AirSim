@@ -3,15 +3,16 @@
 ## Install Unreal Engine
 1. [Download](https://www.unrealengine.com/download) the Epic Games Launcher. While the Unreal Engine is open source and free to download, registration is still required.
 2. Run the Epic Games Launcher, open the `Unreal Engine` tab on the left pane.
-Click on the `Install` button on the top right, which should show the option to download **Unreal Engine 5.5.X**. Chose the install location to suit your needs, as shown in the images below. If you have multiple versions of Unreal installed then **make sure the version you are using is set to `current`** by clicking down arrow next to the Launch button for the version.
+Click on the `Install` button on the top right, which should show the option to download **Unreal Engine 5.7.X**. Choose the install location to suit your needs, as shown in the images below. If you have multiple versions of Unreal installed then **make sure the version you are using is set to `current`** by clicking the down arrow next to the Launch button for the version.
 ![Unreal Engine Tab UI Screenshot](images/ue_install.png)
 ![Unreal Engine Install Location UI Screenshot](images/ue_install_location.png)
 
 ## Build Cosys-AirSim
-* Install Visual Studio 2022. Make sure to select Desktop Development with C++ and Windows 10/11 SDK **10.0.X (choose latest)** and select the latest .NET Framework SDK under the 'Individual Components' tab while installing VS 2022. More info [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine?application_version=5.4).
-* Start `Developer Command Prompt for VS 2022`. 
+* Install Visual Studio 2022 17.14 with MSVC 14.44.35211 or newer in the 14.44 family (preferred by UE 5.7), or Visual Studio 2026 18.0 or newer. Select Desktop Development with C++ and Windows SDK 10.0.19041.0 or newer; SDK 10.0.22621.0 is UE 5.7's default. More info [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine?application_version=5.7).
+* Start the matching x64 Native Tools Command Prompt for Visual Studio 2022 or 2026.
 * Clone the repo: `git clone https://github.com/Cosys-Lab/Cosys-AirSim.git`, and go the AirSim directory by `cd Cosys-AirSim`. 
 * Run `build.cmd` from the command line. This will create ready to use plugin bits in the `Unreal\Plugins` folder. Copy the complete plugin set from that folder into other Unreal projects, including `AirSim` and support plugins such as `AirSimShaders`.
+* To refresh Blocks noninteractively, run `Unreal\Environments\Blocks\update_from_git.bat <repository-root> <UE-5.7-root>`. The engine-root argument is optional when `UE_ROOT` is set or UE 5.7 is installed at the default Epic Games Launcher path.
 
 ## Build Unreal Project
 

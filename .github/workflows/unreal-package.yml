@@ -6,7 +6,7 @@ on:
       ue_root:
         description: Unreal Engine installation root
         required: true
-        default: "C:\\Program Files\\Epic Games\\UE_5.5"
+        default: "C:\\Program Files\\Epic Games\\UE_5.7"
       target_platforms:
         description: RunUAT BuildPlugin target platforms
         required: true
@@ -32,7 +32,7 @@ jobs:
       - unreal
 
     env:
-      UE_ROOT: ${{ github.event.inputs.ue_root || 'C:\Program Files\Epic Games\UE_5.5' }}
+      UE_ROOT: ${{ github.event.inputs.ue_root || 'C:\Program Files\Epic Games\UE_5.7' }}
       TARGET_PLATFORMS: ${{ github.event.inputs.target_platforms || 'Win64' }}
       PACKAGE_DIR: ${{ github.workspace }}\artifacts\AirSimPlugin
       PACKAGE_ZIP: ${{ github.workspace }}\artifacts\AirSimPlugin-Win64.zip

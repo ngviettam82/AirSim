@@ -5,7 +5,7 @@ This repository includes both GitLab CI/CD and GitHub Actions workflow files. Th
 The automation has two levels:
 
 1. Hosted or Docker CI validates text hygiene, Python packaging, documentation, and Linux AirLib builds.
-2. Windows runner jobs can build AirLib and package the Unreal plugin with Unreal Engine 5.5.
+2. Windows runner jobs can build AirLib and package the Unreal plugin with Unreal Engine 5.7.
 
 ## GitLab CI
 
@@ -29,8 +29,8 @@ The `package_unreal_windows` job is manual for tags and manually started pipelin
 Runner requirements:
 
 - Windows x64 runner;
-- Unreal Engine 5.5 installed, by default at `C:\Program Files\Epic Games\UE_5.5`;
-- Visual Studio 2022 with Desktop Development with C++;
+- Unreal Engine 5.7 installed, by default at `C:\Program Files\Epic Games\UE_5.7`;
+- Visual Studio 2022 or 2026 with Desktop Development with C++;
 - Git LFS enabled if release assets are needed.
 
 The Unreal package job runs:
@@ -57,4 +57,4 @@ python -m mkdocs build --strict
 build.cmd --no-full-poly-car --Release
 ```
 
-Use `C:\Program Files\Epic Games\UE_5.5` or override `UE_ROOT` in the GitLab pipeline variables if Unreal is installed somewhere else.
+Use `C:\Program Files\Epic Games\UE_5.7` or override `UE_ROOT` in the GitLab pipeline variables if Unreal is installed somewhere else.

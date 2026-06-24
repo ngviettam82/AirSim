@@ -7,10 +7,10 @@ public class BlocksEditorTarget : TargetRules
 {
 	public BlocksEditorTarget(TargetInfo Target) : base(Target)
 	{
-	    DefaultBuildSettings = BuildSettingsVersion.V5;
+	    DefaultBuildSettings = BuildSettingsVersion.V6;
         Type = TargetType.Editor;
 		ExtraModuleNames.AddRange(new string[] { "Blocks" });
-        IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
+        IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_7;
         //bUseUnityBuild = false;
         //bUsePCHFiles = false;
     }

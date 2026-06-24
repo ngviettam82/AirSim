@@ -239,6 +239,8 @@ void ASkidVehiclePawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	camera_front_right_base_ = nullptr;
 	camera_driver_base_ = nullptr;
 	camera_back_center_base_ = nullptr;
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void ASkidVehiclePawn::Tick(float Delta)
@@ -407,4 +409,3 @@ void ASkidVehiclePawn::onReverseReleased()
 }
 
 #undef LOCTEXT_NAMESPACE
-

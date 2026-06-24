@@ -7,7 +7,8 @@ public class BlocksTarget : TargetRules
 {
 	public BlocksTarget(TargetInfo Target) : base(Target)
 	{
-        DefaultBuildSettings = BuildSettingsVersion.V5;
+        DefaultBuildSettings = BuildSettingsVersion.V6;
+        IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_7;
         Type = TargetType.Game;
 		ExtraModuleNames.AddRange(new string[] { "Blocks" });
 		//bUseUnityBuild = false;

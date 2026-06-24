@@ -12,7 +12,7 @@ workflow:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  UE_ROOT: 'C:\Program Files\Epic Games\UE_5.5'
+  UE_ROOT: 'C:\Program Files\Epic Games\UE_5.7'
   TARGET_PLATFORMS: "Win64"
   PACKAGE_DIR: "$CI_PROJECT_DIR\\artifacts\\AirSimPlugin"
   PACKAGE_ZIP: "$CI_PROJECT_DIR\\artifacts\\AirSimPlugin-Win64.zip"

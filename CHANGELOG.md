@@ -1,3 +1,8 @@
+### Unreal Engine 5.7 development
+* Started the UE 5.7 forward port from the validated custom UE 5.5 baseline.
+* Adopted V6 target settings, UE 5.7 include order, public line-batcher APIs, generic RHI texture references, and required base `EndPlay` calls.
+* Preserved the native camera host, cancellable shutdown path, equirectangular shader plugin, landscape annotations, and SourceStencil annotations for dedicated regression testing.
+
 ### Development (version 3.4)
 * Updated built-in instance segmentation and infrared to use source CustomStencil labels instead of generated annotation mirror geometry. This avoids duplicating dense ISM/HISM instance buffers in large Unreal environments.
 * Changed `InitialInstanceSegmentation` default to false; set it explicitly to true when startup segmentation labels are needed.
