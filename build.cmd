@@ -15,6 +15,8 @@ if "%VisualStudioVersion%" == "" (
 )
 
 set "VS_MAJOR=%VisualStudioVersion:~0,2%"
+set "REQUIRED_MSVC_FAMILY=14.44"
+set "MIN_MSVC_BUILD=35207"
 if "%VS_MAJOR%"=="17" (
     set "CMAKE_GENERATOR=Visual Studio 17 2022"
     set "PLATFORM_TOOLSET=v143"
@@ -27,6 +29,40 @@ if "%VS_MAJOR%"=="17" (
     echo Open the matching x64 Native Tools Command Prompt and run build.cmd again.
     goto :buildfailed_nomsg
 )
+
+if "%VCINSTALLDIR%" == "" (
+    echo(
+    echo Visual Studio C++ environment was not initialized.
+    echo Open an x64 Native Tools Command Prompt and run build.cmd again.
+    goto :buildfailed_nomsg
+)
+
+set "REQUIRED_MSVC_VERSION="
+for /f "delims=" %%V in ('dir /b /ad /o-n "%VCINSTALLDIR%Tools\MSVC\%REQUIRED_MSVC_FAMILY%.*" 2^>nul') do if not defined REQUIRED_MSVC_VERSION set "REQUIRED_MSVC_VERSION=%%V"
+
+if not defined REQUIRED_MSVC_VERSION (
+    echo(
+    echo Required MSVC %REQUIRED_MSVC_FAMILY%.x toolset was not found.
+    echo Unreal Engine 5.7 requires MSVC %REQUIRED_MSVC_FAMILY%.x build %MIN_MSVC_BUILD% or newer.
+    echo Install the matching Visual Studio C++ toolset, then run build.cmd again.
+    goto :buildfailed_nomsg
+)
+
+for /f "tokens=1-3 delims=." %%A in ("%REQUIRED_MSVC_VERSION%") do set "MSVC_BUILD=%%C"
+if "%MSVC_BUILD%" == "" (
+    echo Invalid MSVC toolset directory: %REQUIRED_MSVC_VERSION%
+    goto :buildfailed_nomsg
+)
+if %MSVC_BUILD% LSS %MIN_MSVC_BUILD% (
+    echo(
+    echo Installed MSVC %REQUIRED_MSVC_VERSION% is too old.
+    echo Unreal Engine 5.7 requires MSVC %REQUIRED_MSVC_FAMILY%.x build %MIN_MSVC_BUILD% or newer.
+    echo Update the matching Visual Studio C++ toolset, then run build.cmd again.
+    goto :buildfailed_nomsg
+)
+
+echo Using MSVC toolset %REQUIRED_MSVC_VERSION%
+set "VCToolsVersion=%REQUIRED_MSVC_VERSION%"
 
 :parse_args
 if "%~1"=="" goto args_parsed
@@ -102,19 +138,21 @@ IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER% (
 
 REM //---------- Build rpclib ------------
 ECHO Starting cmake to build rpclib...
-set "RPCLIB_BUILD_DIR=build-vs%VS_MAJOR%"
+set "RPCLIB_BUILD_DIR=build-vs%VS_MAJOR%-msvc-%REQUIRED_MSVC_VERSION%"
 IF NOT EXIST external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR% mkdir external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%
 cd external\rpclib\%RPC_VERSION_FOLDER%\%RPCLIB_BUILD_DIR%
-cmake -G"%CMAKE_GENERATOR%" ..
+cmake -G"%CMAKE_GENERATOR%" -T "%PLATFORM_TOOLSET%" ..
+if ERRORLEVEL 1 goto :buildfailed
 
 if "%buildMode%" == "" (
-cmake --build . 
-cmake --build . --config Release
-) else (
-cmake --build . --config %buildMode%
-)
-
+cmake --build . -- /p:VCToolsVersion=%REQUIRED_MSVC_VERSION%
 if ERRORLEVEL 1 goto :buildfailed
+cmake --build . --config Release -- /p:VCToolsVersion=%REQUIRED_MSVC_VERSION%
+if ERRORLEVEL 1 goto :buildfailed
+) else (
+cmake --build . --config %buildMode% -- /p:VCToolsVersion=%REQUIRED_MSVC_VERSION%
+if ERRORLEVEL 1 goto :buildfailed
+)
 chdir /d %ROOT_DIR% 
 
 REM //---------- copy rpclib binaries and include folder inside AirLib folder ----------
@@ -188,12 +226,12 @@ IF NOT EXIST AirLib\deps\eigen3 goto :buildfailed
 
 REM //---------- now we have all dependencies to compile AirSim.sln which will also compile MavLinkCom ----------
 if "%buildMode%" == "" (
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Debug /p:PlatformToolset=%PLATFORM_TOOLSET% AirSim.sln
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Debug /p:PlatformToolset=%PLATFORM_TOOLSET% /p:VCToolsVersion=%REQUIRED_MSVC_VERSION% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Release /p:PlatformToolset=%PLATFORM_TOOLSET% AirSim.sln
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=Release /p:PlatformToolset=%PLATFORM_TOOLSET% /p:VCToolsVersion=%REQUIRED_MSVC_VERSION% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
 ) else (
-msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=%buildMode% /p:PlatformToolset=%PLATFORM_TOOLSET% AirSim.sln
+msbuild -maxcpucount:12 /p:Platform=x64 /p:Configuration=%buildMode% /p:PlatformToolset=%PLATFORM_TOOLSET% /p:VCToolsVersion=%REQUIRED_MSVC_VERSION% AirSim.sln
 if ERRORLEVEL 1 goto :buildfailed
 )
 
