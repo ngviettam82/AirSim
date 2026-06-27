@@ -15,6 +15,7 @@
 class FSocket;
 class FTcpListener;
 class IImageWrapperModule;
+class APIPCamera;
 class UnrealImageCapture;
 struct FIPv4Endpoint;
 
@@ -24,6 +25,7 @@ struct FAirSimHostedCamera
     FString CameraName;
     FString AnnotationName;
     int32 ImageType = 0;
+    APIPCamera* Camera = nullptr;
     const UnrealImageCapture* ImageCapture = nullptr;
 };
 
@@ -49,6 +51,7 @@ public:
 private:
     struct FFrame;
     struct FSource;
+    struct FHttpRequest;
     struct FClientThread;
     class FCaptureWorker;
 
@@ -56,7 +59,7 @@ private:
     void HandleConnection(FSocket* Socket);
     void FinishConnection(FSocket* Socket);
 
-    bool ReadRequest(FSocket* Socket, FString& OutTarget) const;
+    bool ReadRequest(FSocket* Socket, FHttpRequest& OutRequest) const;
     bool SendAll(FSocket* Socket, const uint8* Data, int64 Size) const;
     bool SendTextResponse(FSocket* Socket, int32 StatusCode, const TCHAR* StatusText, const FString& ContentType, const FString& Body) const;
     bool SendBinaryResponse(
@@ -70,6 +73,8 @@ private:
     void ServeMjpeg(FSocket* Socket, const std::shared_ptr<FSource>& Source);
     void ServeJpeg(FSocket* Socket, const std::shared_ptr<FSource>& Source, uint64 AfterSequence, bool RequireFreshFrame);
     void ServeRaw(FSocket* Socket, const std::shared_ptr<FSource>& Source, uint64 AfterSequence, bool RequireFreshFrame);
+    void ServeGimbalInventory(FSocket* Socket);
+    void ServeGimbalCommand(FSocket* Socket, const FString& Body);
     std::shared_ptr<const FFrame> WaitForFrame(const std::shared_ptr<FSource>& Source, uint64 AfterSequence, double TimeoutSeconds) const;
     uint64 BeginSubscription(const std::shared_ptr<FSource>& Source, uint64 AfterSequence, bool RequireFreshFrame);
     void EndSubscription(const std::shared_ptr<FSource>& Source);
@@ -79,6 +84,7 @@ private:
     FString BuildStatusJson() const;
     FString BuildDashboardHtml() const;
     std::shared_ptr<FSource> FindSource(const FString& Path) const;
+    std::shared_ptr<FSource> FindCameraSource(const FString& VehicleName, const FString& CameraName) const;
 
     static FString ImageTypeName(int32 ImageType);
     static FString JsonEscape(const FString& Value);

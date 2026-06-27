@@ -107,7 +107,10 @@ void ASimHUD::updateWidgetSubwindowVisibility()
                 bool is_visible = getSubWindowSettings().at(window_index).visible && camera != nullptr;
 
                 if (camera != nullptr) {
-                    camera->setCameraTypeEnabled(camera_type, is_visible, annotation_name);
+                    camera->setCameraTypeEnabled(
+                        camera_type,
+                        is_visible || camera->isCameraTypeHosted(camera_type, annotation_name),
+                        annotation_name);
                     //sub-window captures don't count as a request, set bCaptureEveryFrame and bCaptureOnMovement to display so we can show correctly the subwindow
                     camera->setCameraTypeUpdate(camera_type, !is_visible, annotation_name);
                 }
@@ -123,7 +126,10 @@ void ASimHUD::updateWidgetSubwindowVisibility()
             bool is_visible = getSubWindowSettings().at(window_index).visible && camera != nullptr;
 
             if (camera != nullptr) {
-                camera->setCameraTypeEnabled(camera_type, is_visible, annotation_name);
+                camera->setCameraTypeEnabled(
+                    camera_type,
+                    is_visible || camera->isCameraTypeHosted(camera_type, annotation_name),
+                    annotation_name);
                 //sub-window captures don't count as a request, set bCaptureEveryFrame and bCaptureOnMovement to display so we can show correctly the subwindow
                 camera->setCameraTypeUpdate(camera_type, !is_visible, annotation_name);
             }

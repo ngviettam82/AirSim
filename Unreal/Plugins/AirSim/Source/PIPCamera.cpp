@@ -96,6 +96,52 @@ namespace
         }
         return AirSimEquirectangularPreview::EPreviewMode::ColorBilinear;
     }
+
+    FVector GetRelativeLocationSafe(const AActor* actor)
+    {
+        const USceneComponent* root_component = actor ? actor->GetRootComponent() : nullptr;
+        return root_component ? root_component->GetRelativeLocation() : FVector::ZeroVector;
+    }
+
+    FRotator GetRelativeRotationSafe(const AActor* actor)
+    {
+        const USceneComponent* root_component = actor ? actor->GetRootComponent() : nullptr;
+        return root_component ? root_component->GetRelativeRotation() : FRotator::ZeroRotator;
+    }
+
+    float NormalizeDegreesPreservingNegativeHalfTurn(float degrees)
+    {
+        float normalized = FMath::Fmod(degrees, 360.0f);
+        if (normalized > 180.0f) {
+            normalized -= 360.0f;
+        }
+        else if (normalized < -180.0f) {
+            normalized += 360.0f;
+        }
+        return FMath::IsNearlyZero(normalized) ? 0.0f : normalized;
+    }
+
+    FRotator NormalizeRotator(FRotator rotator)
+    {
+        rotator.Pitch = NormalizeDegreesPreservingNegativeHalfTurn(rotator.Pitch);
+        rotator.Yaw = NormalizeDegreesPreservingNegativeHalfTurn(rotator.Yaw);
+        rotator.Roll = NormalizeDegreesPreservingNegativeHalfTurn(rotator.Roll);
+        rotator.DiagnosticCheckNaN();
+        return rotator;
+    }
+
+    FRotator LerpRotatorShortestPath(const FRotator& start_rotator, const FRotator& target_rotator, float alpha)
+    {
+        const float clamped_alpha = FMath::Clamp(alpha, 0.0f, 1.0f);
+        if (clamped_alpha >= 1.0f) {
+            return NormalizeRotator(target_rotator);
+        }
+
+        return NormalizeRotator(FRotator(
+            start_rotator.Pitch + FMath::FindDeltaAngleDegrees(start_rotator.Pitch, target_rotator.Pitch) * clamped_alpha,
+            start_rotator.Yaw + FMath::FindDeltaAngleDegrees(start_rotator.Yaw, target_rotator.Yaw) * clamped_alpha,
+            start_rotator.Roll + FMath::FindDeltaAngleDegrees(start_rotator.Roll, target_rotator.Roll) * clamped_alpha));
+    }
 }
 
 //CinemAirSim
@@ -399,7 +445,31 @@ msr::airlib::ProjectionMatrix APIPCamera::getProjectionMatrix() const
 
 void APIPCamera::Tick(float DeltaTime)
 {
-    if (gimbal_stabilization_ > 0) {
+    if (hosted_gimbal_control_active_) {
+        SetActorRelativeLocation(hosted_gimbal_mount_relative_location_);
+        if (hosted_gimbal_motion_active_) {
+            hosted_gimbal_motion_elapsed_seconds_ += FMath::Max(0.0f, DeltaTime);
+
+            if (hosted_gimbal_motion_duration_seconds_ <= KINDA_SMALL_NUMBER ||
+                hosted_gimbal_motion_elapsed_seconds_ >= hosted_gimbal_motion_duration_seconds_) {
+                applyHostedGimbalOrientation(hosted_gimbal_motion_target_rotator_);
+                hosted_gimbal_motion_active_ = false;
+                hosted_gimbal_motion_elapsed_seconds_ = hosted_gimbal_motion_duration_seconds_;
+                if (hosted_gimbal_release_after_motion_) {
+                    hosted_gimbal_control_active_ = false;
+                }
+                updateActorTickEnabled();
+            }
+            else {
+                const float alpha = hosted_gimbal_motion_elapsed_seconds_ / hosted_gimbal_motion_duration_seconds_;
+                applyHostedGimbalOrientation(LerpRotatorShortestPath(
+                    hosted_gimbal_motion_start_rotator_,
+                    hosted_gimbal_motion_target_rotator_,
+                    alpha));
+            }
+        }
+    }
+    else if (gimbal_stabilization_ > 0) {
         FRotator rotator = this->GetActorRotation();
         if (!std::isnan(gimbald_rotator_.Pitch))
             rotator.Pitch = gimbald_rotator_.Pitch * gimbal_stabilization_ +
@@ -550,7 +620,7 @@ unsigned int APIPCamera::cameraCaptureCount()
 
 void APIPCamera::updateActorTickEnabled()
 {
-    SetActorTickEnabled(gimbal_stabilization_ > 0 || sensor_params_.draw_sensor || hasActiveEquirectangularPreview());
+    SetActorTickEnabled(hosted_gimbal_control_active_ || hosted_gimbal_motion_active_ || gimbal_stabilization_ > 0 || sensor_params_.draw_sensor || hasActiveEquirectangularPreview());
 }
 
 bool APIPCamera::hasActiveEquirectangularPreview() const
@@ -662,6 +732,17 @@ bool APIPCamera::getCameraTypeEnabled(ImageType type, std::string annotation_nam
            camera_type_enabled_[render_index];
 }
 
+bool APIPCamera::isCameraTypeHosted(ImageType type, std::string annotation_name) const
+{
+    const auto capture_setting = sensor_params_.capture_settings.find(Utils::toNumeric(type));
+    if (capture_setting == sensor_params_.capture_settings.end() || !capture_setting->second.host) {
+        return false;
+    }
+
+    return type != ImageType::Annotation ||
+           capture_setting->second.host_annotation_name == annotation_name;
+}
+
 bool APIPCamera::GetAnnotationNameExist(std::string annotation_name)
 {
     if (annotator_name_to_index_map_.Contains(FString(annotation_name.c_str())))
@@ -683,6 +764,9 @@ void APIPCamera::setCameraOrientation(const FRotator& rotator)
         gimbald_rotator_.Yaw = rotator.Yaw;
     }
     this->SetActorRelativeRotation(rotator);
+    if (hosted_gimbal_mount_initialized_ && !hosted_gimbal_control_active_) {
+        hosted_gimbal_current_relative_rotator_ = NormalizeRotator(rotator);
+    }
 }
 
 
@@ -770,6 +854,123 @@ void APIPCamera::setCameraPose(const msr::airlib::Pose& relative_pose)
     else {
         this->SetActorRelativeRotation(rotator);
     }
+    if (hosted_gimbal_mount_initialized_ && !hosted_gimbal_control_active_) {
+        hosted_gimbal_mount_relative_location_ = position;
+        hosted_gimbal_current_relative_rotator_ = NormalizeRotator(rotator);
+    }
+}
+
+bool APIPCamera::canControlHostedGimbal() const
+{
+    return hosted_gimbal_mount_initialized_ && !sensor_params_.external;
+}
+
+void APIPCamera::initializeHostedGimbalMountIfNeeded()
+{
+    if (!hosted_gimbal_mount_initialized_) {
+        hosted_gimbal_mount_relative_location_ = GetRelativeLocationSafe(this);
+        hosted_gimbal_initial_relative_rotator_ = NormalizeRotator(GetRelativeRotationSafe(this));
+        hosted_gimbal_current_relative_rotator_ = hosted_gimbal_initial_relative_rotator_;
+        hosted_gimbal_mount_initialized_ = true;
+    }
+}
+
+void APIPCamera::applyHostedGimbalOrientation(const FRotator& relative_rotator)
+{
+    const FRotator normalized_rotator = NormalizeRotator(relative_rotator);
+    hosted_gimbal_current_relative_rotator_ = normalized_rotator;
+    gimbald_rotator_ = normalized_rotator;
+    SetActorRelativeLocation(hosted_gimbal_mount_relative_location_);
+    SetActorRelativeRotation(normalized_rotator);
+}
+
+void APIPCamera::startHostedGimbalMotion(const FRotator& target_rotator, float duration_seconds, bool release_after_motion)
+{
+    hosted_gimbal_motion_start_rotator_ = hosted_gimbal_current_relative_rotator_;
+    hosted_gimbal_motion_target_rotator_ = NormalizeRotator(target_rotator);
+    hosted_gimbal_motion_elapsed_seconds_ = 0.0f;
+    hosted_gimbal_motion_duration_seconds_ = FMath::Max(0.0f, duration_seconds);
+    hosted_gimbal_motion_active_ = hosted_gimbal_motion_duration_seconds_ > KINDA_SMALL_NUMBER;
+    hosted_gimbal_release_after_motion_ = hosted_gimbal_motion_active_ && release_after_motion;
+    applyHostedGimbalOrientation(hosted_gimbal_motion_start_rotator_);
+}
+
+void APIPCamera::setHostedGimbalOrientation(const FRotator& relative_rotator, float duration_seconds)
+{
+    initializeHostedGimbalMountIfNeeded();
+
+    const FRotator normalized_rotator = NormalizeRotator(relative_rotator);
+    hosted_gimbal_control_active_ = true;
+    startHostedGimbalMotion(normalized_rotator, duration_seconds, false);
+    if (!hosted_gimbal_motion_active_) {
+        applyHostedGimbalOrientation(normalized_rotator);
+    }
+    updateActorTickEnabled();
+}
+
+void APIPCamera::resetHostedGimbalOrientation(float duration_seconds)
+{
+    initializeHostedGimbalMountIfNeeded();
+
+    hosted_gimbal_control_active_ = true;
+    startHostedGimbalMotion(hosted_gimbal_initial_relative_rotator_, duration_seconds, true);
+    if (!hosted_gimbal_motion_active_) {
+        hosted_gimbal_control_active_ = false;
+        applyHostedGimbalOrientation(hosted_gimbal_initial_relative_rotator_);
+    }
+    updateActorTickEnabled();
+}
+
+FRotator APIPCamera::getHostedGimbalOrientation() const
+{
+    return hosted_gimbal_current_relative_rotator_;
+}
+
+FRotator APIPCamera::getHostedGimbalInitialOrientation() const
+{
+    return hosted_gimbal_initial_relative_rotator_;
+}
+
+FRotator APIPCamera::getHostedGimbalTargetOrientation() const
+{
+    return hosted_gimbal_motion_active_ ? hosted_gimbal_motion_target_rotator_ : hosted_gimbal_current_relative_rotator_;
+}
+
+bool APIPCamera::isHostedGimbalMotionActive() const
+{
+    return hosted_gimbal_motion_active_;
+}
+
+float APIPCamera::getHostedGimbalMotionDurationSeconds() const
+{
+    return hosted_gimbal_motion_active_ ? hosted_gimbal_motion_duration_seconds_ : 0.0f;
+}
+
+float APIPCamera::getHostedGimbalMotionElapsedSeconds() const
+{
+    return hosted_gimbal_motion_active_ ? hosted_gimbal_motion_elapsed_seconds_ : 0.0f;
+}
+
+float APIPCamera::getHostedGimbalMotionRemainingSeconds() const
+{
+    return hosted_gimbal_motion_active_
+        ? FMath::Max(0.0f, hosted_gimbal_motion_duration_seconds_ - hosted_gimbal_motion_elapsed_seconds_)
+        : 0.0f;
+}
+
+FVector APIPCamera::getHostedGimbalMountRelativeLocation() const
+{
+    return hosted_gimbal_mount_relative_location_;
+}
+
+FVector APIPCamera::getHostedGimbalCurrentRelativeLocation() const
+{
+    return GetRelativeLocationSafe(this);
+}
+
+bool APIPCamera::isHostedGimbalLocationPinned(float tolerance) const
+{
+    return FVector::DistSquared(GetRelativeLocationSafe(this), hosted_gimbal_mount_relative_location_) <= tolerance * tolerance;
 }
 
 void APIPCamera::setCameraFoV(float fov_degrees)
@@ -1072,6 +1273,17 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
     ned_transform_ = &ned_transform;
 
     sensor_params_ = camera_setting;
+    hosted_gimbal_mount_relative_location_ = GetRelativeLocationSafe(this);
+    hosted_gimbal_initial_relative_rotator_ = NormalizeRotator(GetRelativeRotationSafe(this));
+    hosted_gimbal_current_relative_rotator_ = hosted_gimbal_initial_relative_rotator_;
+    hosted_gimbal_mount_initialized_ = true;
+    hosted_gimbal_control_active_ = false;
+    hosted_gimbal_motion_active_ = false;
+    hosted_gimbal_release_after_motion_ = false;
+    hosted_gimbal_motion_start_rotator_ = FRotator::ZeroRotator;
+    hosted_gimbal_motion_target_rotator_ = hosted_gimbal_initial_relative_rotator_;
+    hosted_gimbal_motion_elapsed_seconds_ = 0.0f;
+    hosted_gimbal_motion_duration_seconds_ = 0.0f;
 
     gimbal_stabilization_ = Utils::clip(camera_setting.gimbal.stabilization, 0.0f, 1.0f);
     if (gimbal_stabilization_ > 0) {

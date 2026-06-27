@@ -68,6 +68,7 @@ public:
 
     void setCameraTypeEnabled(ImageType type, bool enabled, std::string annotation_name = "");
     bool getCameraTypeEnabled(ImageType type, std::string annotation_name = "") const;
+    bool isCameraTypeHosted(ImageType type, std::string annotation_name = "") const;
     AirSimSettings::CameraSetting getParams() const;
     void setCaptureUpdate(USceneCaptureComponent2D* capture, bool nodisplay);
     void setCameraTypeUpdate(ImageType type, bool nodisplay, std::string annotation_name = "");
@@ -82,6 +83,19 @@ public:
     void addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f, bool use_source_stencil_backend = false);
     void setupCameraFromSettings(const APIPCamera::CameraSetting& camera_setting, const NedTransform& ned_transform);
     void setCameraPose(const msr::airlib::Pose& relative_pose);
+    bool canControlHostedGimbal() const;
+    void setHostedGimbalOrientation(const FRotator& relative_rotator, float duration_seconds = 0.0f);
+    void resetHostedGimbalOrientation(float duration_seconds = 0.0f);
+    FRotator getHostedGimbalOrientation() const;
+    FRotator getHostedGimbalInitialOrientation() const;
+    FRotator getHostedGimbalTargetOrientation() const;
+    bool isHostedGimbalMotionActive() const;
+    float getHostedGimbalMotionDurationSeconds() const;
+    float getHostedGimbalMotionElapsedSeconds() const;
+    float getHostedGimbalMotionRemainingSeconds() const;
+    FVector getHostedGimbalMountRelativeLocation() const;
+    FVector getHostedGimbalCurrentRelativeLocation() const;
+    bool isHostedGimbalLocationPinned(float tolerance = 0.1f) const;
     void setCameraFoV(float fov_degrees);
     msr::airlib::CameraInfo getCameraInfo() const;
     std::vector<float> getDistortionParams() const;
@@ -161,6 +175,17 @@ private: //members
     TArray<bool> equirectangular_preview_updates_;
     FRotator gimbald_rotator_;
     float gimbal_stabilization_;
+    FVector hosted_gimbal_mount_relative_location_ = FVector::ZeroVector;
+    FRotator hosted_gimbal_initial_relative_rotator_ = FRotator::ZeroRotator;
+    FRotator hosted_gimbal_current_relative_rotator_ = FRotator::ZeroRotator;
+    bool hosted_gimbal_mount_initialized_ = false;
+    bool hosted_gimbal_control_active_ = false;
+    bool hosted_gimbal_motion_active_ = false;
+    bool hosted_gimbal_release_after_motion_ = false;
+    FRotator hosted_gimbal_motion_start_rotator_ = FRotator::ZeroRotator;
+    FRotator hosted_gimbal_motion_target_rotator_ = FRotator::ZeroRotator;
+    float hosted_gimbal_motion_elapsed_seconds_ = 0.0f;
+    float hosted_gimbal_motion_duration_seconds_ = 0.0f;
     const NedTransform* ned_transform_;
     TMap<int, EPixelFormat> image_type_to_pixel_format_map_;
 
@@ -178,6 +203,9 @@ private: //methods
     unsigned int cameraCaptureCount();
     void enableCaptureComponent(const ImageType type, bool is_enabled, std::string annotation_name = "");
     void updateActorTickEnabled();
+    void initializeHostedGimbalMountIfNeeded();
+    void applyHostedGimbalOrientation(const FRotator& relative_rotator);
+    void startHostedGimbalMotion(const FRotator& target_rotator, float duration_seconds, bool release_after_motion);
     bool hasActiveEquirectangularPreview() const;
     void setEquirectangularPreviewUpdate(int render_index, bool enabled);
     void ensureEquirectangularPreviewTarget(int render_index, const CaptureSetting& setting, ImageType type);

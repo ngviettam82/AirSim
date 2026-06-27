@@ -52,7 +52,7 @@ For `ImageType: 11` (Annotation), also set `HostAnnotation` to the configured an
 
 ## URLs
 
-Open `http://127.0.0.1:8080/` for the dashboard. It shows every hosted route, supports click-to-focus and filtering, and can show or hide the measured capture FPS. Grid mode subscribes to every visible card. Focus mode disconnects every other card and keeps only the focused camera subscribed; click the focused card again to restore the grid subscriptions.
+Open `http://127.0.0.1:8080/` for the dashboard. It shows every hosted route, supports click-to-focus and filtering, and can show or hide the measured capture FPS. Grid mode subscribes to every visible card. Focus mode disconnects every other card and keeps only the focused camera subscribed; click the focused card again to restore the grid subscriptions. If the focused route belongs to a vehicle-mounted camera, the dashboard also shows gimbal controls for pitch, yaw, roll, speed, and reset.
 
 For the example above, the scene endpoints are:
 
@@ -65,6 +65,58 @@ http://127.0.0.1:8080/camera/Drone1/front_stream/scene/raw
 The first URL is a continuous MJPEG stream and is suitable for browsers, OpenCV, and video players. The snapshot URL returns one JPEG frame. The raw URL returns one exact capture as `application/octet-stream` for machine processing. Use `GET /api/cameras` to discover all configured URLs and `GET /api/status` for measured FPS, latency, sequence, dimensions, subscribers, and capture errors.
 
 Snapshot and raw routes return a newly captured frame by default. They also accept `?after=N`; when supplied, the request returns an available frame whose sequence is greater than `N`, or waits up to 10 seconds for one. This supports efficient per-camera polling without returning the same frame twice.
+
+## Gimbal control
+
+CameraHost can control the relative orientation of hosted vehicle-mounted cameras. It does not move the camera mount: only the camera's relative rotation is changed, and the original relative location stays pinned to the vehicle. Yaw is relative to the vehicle heading.
+
+Use `GET /api/gimbals` to discover controllable cameras and their current state. Each entry includes the vehicle name, camera name, current orientation, initial orientation, motion state, mount-relative location, current relative location, and whether the location is pinned.
+
+Send a gimbal command with `POST /api/gimbal` and a `text/plain` body containing exactly six whitespace-separated fields:
+
+```text
+vehicle camera pitch yaw roll speed
+```
+
+For example:
+
+```text
+drone1 cam1 -60 30 10 60
+```
+
+The angles are target pitch, yaw, and roll in degrees. Pitch must be within `-90..90`, while yaw and roll must be within `-180..180`. `speed` is the angular speed in degrees per second. CameraHost computes the travel time from the largest angular axis delta and reaches the target orientation at the end of that time. The command input does not accept JSON and does not accept a duration field.
+
+The response is JSON containing the accepted camera state and motion state:
+
+```json
+{
+  "vehicle_name": "drone1",
+  "camera_name": "cam1",
+  "orientation": { "pitch": 0, "yaw": 0, "roll": 0, "degrees": true },
+  "motion": {
+    "active": true,
+    "duration_seconds": 1.0,
+    "elapsed_seconds": 0.0,
+    "remaining_seconds": 1.0,
+    "target_orientation": { "pitch": -60, "yaw": 30, "roll": 10, "degrees": true }
+  },
+  "mount_relative_location": { "x": 50, "y": 0, "z": 0 },
+  "current_relative_location": { "x": 50, "y": 0, "z": 0 },
+  "location_pinned": true
+}
+```
+
+A helper script is provided for command-line control:
+
+```powershell
+python tools\send_camera_gimbal_command.py drone1 cam1 -60 30 10 60
+```
+
+For a remote simulator machine, pass the reachable host address and port:
+
+```powershell
+python tools\send_camera_gimbal_command.py --host 192.168.1.20 --port 8080 drone1 cam1 -60 30 10 60
+```
 
 ## Raw frame format
 
@@ -98,4 +150,4 @@ Capture work is lazy: a hosted route renders only while an MJPEG client is conne
 
 ## Network safety
 
-The host has no authentication or TLS. Keep the default loopback binding unless remote access is required. For LAN access, restrict the port with the host firewall or a trusted reverse proxy. Do not expose it directly to the public internet.
+The host has no authentication or TLS. Keep the default loopback binding unless remote access is required. For LAN access, restrict the port with the host firewall or a trusted reverse proxy, especially when gimbal control is enabled through hosted vehicle cameras. Do not expose it directly to the public internet.

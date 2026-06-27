@@ -1643,6 +1643,7 @@ void ASimModeBase::startCameraStreamServer()
                 hosted.CameraName = UTF8_TO_TCHAR(camera_name.c_str());
                 hosted.AnnotationName = UTF8_TO_TCHAR(capture_setting.host_annotation_name.c_str());
                 hosted.ImageType = image_type;
+                hosted.Camera = camera;
                 hosted.ImageCapture = image_capture;
                 hosted_cameras.push_back(std::move(hosted));
             }
