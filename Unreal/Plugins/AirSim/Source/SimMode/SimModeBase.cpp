@@ -5,6 +5,7 @@
 #include "Runtime/Launch/Resources/Version.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
+#include "HAL/IConsoleManager.h"
 #include "Misc/OutputDeviceNull.h"
 #include "Engine/World.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
@@ -69,6 +70,21 @@ namespace
 
         return false;
     }
+
+    void ApplySourceStencilConsoleSettings()
+    {
+        const auto set_console_var = [](const TCHAR* name, int32 value) {
+            if (IConsoleVariable* console_var = IConsoleManager::Get().FindConsoleVariable(name)) {
+                console_var->Set(value, ECVF_SetByConsole);
+            }
+        };
+
+        set_console_var(TEXT("r.CustomDepth"), 3);
+        set_console_var(TEXT("r.CustomDepth.Order"), 0);
+        set_console_var(TEXT("r.CustomDepthTemporalAAJitter"), 0);
+        set_console_var(TEXT("r.Nanite.CustomDepth.ExportMethod"), 0);
+    }
+
 }
 
 ASimModeBase* ASimModeBase::getSimMode()
@@ -273,10 +289,9 @@ bool ASimModeBase::IsAnnotationRGBValid(FString annotation_name, FColor color) {
 
 void ASimModeBase::InitializeInstanceSegmentation()
 {
-    infrared_annotator_ = FObjectAnnotator(FString(TEXT("Infrared")), FObjectAnnotator::AnnotatorType::Infrared, false);
+    ApplySourceStencilConsoleSettings();
     if (getSettings().initial_instance_segmentation) {
         instance_segmentation_annotator_.Initialize(this->GetLevel());
-        infrared_annotator_.Initialize(this->GetLevel());
         ForceUpdateInstanceSegmentation();
     }
 }
@@ -880,8 +895,7 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
             UAirBlueprintLib::RunCommandOnGameThread([this, matching_keys, object_id, &changes]() {
                 for (const FString& key : matching_keys) {
                     const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
-                    const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
-                    if (segmentation_success || infrared_success) {
+                    if (segmentation_success) {
                         ++changes;
                     }
                 }
@@ -895,9 +909,7 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		bool success = false;
 		FString key = mesh_name.c_str();
 		UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
-			const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
-			const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(key, object_id);
-			success = segmentation_success || infrared_success;
+			success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
 		}, true);
 	        if(success && update_annotation)requestInstanceSegmentationRefresh();
 	        return success;
@@ -939,16 +951,12 @@ std::vector<int> ASimModeBase::SetMeshInstanceSegmentationIDs(const std::vector<
 				for (auto It = primitive_component_map.CreateConstIterator(); It; ++It)
 				{
 					if (std::regex_match(TCHAR_TO_UTF8(*It.Key()), name_regex)) {
-						const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(It.Key(), ids[index]);
-						const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(It.Key(), ids[index]);
-						success = segmentation_success || infrared_success || success;
+						success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(It.Key(), ids[index]) || success;
 					}
 				}
 			}
 			else {
-				const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(keys[index], ids[index]);
-				const bool infrared_success = infrared_annotator_.SetComponentRGBColorByIndex(keys[index], ids[index]);
-				success = segmentation_success || infrared_success;
+				success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(keys[index], ids[index]);
 			}
 
 			if (success) {
@@ -1321,7 +1329,6 @@ std::string ASimModeBase::GetMeshRGBAnnotationColor(const std::string& annotatio
 
 bool ASimModeBase::AddNewActorToInstanceSegmentation(AActor* Actor, bool update_annotation){
 	bool success = instance_segmentation_annotator_.AnnotateNewActor(Actor);
-    success = infrared_annotator_.AnnotateNewActor(Actor) || success;
     if(success && update_annotation)requestInstanceSegmentationRefresh();
     return success;
 }
@@ -1329,14 +1336,12 @@ bool ASimModeBase::AddNewActorToInstanceSegmentation(AActor* Actor, bool update_
 bool ASimModeBase::DeleteActorFromInstanceSegmentation(AActor* Actor, bool update_annotation) {
 
     bool success = instance_segmentation_annotator_.DeleteActor(Actor);
-    success = infrared_annotator_.DeleteActor(Actor) || success;
     if (success && update_annotation)requestInstanceSegmentationRefresh();
     return success;
 }
 
 void ASimModeBase::ForceUpdateInstanceSegmentation() {
 	instance_segmentation_annotator_.UpdateAnnotationComponents(this->GetWorld());
-    infrared_annotator_.UpdateAnnotationComponents(this->GetWorld());
     requestInstanceSegmentationRefresh(true);
 }
 
@@ -1427,7 +1432,6 @@ void ASimModeBase::ForceUpdateAnnotation(FString annotation_name) {
 
 void ASimModeBase::updateInstanceSegmentationAnnotation() {
     TArray<TWeakObjectPtr<UPrimitiveComponent>> current_segmentation_components = instance_segmentation_annotator_.GetAnnotationComponents();
-    TArray<TWeakObjectPtr<UPrimitiveComponent>> current_infrared_components = infrared_annotator_.GetAnnotationComponents();
 
     if (!instance_segmentation_camera_cache_initialized_) {
         refreshCachedAnnotationCameras();
@@ -1438,7 +1442,7 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
 
     for (const TWeakObjectPtr<APIPCamera>& camera_ptr : cached_instance_segmentation_cameras_) {
         if (APIPCamera* cur_camera = camera_ptr.Get()) {
-            cur_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components);
+            cur_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components);
         }
     }
 
@@ -1451,16 +1455,16 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
 
     if (CameraDirector != nullptr) {
         if (APIPCamera* fpv_camera = CameraDirector->getFpvCamera()) {
-			fpv_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
+			fpv_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
         }
         if (APIPCamera* external_camera = CameraDirector->getExternalCamera()) {
-            external_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
+            external_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
         }
         if (APIPCamera* backup_camera = CameraDirector->getBackupCamera()) {
-            backup_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
+            backup_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
         }
         if (APIPCamera* front_camera = CameraDirector->getFrontCamera()) {
-            front_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_infrared_components, true);
+            front_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
         }
     }
 }
@@ -1570,7 +1574,6 @@ void ASimModeBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
     vehicle_sim_apis_.clear();
 
     instance_segmentation_annotator_.EndPlay();
-    infrared_annotator_.EndPlay();
     for(auto& annotator : annotators_){
 		annotator.Value.EndPlay();
 	}
@@ -1804,6 +1807,11 @@ void ASimModeBase::setupPhysicsLoopPeriod()
 
 void ASimModeBase::Tick(float DeltaSeconds)
 {
+    if (source_stencil_console_settings_refresh_ticks_remaining_ > 0) {
+        ApplySourceStencilConsoleSettings();
+        --source_stencil_console_settings_refresh_ticks_remaining_;
+    }
+
     if (isRecording())
         ++record_tick_count;
 
