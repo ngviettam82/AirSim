@@ -5,7 +5,6 @@
 #include "Runtime/Launch/Resources/Version.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/GameplayStatics.h"
-#include "HAL/IConsoleManager.h"
 #include "Misc/OutputDeviceNull.h"
 #include "Engine/World.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
@@ -70,21 +69,6 @@ namespace
 
         return false;
     }
-
-    void ApplySourceStencilConsoleSettings()
-    {
-        const auto set_console_var = [](const TCHAR* name, int32 value) {
-            if (IConsoleVariable* console_var = IConsoleManager::Get().FindConsoleVariable(name)) {
-                console_var->Set(value, ECVF_SetByConsole);
-            }
-        };
-
-        set_console_var(TEXT("r.CustomDepth"), 3);
-        set_console_var(TEXT("r.CustomDepth.Order"), 0);
-        set_console_var(TEXT("r.CustomDepthTemporalAAJitter"), 0);
-        set_console_var(TEXT("r.Nanite.CustomDepth.ExportMethod"), 0);
-    }
-
 }
 
 ASimModeBase* ASimModeBase::getSimMode()
@@ -289,7 +273,6 @@ bool ASimModeBase::IsAnnotationRGBValid(FString annotation_name, FColor color) {
 
 void ASimModeBase::InitializeInstanceSegmentation()
 {
-    ApplySourceStencilConsoleSettings();
     if (getSettings().initial_instance_segmentation) {
         instance_segmentation_annotator_.Initialize(this->GetLevel());
         ForceUpdateInstanceSegmentation();
@@ -894,8 +877,7 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
         if (matching_keys.Num() > 0) {
             UAirBlueprintLib::RunCommandOnGameThread([this, matching_keys, object_id, &changes]() {
                 for (const FString& key : matching_keys) {
-                    const bool segmentation_success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
-                    if (segmentation_success) {
+                    if (instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id)) {
                         ++changes;
                     }
                 }
@@ -1442,7 +1424,7 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
 
     for (const TWeakObjectPtr<APIPCamera>& camera_ptr : cached_instance_segmentation_cameras_) {
         if (APIPCamera* cur_camera = camera_ptr.Get()) {
-            cur_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components);
+            cur_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components);
         }
     }
 
@@ -1455,16 +1437,16 @@ void ASimModeBase::updateInstanceSegmentationAnnotation() {
 
     if (CameraDirector != nullptr) {
         if (APIPCamera* fpv_camera = CameraDirector->getFpvCamera()) {
-			fpv_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
+			fpv_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, true);
         }
         if (APIPCamera* external_camera = CameraDirector->getExternalCamera()) {
-            external_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
+            external_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, true);
         }
         if (APIPCamera* backup_camera = CameraDirector->getBackupCamera()) {
-            backup_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
+            backup_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, true);
         }
         if (APIPCamera* front_camera = CameraDirector->getFrontCamera()) {
-            front_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, current_segmentation_components, true);
+            front_camera->updateInstanceSegmentationAndInfraredAnnotation(current_segmentation_components, true);
         }
     }
 }
@@ -1808,11 +1790,6 @@ void ASimModeBase::setupPhysicsLoopPeriod()
 
 void ASimModeBase::Tick(float DeltaSeconds)
 {
-    if (source_stencil_console_settings_refresh_ticks_remaining_ > 0) {
-        ApplySourceStencilConsoleSettings();
-        --source_stencil_console_settings_refresh_ticks_remaining_;
-    }
-
     if (isRecording())
         ++record_tick_count;
 

@@ -23,18 +23,6 @@ namespace
                type == FObjectAnnotator::AnnotatorType::Infrared;
     }
 
-    int32 ResolveRenderIndex(APIPCamera::ImageType type,
-                             const std::string& annotation_name,
-                             const TMap<FString, int>& annotator_name_to_index_map)
-    {
-        if (type == APIPCamera::ImageType::Annotation) {
-            const int* render_index = annotator_name_to_index_map.Find(FString(annotation_name.c_str()));
-            return render_index == nullptr ? INDEX_NONE : *render_index;
-        }
-
-        return static_cast<int32>(type);
-    }
-
     bool UsesGlobalEquirectangularScenePipeline(int image_type)
     {
         return image_type == static_cast<int>(APIPCamera::ImageType::Scene) ||
@@ -726,10 +714,12 @@ void APIPCamera::disableAll()
 
 bool APIPCamera::getCameraTypeEnabled(ImageType type, std::string annotation_name) const
 {
-    const int32 render_index = ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_);
-    return render_index >= 0 &&
-           render_index < static_cast<int32>(camera_type_enabled_.size()) &&
-           camera_type_enabled_[render_index];
+    if (type == ImageType::Annotation) {
+        return camera_type_enabled_[annotator_name_to_index_map_[FString(annotation_name.c_str())]];
+    }
+    else {
+        return camera_type_enabled_[Utils::toNumeric(type)];
+    }
 }
 
 bool APIPCamera::isCameraTypeHosted(ImageType type, std::string annotation_name) const
@@ -1120,8 +1110,7 @@ void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPri
     syncEquirectangularCaptureFrom2D(Utils::toNumeric(ImageType::Segmentation));
 }
 
-void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& SegmentationComponentList,
-                                                                 const TArray<TWeakObjectPtr<UPrimitiveComponent> >& InfraredComponentList,
+void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& /*ComponentList*/,
                                                                  bool only_hide)
 {
     if (!only_hide) {
@@ -1720,11 +1709,6 @@ void APIPCamera::setNoiseMaterial(int image_type, UObject* outer, FPostProcessSe
 
 void APIPCamera::enableCaptureComponent(const APIPCamera::ImageType type, bool is_enabled, std::string annotation_name)
 {
-    const int32 render_index = ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_);
-    if (render_index < 0 || render_index >= static_cast<int32>(camera_type_enabled_.size())) {
-        return;
-    }
-
     if (isEquirectangularCapture(type, annotation_name)) {
         USceneCaptureComponentCube* cube_capture = getEquirectangularCaptureComponent(type, false, annotation_name);
         UTextureRenderTargetCube* cube_target = getEquirectangularRenderTarget(type, false, annotation_name);
@@ -1741,10 +1725,16 @@ void APIPCamera::enableCaptureComponent(const APIPCamera::ImageType type, bool i
                     cube_capture->Deactivate();
                     cube_capture->TextureTarget = nullptr;
                 }
+                const int render_index = type == ImageType::Annotation
+                    ? annotator_name_to_index_map_[FString(annotation_name.c_str())]
+                    : Utils::toNumeric(type);
                 setEquirectangularPreviewUpdate(render_index, false);
             }
 
-            camera_type_enabled_[render_index] = is_enabled;
+            if (type == ImageType::Annotation)
+                camera_type_enabled_[annotator_name_to_index_map_[FString(annotation_name.c_str())]] = is_enabled;
+            else
+                camera_type_enabled_[Utils::toNumeric(type)] = is_enabled;
         }
         return;
     }
@@ -1773,21 +1763,27 @@ void APIPCamera::enableCaptureComponent(const APIPCamera::ImageType type, bool i
                 }
             }
         }
-        camera_type_enabled_[render_index] = is_enabled;
+        if (type == ImageType::Annotation)
+			camera_type_enabled_[annotator_name_to_index_map_[FString(annotation_name.c_str())]] = is_enabled;
+        else
+            camera_type_enabled_[Utils::toNumeric(type)] = is_enabled;
     }
     //else nothing to enable
 }
 
 UTextureRenderTarget2D* APIPCamera::getRenderTarget(const APIPCamera::ImageType type, bool if_active, std::string annotation_name)
 {
-    const int32 render_index = ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_);
-    if (render_index < 0 ||
-        render_index >= static_cast<int32>(camera_type_enabled_.size()) ||
-        !render_targets_.IsValidIndex(render_index)) {
-        return nullptr;
+    unsigned int image_type = Utils::toNumeric(type);
+	if (type == ImageType::Annotation)
+    {
+        if (!if_active || camera_type_enabled_[annotator_name_to_index_map_[FString(annotation_name.c_str())]])
+            return render_targets_[annotator_name_to_index_map_[FString(annotation_name.c_str())]];
     }
-
-    return (!if_active || camera_type_enabled_[render_index]) ? render_targets_[render_index] : nullptr;
+    else {
+        if (!if_active || camera_type_enabled_[image_type])
+            return render_targets_[image_type];
+    }
+    return nullptr;
 }
 
 UTextureRenderTarget2D* APIPCamera::getPreviewRenderTarget(const APIPCamera::ImageType type, bool if_active, std::string annotation_name)
@@ -1828,67 +1824,80 @@ UTextureRenderTarget2D* APIPCamera::getPreviewRenderTarget(const APIPCamera::Ima
 
 bool APIPCamera::isEquirectangularCapture(const APIPCamera::ImageType type, std::string annotation_name) const
 {
-    if (type == ImageType::Annotation &&
-        ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_) == INDEX_NONE) {
-        return false;
+    if (type == ImageType::Annotation) {
+        if (!annotator_name_to_index_map_.Contains(FString(annotation_name.c_str()))) {
+            return false;
+        }
+        return sensor_params_.capture_settings.at(Utils::toNumeric(ImageType::Annotation)).isEquirectangular();
     }
 
-    const int32 setting_index = type == ImageType::Annotation
-        ? static_cast<int32>(ImageType::Annotation)
-        : static_cast<int32>(type);
-    if (setting_index < 0 || setting_index >= static_cast<int32>(sensor_params_.capture_settings.size())) {
-        return false;
-    }
-
-    return sensor_params_.capture_settings.at(setting_index).isEquirectangular();
+    return sensor_params_.capture_settings.at(Utils::toNumeric(type)).isEquirectangular();
 }
 
 USceneCaptureComponentCube* APIPCamera::getEquirectangularCaptureComponent(const APIPCamera::ImageType type, bool if_active, std::string annotation_name)
 {
-    const int32 render_index = ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_);
-    if (render_index < 0 ||
-        render_index >= static_cast<int32>(camera_type_enabled_.size()) ||
-        !equirectangular_captures_.IsValidIndex(render_index)) {
-        return nullptr;
-    }
+    if (type == ImageType::Annotation) {
+        if (!annotator_name_to_index_map_.Contains(FString(annotation_name.c_str()))) {
+            return nullptr;
+        }
 
-    return (!if_active || camera_type_enabled_[render_index]) ? equirectangular_captures_[render_index] : nullptr;
+        const int render_index = annotator_name_to_index_map_[FString(annotation_name.c_str())];
+        if (equirectangular_captures_.IsValidIndex(render_index) && (!if_active || camera_type_enabled_[render_index]))
+            return equirectangular_captures_[render_index];
+    }
+    else {
+        const unsigned int image_type = Utils::toNumeric(type);
+        if (equirectangular_captures_.IsValidIndex(image_type) && (!if_active || camera_type_enabled_[image_type]))
+            return equirectangular_captures_[image_type];
+    }
+    return nullptr;
 }
 
 UTextureRenderTargetCube* APIPCamera::getEquirectangularRenderTarget(const APIPCamera::ImageType type, bool if_active, std::string annotation_name)
 {
-    const int32 render_index = ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_);
-    if (render_index < 0 ||
-        render_index >= static_cast<int32>(camera_type_enabled_.size()) ||
-        !equirectangular_render_targets_.IsValidIndex(render_index)) {
-        return nullptr;
-    }
+    if (type == ImageType::Annotation) {
+        if (!annotator_name_to_index_map_.Contains(FString(annotation_name.c_str()))) {
+            return nullptr;
+        }
 
-    return (!if_active || camera_type_enabled_[render_index]) ? equirectangular_render_targets_[render_index] : nullptr;
+        const int render_index = annotator_name_to_index_map_[FString(annotation_name.c_str())];
+        if (equirectangular_render_targets_.IsValidIndex(render_index) && (!if_active || camera_type_enabled_[render_index]))
+            return equirectangular_render_targets_[render_index];
+    }
+    else {
+        const unsigned int image_type = Utils::toNumeric(type);
+        if (equirectangular_render_targets_.IsValidIndex(image_type) && (!if_active || camera_type_enabled_[image_type]))
+            return equirectangular_render_targets_[image_type];
+    }
+    return nullptr;
 }
 
 UDetectionComponent* APIPCamera::getDetectionComponent(const ImageType type, bool if_active, std::string annotation_name) const
 {
-    const int32 render_index = ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_);
-    if (render_index < 0 ||
-        render_index >= static_cast<int32>(camera_type_enabled_.size()) ||
-        !detections_.IsValidIndex(render_index)) {
-        return nullptr;
+    if (type == ImageType::Annotation) {
+        if (!if_active || camera_type_enabled_[annotator_name_to_index_map_[FString(annotation_name.c_str())]])
+            return detections_[annotator_name_to_index_map_[FString(annotation_name.c_str())]];
     }
-
-    return (!if_active || camera_type_enabled_[render_index]) ? detections_[render_index] : nullptr;
+    else {
+        unsigned int image_type = Utils::toNumeric(type);
+        if (!if_active || camera_type_enabled_[image_type])
+            return detections_[image_type];
+    }
+    return nullptr;
 }
 
 USceneCaptureComponent2D* APIPCamera::getCaptureComponent(const APIPCamera::ImageType type, bool if_active, std::string annotation_name)
 {
-    const int32 render_index = ResolveRenderIndex(type, annotation_name, annotator_name_to_index_map_);
-    if (render_index < 0 ||
-        render_index >= static_cast<int32>(camera_type_enabled_.size()) ||
-        !captures_.IsValidIndex(render_index)) {
-        return nullptr;
+    if (type == ImageType::Annotation) {
+        if (!if_active || camera_type_enabled_[annotator_name_to_index_map_[FString(annotation_name.c_str())]])
+            return captures_[annotator_name_to_index_map_[FString(annotation_name.c_str())]];
     }
-
-    return (!if_active || camera_type_enabled_[render_index]) ? captures_[render_index] : nullptr;
+    else {
+        unsigned int image_type = Utils::toNumeric(type);
+        if (!if_active || camera_type_enabled_[image_type])
+            return captures_[image_type];
+    }
+    return nullptr;
 }
 
 void APIPCamera::disableAllPIP()

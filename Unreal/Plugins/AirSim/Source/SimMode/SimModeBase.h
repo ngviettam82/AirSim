@@ -342,7 +342,6 @@ private:
     bool instance_segmentation_camera_cache_initialized_ = false;
     TArray<TWeakObjectPtr<APIPCamera>> cached_instance_segmentation_cameras_;
     TArray<TWeakObjectPtr<ALidarCamera>> cached_instance_segmentation_lidar_cameras_;
-    int32 source_stencil_console_settings_refresh_ticks_remaining_ = 120;
 
 private:
     void InitializeInstanceSegmentation();

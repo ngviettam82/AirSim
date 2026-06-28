@@ -1,6 +1,4 @@
 #include "UnrealImageCapture.h"
-#include "Annotation/ObjectAnnotator.h"
-#include "AirBlueprintLib.h"
 #include "Engine/World.h"
 #include "ImageUtils.h"
 
@@ -19,120 +17,6 @@ namespace
         float min = std::numeric_limits<float>::quiet_NaN();
         float max = std::numeric_limits<float>::quiet_NaN();
     };
-
-    struct RenderResultMapping
-    {
-        int render_index = INDEX_NONE;
-        bool colorize_segmentation_labels = false;
-        bool compress_after_readback = false;
-    };
-
-    struct SharedLabelReadback
-    {
-        APIPCamera* camera = nullptr;
-        bool use_equirectangular = false;
-        USceneCaptureComponent2D* capture = nullptr;
-        UTextureRenderTarget2D* texture_target = nullptr;
-        USceneCaptureComponentCube* equirectangular_capture = nullptr;
-        UTextureRenderTargetCube* equirectangular_texture_target = nullptr;
-        int render_index = INDEX_NONE;
-
-        bool Matches(
-            APIPCamera* other_camera,
-            bool other_use_equirectangular,
-            USceneCaptureComponent2D* other_capture,
-            UTextureRenderTarget2D* other_texture_target,
-            USceneCaptureComponentCube* other_equirectangular_capture,
-            UTextureRenderTargetCube* other_equirectangular_texture_target) const
-        {
-            return camera == other_camera &&
-                   use_equirectangular == other_use_equirectangular &&
-                   capture == other_capture &&
-                   texture_target == other_texture_target &&
-                   equirectangular_capture == other_equirectangular_capture &&
-                   equirectangular_texture_target == other_equirectangular_texture_target;
-        }
-    };
-
-    ImageType getSharedLabelReadbackType(ImageType image_type)
-    {
-        return image_type == ImageType::Segmentation ? ImageType::Infrared : image_type;
-    }
-
-    std::string getSharedLabelAnnotationName(const msr::airlib::ImageCaptureBase::ImageRequest& request)
-    {
-        return request.image_type == ImageType::Segmentation ? "" : request.annotation_name;
-    }
-
-    bool shouldColorizeSegmentationAfterReadback(const msr::airlib::ImageCaptureBase::ImageRequest& request)
-    {
-        return request.image_type == ImageType::Segmentation &&
-               !request.pixels_as_float;
-    }
-
-    bool canShareLabelReadback(const msr::airlib::ImageCaptureBase::ImageRequest& request)
-    {
-        return !request.pixels_as_float &&
-               (request.image_type == ImageType::Segmentation ||
-                request.image_type == ImageType::Infrared);
-    }
-
-    const TArray<FColor>& getSegmentationColorPalette()
-    {
-        static const TArray<FColor> palette = []() {
-            FColorGenerator color_generator;
-            return color_generator.GetColorMap();
-        }();
-        return palette;
-    }
-
-    void colorizeStableSegmentationLabels(std::vector<uint8_t>& image_data)
-    {
-        const TArray<FColor>& palette = getSegmentationColorPalette();
-        for (size_t index = 0; index + 2 < image_data.size(); index += 3) {
-            const uint8 label = image_data[index];
-            if (label == 0 || !palette.IsValidIndex(label)) {
-                image_data[index] = 0;
-                image_data[index + 1] = 0;
-                image_data[index + 2] = 0;
-                continue;
-            }
-
-            const FColor color = palette[label];
-            image_data[index] = color.R;
-            image_data[index + 1] = color.G;
-            image_data[index + 2] = color.B;
-        }
-    }
-
-    void compressRgbImageData(int width, int height, std::vector<uint8_t>& image_data)
-    {
-        const int64 pixel_count = static_cast<int64>(width) * static_cast<int64>(height);
-        if (pixel_count <= 0 ||
-            pixel_count > std::numeric_limits<int32>::max() ||
-            image_data.size() != static_cast<size_t>(pixel_count) * 3) {
-            image_data.clear();
-            return;
-        }
-
-        TArray<FColor> bmp;
-        bmp.SetNumUninitialized(static_cast<int32>(pixel_count), false);
-        for (int64 pixel = 0; pixel < pixel_count; ++pixel) {
-            const size_t data_index = static_cast<size_t>(pixel) * 3;
-            bmp[static_cast<int32>(pixel)] = FColor(
-                image_data[data_index],
-                image_data[data_index + 1],
-                image_data[data_index + 2],
-                255);
-        }
-
-        TArray<uint8> compressed_image;
-        UAirBlueprintLib::CompressImageArray(width, height, bmp, compressed_image);
-        image_data.clear();
-        if (compressed_image.Num() > 0) {
-            image_data.assign(compressed_image.GetData(), compressed_image.GetData() + compressed_image.Num());
-        }
-    }
 
     bool tryGetCaptureSetting(APIPCamera* camera, ImageType image_type, AirSimSettings::CaptureSetting& out)
     {
@@ -229,8 +113,6 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
 {
     std::vector<std::shared_ptr<RenderRequest::RenderParams>> render_params;
     std::vector<std::shared_ptr<RenderRequest::RenderResult>> render_results;
-    std::vector<RenderResultMapping> render_result_mappings;
-    std::vector<SharedLabelReadback> shared_label_readbacks;
 
     bool visibilityChanged = false;
     for (unsigned int i = 0; i < requests.size(); ++i) {
@@ -269,16 +151,14 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         bool useEquirectangular = false;
         const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
             camera->GetAnnotationNameExist(requests[i].annotation_name);
-        const ImageType readback_image_type = getSharedLabelReadbackType(requests[i].image_type);
-        const std::string readback_annotation_name = getSharedLabelAnnotationName(requests[i]);
 
         if (!has_annotation) {
             response.message = "Can't take screenshot because the annotation name does not exist for this camera";
         }
         else {
-            useEquirectangular = camera->isEquirectangularCapture(readback_image_type, readback_annotation_name);
+            useEquirectangular = camera->isEquirectangularCapture(requests[i].image_type, requests[i].annotation_name);
             if (useEquirectangular) {
-                equirectangularCapture = camera->getEquirectangularCaptureComponent(readback_image_type, false, readback_annotation_name);
+                equirectangularCapture = camera->getEquirectangularCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
                 if (equirectangularCapture == nullptr) {
                     response.message = "Can't take equirectangular screenshot because cube camera type is not active";
                 }
@@ -290,7 +170,7 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
                 }
             }
             else {
-                capture = camera->getCaptureComponent(readback_image_type, false, readback_annotation_name);
+                capture = camera->getCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
                 if (capture == nullptr) {
                     response.message = "Can't take screenshot because camera type is not active";
                 }
@@ -308,79 +188,34 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
             requests[i].image_type == ImageCaptureBase::ImageType::Infrared)disable_gamma = true;
         const float max_depth_meters = getMaxDepthMeters(camera, requests[i].image_type);
         const EquirectangularExposureSettings equirectangular_exposure = getEquirectangularExposureSettings(camera, requests[i].image_type);
-        const bool post_process_label_readback = canShareLabelReadback(requests[i]);
-        const bool colorize_segmentation_after_readback = shouldColorizeSegmentationAfterReadback(requests[i]);
-        const ImageType render_image_type = post_process_label_readback ? readback_image_type : requests[i].image_type;
-        const bool render_compress = post_process_label_readback ? false : requests[i].compress;
-
-        std::shared_ptr<RenderRequest::RenderParams> render_param;
         if (useEquirectangular) {
-            render_param = std::make_shared<RenderRequest::RenderParams>(
+            render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
                 equirectangularCapture,
                 equirectangularTextureTarget,
                 requests[i].pixels_as_float,
-                render_compress,
+                requests[i].compress,
                 disable_gamma,
-                render_image_type,
+                requests[i].image_type,
                 max_depth_meters,
                 equirectangular_exposure.compensation,
                 equirectangular_exposure.min,
                 equirectangular_exposure.max,
-                requests[i].float_as_bytes);
+                requests[i].float_as_bytes));
         }
         else {
-            render_param = std::make_shared<RenderRequest::RenderParams>(
+            render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
                 capture,
                 textureTarget,
                 requests[i].pixels_as_float,
-                render_compress,
+                requests[i].compress,
                 disable_gamma,
-                render_image_type,
+                requests[i].image_type,
                 max_depth_meters,
                 equirectangular_exposure.compensation,
                 equirectangular_exposure.min,
                 equirectangular_exposure.max,
-                requests[i].float_as_bytes);
+                requests[i].float_as_bytes));
         }
-
-        int render_index = INDEX_NONE;
-        const bool share_label_readback = response.message.empty() && post_process_label_readback;
-        if (share_label_readback) {
-            for (const SharedLabelReadback& shared_readback : shared_label_readbacks) {
-                if (shared_readback.Matches(
-                        camera,
-                        useEquirectangular,
-                        capture,
-                        textureTarget,
-                        equirectangularCapture,
-                        equirectangularTextureTarget)) {
-                    render_index = shared_readback.render_index;
-                    break;
-                }
-            }
-        }
-
-        if (render_index == INDEX_NONE) {
-            render_index = static_cast<int>(render_params.size());
-            render_params.push_back(render_param);
-            if (share_label_readback) {
-                SharedLabelReadback shared_readback;
-                shared_readback.camera = camera;
-                shared_readback.use_equirectangular = useEquirectangular;
-                shared_readback.capture = capture;
-                shared_readback.texture_target = textureTarget;
-                shared_readback.equirectangular_capture = equirectangularCapture;
-                shared_readback.equirectangular_texture_target = equirectangularTextureTarget;
-                shared_readback.render_index = render_index;
-                shared_label_readbacks.push_back(shared_readback);
-            }
-        }
-
-        RenderResultMapping mapping;
-        mapping.render_index = render_index;
-        mapping.colorize_segmentation_labels = colorize_segmentation_after_readback;
-        mapping.compress_after_readback = post_process_label_readback && requests[i].compress;
-        render_result_mappings.push_back(mapping);
     }
 
     if (nullptr == gameViewport) {
@@ -405,21 +240,11 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
     for (unsigned int i = 0; i < requests.size(); ++i) {
         const ImageRequest& request = requests.at(i);
         ImageResponse& response = responses.at(i);
-        const int render_index = render_result_mappings.at(i).render_index;
-        const std::shared_ptr<RenderRequest::RenderResult>& render_result = render_results.at(render_index);
 
         response.camera_name = request.camera_name;
-        response.time_stamp = render_result->time_stamp;
-        response.image_data_uint8 = std::vector<uint8_t>(render_result->image_data_uint8.GetData(), render_result->image_data_uint8.GetData() + render_result->image_data_uint8.Num());
-        response.image_data_float = std::vector<float>(render_result->image_data_float.GetData(), render_result->image_data_float.GetData() + render_result->image_data_float.Num());
-        response.width = render_result->width;
-        response.height = render_result->height;
-        if (render_result_mappings.at(i).colorize_segmentation_labels) {
-            colorizeStableSegmentationLabels(response.image_data_uint8);
-        }
-        if (render_result_mappings.at(i).compress_after_readback) {
-            compressRgbImageData(response.width, response.height, response.image_data_uint8);
-        }
+        response.time_stamp = render_results[i]->time_stamp;
+        response.image_data_uint8 = std::vector<uint8_t>(render_results[i]->image_data_uint8.GetData(), render_results[i]->image_data_uint8.GetData() + render_results[i]->image_data_uint8.Num());
+        response.image_data_float = std::vector<float>(render_results[i]->image_data_float.GetData(), render_results[i]->image_data_float.GetData() + render_results[i]->image_data_float.Num());
 
         if (use_safe_method) {
             // Currently, we don't have a way to synthronize image capturing and camera pose when safe method is used,
@@ -430,6 +255,8 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         }
         response.pixels_as_float = request.pixels_as_float;
         response.compress = request.compress;
+        response.width = render_results[i]->width;
+        response.height = render_results[i]->height;
         response.image_type = request.image_type;
 		response.annotation_name = request.annotation_name;
     }
@@ -438,15 +265,6 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
 bool UnrealImageCapture::updateCameraVisibility(APIPCamera* camera, const msr::airlib::ImageCaptureBase::ImageRequest& request)
 {
     bool visibilityChanged = false;
-    const ImageType backing_image_type = getSharedLabelReadbackType(request.image_type);
-    const std::string backing_annotation_name = getSharedLabelAnnotationName(request);
-
-    if (backing_image_type != request.image_type &&
-        !camera->getCameraTypeEnabled(backing_image_type, backing_annotation_name)) {
-        camera->setCameraTypeEnabled(backing_image_type, true, backing_annotation_name);
-        visibilityChanged = true;
-    }
-
     if (!camera->getCameraTypeEnabled(request.image_type, request.annotation_name)) {
         camera->setCameraTypeEnabled(request.image_type, true, request.annotation_name);
         visibilityChanged = true;
