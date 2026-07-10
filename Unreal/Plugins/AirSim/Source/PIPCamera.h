@@ -24,6 +24,8 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "PIPCamera.generated.h"
 
+class ISceneViewExtension;
+
 UCLASS()
 class AIRSIM_API APIPCamera : public ACineCameraActor //CinemAirSim
 {
@@ -164,11 +166,13 @@ private: //members
     UPROPERTY() TArray<UMaterialInstanceDynamic*> radial_blur_materials_;
     UPROPERTY() TArray<UMaterialInstanceDynamic*> source_stencil_annotation_materials_;
     TMap<USceneCaptureComponent2D*, UMaterialInstanceDynamic*> source_stencil_annotation_material_map_;
-
+    TMap<USceneCaptureComponent2D*, TSharedPtr<ISceneViewExtension, ESPMode::ThreadSafe>> source_stencil_view_extension_map_;
     TMap<FString, int> annotator_name_to_index_map_;
     TMap<FString, FObjectAnnotator::AnnotatorType> annotator_name_to_type_map_;
     TMap<FString, bool> annotator_name_to_source_stencil_map_;
     TMap<FString, TWeakObjectPtr<UPrimitiveComponent>> sphere_annotation_component_map_;
+    TMap<USceneCaptureComponent2D*, TSet<TWeakObjectPtr<UPrimitiveComponent>>> managed_annotation_hidden_components_;
+    TSet<TWeakObjectPtr<UPrimitiveComponent>> managed_player_hidden_components_;
 
     std::vector<bool> camera_type_enabled_;
     TArray<bool> equirectangular_preview_updates_;
@@ -224,7 +228,8 @@ private: //methods
     void updateAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
                                  const TArray<TWeakObjectPtr<UPrimitiveComponent> >& component_list,
                                  bool only_hide = false,
-                                 UPrimitiveComponent* extra_component = nullptr);
+                                 UPrimitiveComponent* extra_component = nullptr,
+                                 USceneCaptureComponent2D* additional_annotation_capture = nullptr);
     void configureSourceStencilAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
                                                  FObjectAnnotator::AnnotatorType type);
     bool hasBlendable(USceneCaptureComponent2D* capture, UObject* blendable) const;

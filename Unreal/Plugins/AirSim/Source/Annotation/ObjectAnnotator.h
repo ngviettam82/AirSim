@@ -112,6 +112,7 @@ private:
 	bool use_source_stencil_backend_;
 	int32 proxy_component_budget_;
 	bool proxy_component_budget_warning_logged_;
+	bool indexed_color_capacity_warning_logged_;
 
 	bool PaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
 	bool UpdatePaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name);
@@ -136,7 +137,7 @@ private:
 	FString GetLabelKey(const FString& component_name, UMeshComponent* component) const;
 	FString GetLandscapeLabelKey(const FString& component_name, ULandscapeComponent* component) const;
 	uint32 GetOrCreateLandscapeLabelColorIndex(const FString& component_name, ULandscapeComponent* component);
-	uint32 GetDefaultIndexedColorIndex(const FString& label_key) const;
+	uint32 GetDefaultIndexedColorIndex(const FString& label_key);
 	void UpdateColorMappings(const FString& component_name, uint32 color_index);
 	void RemoveTrackedComponent(const FString& component_name);
 	void GetComponentIdsForColorUpdate(const FString& component_id, TArray<FString>& component_ids) const;

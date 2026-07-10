@@ -247,19 +247,11 @@ void ASimModeBase::RunCommandOnGameThread(TFunction<void()> InFunction, bool wai
 }
 
 void ASimModeBase::InitializeAnnotation() {
-	for (auto& annotator_setting : getSettings().annotator_settings) {
-        FString name = FString(annotator_setting.name.c_str());
-        FObjectAnnotator::AnnotatorType type = FObjectAnnotator::AnnotatorType(annotator_setting.type);
-        bool set_direct = annotator_setting.set_direct;
-        FString texture_path = FString(annotator_setting.texture_path.c_str());
-        FString texture_prefix = FString(annotator_setting.texture_prefix.c_str());
-        float max_view_distance = annotator_setting.max_view_distance;
-        FString render_backend = FString(annotator_setting.render_backend.c_str());
-        int32 proxy_component_budget = annotator_setting.proxy_component_budget;
-        annotators_.Emplace(name, FObjectAnnotator(name, type, annotator_setting.show_by_default, set_direct, texture_path, texture_prefix, max_view_distance, render_backend, proxy_component_budget));
-        annotators_[name].Initialize(this->GetLevel());
-        AddAnnotatorCamera(name, type, max_view_distance, annotators_[name].UsesSourceStencilBackend());
-        ForceUpdateAnnotation(name);
+	const auto& annotator_settings = getSettings().annotator_settings;
+	if (!annotator_settings.empty()) {
+		UE_LOG(LogTemp, Warning,
+			TEXT("AirSim Annotation: Ignoring %d custom annotation layer(s). Proxy annotation geometry is disabled in this stencil-only build; use the built-in Segmentation and Infrared image types, which share one 8-bit object ID."),
+			static_cast<int32>(annotator_settings.size()));
 	}
 }
 
@@ -855,7 +847,7 @@ std::vector<msr::airlib::Pose> ASimModeBase::GetAllInstanceSegmentationMeshPoses
     return retval;
 }
 
-bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, int object_id, bool is_name_regex, bool update_annotation) {
+bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, int object_id, bool is_name_regex, bool /*update_annotation*/) {
     if (object_id < 0 || object_id > 255) {
         UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [InstanceSegmentation]: Ignored ID %d for %s because SourceStencil labels must be in 0..255."), object_id, *FString(mesh_name.c_str()));
         return false;
@@ -884,7 +876,6 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
             }, true);
         }
 
-	        if(update_annotation && changes > 0)requestInstanceSegmentationRefresh();
 	        return changes > 0;
 	}
 	else {
@@ -893,12 +884,11 @@ bool ASimModeBase::SetMeshInstanceSegmentationID(const std::string& mesh_name, i
 		UAirBlueprintLib::RunCommandOnGameThread([this, key, object_id, &success]() {
 			success = instance_segmentation_annotator_.SetComponentRGBColorByIndex(key, object_id);
 		}, true);
-	        if(success && update_annotation)requestInstanceSegmentationRefresh();
 	        return success;
 	}
 }
 
-std::vector<int> ASimModeBase::SetMeshInstanceSegmentationIDs(const std::vector<std::string>& mesh_names, const std::vector<int>& object_ids, bool is_name_regex, bool update_annotation) {
+std::vector<int> ASimModeBase::SetMeshInstanceSegmentationIDs(const std::vector<std::string>& mesh_names, const std::vector<int>& object_ids, bool is_name_regex, bool /*update_annotation*/) {
 	std::vector<int> results(mesh_names.size(), 0);
 	if (mesh_names.size() != object_ids.size()) {
 		UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [InstanceSegmentation]: Batch ID update ignored because mesh_names count (%d) does not match object_ids count (%d)."), static_cast<int32>(mesh_names.size()), static_cast<int32>(object_ids.size()));
@@ -914,8 +904,7 @@ std::vector<int> ASimModeBase::SetMeshInstanceSegmentationIDs(const std::vector<
 		ids.Add(object_ids[index]);
 	}
 
-	bool updated_any = false;
-	UAirBlueprintLib::RunCommandOnGameThread([this, keys, ids, is_name_regex, &results, &updated_any]() {
+	UAirBlueprintLib::RunCommandOnGameThread([this, keys, ids, is_name_regex, &results]() {
 		TMap<FString, UPrimitiveComponent*> primitive_component_map;
 		if (is_name_regex) {
 			primitive_component_map = instance_segmentation_annotator_.GetNameToPrimitiveComponentMap();
@@ -943,12 +932,10 @@ std::vector<int> ASimModeBase::SetMeshInstanceSegmentationIDs(const std::vector<
 
 			if (success) {
 				results[static_cast<size_t>(index)] = 1;
-				updated_any = true;
 			}
 		}
 	}, true);
 
-	if (updated_any && update_annotation)requestInstanceSegmentationRefresh();
 	return results;
 }
 
@@ -1311,14 +1298,14 @@ std::string ASimModeBase::GetMeshRGBAnnotationColor(const std::string& annotatio
 
 bool ASimModeBase::AddNewActorToInstanceSegmentation(AActor* Actor, bool update_annotation){
 	bool success = instance_segmentation_annotator_.AnnotateNewActor(Actor);
-    if(success && update_annotation)requestInstanceSegmentationRefresh();
+	if(success && update_annotation)requestInstanceSegmentationRefresh(true);
     return success;
 }
 
 bool ASimModeBase::DeleteActorFromInstanceSegmentation(AActor* Actor, bool update_annotation) {
 
     bool success = instance_segmentation_annotator_.DeleteActor(Actor);
-    if (success && update_annotation)requestInstanceSegmentationRefresh();
+	if (success && update_annotation)requestInstanceSegmentationRefresh(true);
     return success;
 }
 

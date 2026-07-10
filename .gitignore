@@ -58,7 +58,10 @@ obj/
 *.suo
 *_BuiltData.uasset
 
-settings.json
+# Local AirSim runtime settings copied from Documents/AirSim.
+/settings.json
+/settings*.json
+/settings*.json.bak*
 
 # Visual Studio 2015 cache/options directory
 .vs/

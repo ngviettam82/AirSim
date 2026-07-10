@@ -76,6 +76,22 @@ namespace
                image_type == ImageType::Lighting;
     }
 
+    void CaptureSceneForRequest(const RenderRequest::RenderParams* params)
+    {
+        if (params == nullptr) {
+            return;
+        }
+
+        if (params->isEquirectangular() &&
+            params->render_target_cube != nullptr &&
+            params->render_component_cube != nullptr) {
+            params->render_component_cube->CaptureSceneDeferred();
+        }
+        else if (params->render_target != nullptr && params->render_component != nullptr) {
+            params->render_component->CaptureSceneDeferred();
+        }
+    }
+
     bool IsDepthMetersImage(ImageType image_type)
     {
         return image_type == ImageType::DepthPlanar ||
@@ -629,12 +645,7 @@ void RenderRequest::getScreenshot(
 
             // while we're still on GameThread, enqueue request for capture the scene!
             for (unsigned int i = 0; i < req_size_; ++i) {
-                if (params_[i]->isEquirectangular() && params_[i]->render_target_cube != nullptr && params_[i]->render_component_cube != nullptr) {
-                    params_[i]->render_component_cube->CaptureSceneDeferred();
-                }
-                else if (params_[i]->render_target != nullptr && params_[i]->render_component != nullptr) {
-                    params_[i]->render_component->CaptureSceneDeferred();
-                }
+                CaptureSceneForRequest(params_[i].get());
             }
         });
 
@@ -717,15 +728,7 @@ void RenderRequest::getScreenshot(
             });
 
             for (unsigned int index = 0; index < request->req_size_; ++index) {
-                if (request->params_[index]->isEquirectangular() &&
-                    request->params_[index]->render_target_cube != nullptr &&
-                    request->params_[index]->render_component_cube != nullptr) {
-                    request->params_[index]->render_component_cube->CaptureSceneDeferred();
-                }
-                else if (request->params_[index]->render_target != nullptr &&
-                         request->params_[index]->render_component != nullptr) {
-                    request->params_[index]->render_component->CaptureSceneDeferred();
-                }
+                CaptureSceneForRequest(request->params_[index].get());
             }
         });
 

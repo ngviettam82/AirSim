@@ -4,12 +4,17 @@
 
 #include "RenderRequest.h"
 #include "common/ClockFactory.hpp"
+#include "Misc/ScopeLock.h"
 #include <limits>
 
 namespace
 {
     using ImageType = msr::airlib::ImageCaptureBase::ImageType;
     using AirSimSettings = msr::airlib::AirSimSettings;
+
+    FCriticalSection InfraredWarmupCriticalSection;
+    TSet<TWeakObjectPtr<USceneCaptureComponent2D>> WarmedInfrared2DCaptures;
+    TSet<TWeakObjectPtr<USceneCaptureComponentCube>> WarmedInfraredCubeCaptures;
 
     struct EquirectangularExposureSettings
     {
@@ -63,6 +68,44 @@ namespace
         result.min = capture_setting.equirectangular_exposure_min;
         result.max = capture_setting.equirectangular_exposure_max;
         return result;
+    }
+
+    bool MarkInfraredCaptureForWarmup(const RenderRequest::RenderParams* params)
+    {
+        if (params == nullptr || params->image_type != ImageType::Infrared) {
+            return false;
+        }
+
+        FScopeLock lock(&InfraredWarmupCriticalSection);
+        if (params->isEquirectangular() && params->render_component_cube != nullptr) {
+            for (auto It = WarmedInfraredCubeCaptures.CreateIterator(); It; ++It) {
+                if (!It->IsValid()) {
+                    It.RemoveCurrent();
+                }
+            }
+            const TWeakObjectPtr<USceneCaptureComponentCube> capture_key(params->render_component_cube);
+            if (WarmedInfraredCubeCaptures.Contains(capture_key)) {
+                return false;
+            }
+            WarmedInfraredCubeCaptures.Add(capture_key);
+            return true;
+        }
+
+        if (params->render_component != nullptr) {
+            for (auto It = WarmedInfrared2DCaptures.CreateIterator(); It; ++It) {
+                if (!It->IsValid()) {
+                    It.RemoveCurrent();
+                }
+            }
+            const TWeakObjectPtr<USceneCaptureComponent2D> capture_key(params->render_component);
+            if (WarmedInfrared2DCaptures.Contains(capture_key)) {
+                return false;
+            }
+            WarmedInfrared2DCaptures.Add(capture_key);
+            return true;
+        }
+
+        return false;
     }
 }
 
@@ -222,6 +265,28 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         return;
     }
 
+    std::vector<std::shared_ptr<RenderRequest::RenderParams>> infrared_warmup_params;
+    for (const std::shared_ptr<RenderRequest::RenderParams>& params : render_params) {
+        if (MarkInfraredCaptureForWarmup(params.get())) {
+            infrared_warmup_params.push_back(params);
+        }
+    }
+    if (!infrared_warmup_params.empty()) {
+        // The replacing-tonemapper path becomes visible one frame later in UE
+        // 5.5. Run two discarded captures once per Infrared component so the
+        // first user-visible response is already the stencil image.
+        for (int32 warmup_index = 0; warmup_index < 2; ++warmup_index) {
+            std::vector<std::shared_ptr<RenderRequest::RenderResult>> infrared_warmup_results;
+            RenderRequest infrared_warmup_request{ gameViewport, []() {} };
+            infrared_warmup_request.getScreenshot(
+                infrared_warmup_params.data(),
+                infrared_warmup_results,
+                infrared_warmup_params.size(),
+                use_safe_method,
+                cancellation);
+        }
+    }
+
     auto query_camera_pose_cb = [this, &requests, &responses]() {
         size_t count = requests.size();
         for (size_t i = 0; i < count; i++) {
@@ -245,7 +310,6 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         response.time_stamp = render_results[i]->time_stamp;
         response.image_data_uint8 = std::vector<uint8_t>(render_results[i]->image_data_uint8.GetData(), render_results[i]->image_data_uint8.GetData() + render_results[i]->image_data_uint8.Num());
         response.image_data_float = std::vector<float>(render_results[i]->image_data_float.GetData(), render_results[i]->image_data_float.GetData() + render_results[i]->image_data_float.Num());
-
         if (use_safe_method) {
             // Currently, we don't have a way to synthronize image capturing and camera pose when safe method is used,
             APIPCamera* camera = cameras_->at(request.camera_name);

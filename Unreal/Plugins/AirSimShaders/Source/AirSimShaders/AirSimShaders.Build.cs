@@ -9,7 +9,9 @@ public class AirSimShaders : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
+        PrivateIncludePaths.Add(System.IO.Path.Combine(GetModuleDirectory("Renderer"), "Private"));
+
         PublicDependencyModuleNames.AddRange(new string[] { "Core" });
-        PrivateDependencyModuleNames.AddRange(new string[] { "CoreUObject", "Engine", "Projects", "RenderCore", "RHI" });
+        PrivateDependencyModuleNames.AddRange(new string[] { "CoreUObject", "Engine", "Projects", "RenderCore", "Renderer", "RHI" });
     }
 }

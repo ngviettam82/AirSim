@@ -2,6 +2,7 @@
 #include "UObject/ConstructorHelpers.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/FileHelper.h"
+#include "HAL/IConsoleManager.h"
 
 #include "Vehicles/Multirotor/SimModeWorldMultiRotor.h"
 #include "Vehicles/Car/SimModeCar.h"
@@ -10,6 +11,20 @@
 
 #include "common/AirSimSettings.hpp"
 #include <stdexcept>
+
+namespace
+{
+    void SetConsoleVariable(const TCHAR* name, int32 value)
+    {
+        IConsoleVariable* console_var = IConsoleManager::Get().FindConsoleVariable(name);
+        if (console_var == nullptr) {
+            UE_LOG(LogTemp, Warning, TEXT("AirSim: Console variable %s was not found."), name);
+            return;
+        }
+
+        console_var->Set(value, ECVF_SetByCode);
+    }
+}
 
 ASimHUD::ASimHUD()
 {
@@ -217,17 +232,17 @@ void ASimHUD::setUnrealEngineSettings()
     //avoid motion blur so capture images don't get
     //GetWorld()->GetGameViewport()->GetEngineShowFlags()->SetMotionBlur(false);
 
-    //use two different methods to set console var because sometime it doesn't seem to work
-    static const auto custom_depth_var = IConsoleManager::Get().FindConsoleVariable(TEXT("r.CustomDepth"));
-    custom_depth_var->Set(3);
+    SetConsoleVariable(TEXT("r.CustomDepth"), 3);
+    SetConsoleVariable(TEXT("r.CustomDepth.Order"), 0);
+    SetConsoleVariable(TEXT("r.CustomDepthTemporalAAJitter"), 0);
+    SetConsoleVariable(TEXT("r.Nanite.CustomDepth.ExportMethod"), 0);
 
     //Equivalent to enabling Custom Stencil in Project > Settings > Rendering > Postprocessing
     UKismetSystemLibrary::ExecuteConsoleCommand(GetWorld(), FString("r.CustomDepth 3"));
 
     //during startup we init stencil IDs to random hash and it takes long time for large environments
     //we get error that GameThread has timed out after 30 sec waiting on render thread
-    static const auto render_timeout_var = IConsoleManager::Get().FindConsoleVariable(TEXT("g.TimeoutForBlockOnRenderFence"));
-    render_timeout_var->Set(300000);
+    SetConsoleVariable(TEXT("g.TimeoutForBlockOnRenderFence"), 300000);
 }
 
 void ASimHUD::setupInputBindings()

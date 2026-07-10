@@ -1,6 +1,8 @@
 #include "PIPCamera.h"
 #include "AirSimEquirectangularPreview.h"
+#include "AirSimStencilViewExtension.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Components/MeshComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SceneCaptureComponentCube.h"
 #include "Camera/CameraComponent.h"
@@ -16,11 +18,71 @@
 
 namespace
 {
+    const FName InstanceSegmentationDisableTag(TEXT("InstanceSegmentation_disable"));
+
     bool UsesSourceStencilAnnotationCamera(FObjectAnnotator::AnnotatorType type, bool use_source_stencil_backend = false)
     {
-        return use_source_stencil_backend ||
-               type == FObjectAnnotator::AnnotatorType::InstanceSegmentation ||
-               type == FObjectAnnotator::AnnotatorType::Infrared;
+        return use_source_stencil_backend;
+    }
+
+    bool UsesSourceStencilImageType(APIPCamera::ImageType type)
+    {
+        return type == APIPCamera::ImageType::Segmentation ||
+               type == APIPCamera::ImageType::Infrared;
+    }
+
+    bool UsesLabelImageType(APIPCamera::ImageType type)
+    {
+        return type == APIPCamera::ImageType::Segmentation ||
+               type == APIPCamera::ImageType::Infrared;
+    }
+
+    void ConfigureSourceStencilCaptureState(USceneCaptureComponent2D* capture)
+    {
+        if (capture == nullptr) {
+            return;
+        }
+
+        capture->bCaptureEveryFrame = false;
+        capture->bCaptureOnMovement = false;
+        capture->bAlwaysPersistRenderingState = true;
+        capture->bMainViewFamily = false;
+        capture->bMainViewResolution = false;
+        capture->bMainViewCamera = false;
+        capture->bIgnoreScreenPercentage = true;
+        capture->bUseRayTracingIfEnabled = false;
+    }
+
+    void ConfigureSourceStencilCaptureState(USceneCaptureComponentCube* capture)
+    {
+        if (capture == nullptr) {
+            return;
+        }
+
+        capture->bCaptureEveryFrame = false;
+        capture->bCaptureOnMovement = false;
+        capture->bAlwaysPersistRenderingState = true;
+        capture->bUseRayTracingIfEnabled = false;
+    }
+
+    void DisableCameraVisualizationMeshes(AActor* actor)
+    {
+        if (actor == nullptr) {
+            return;
+        }
+
+        TArray<UMeshComponent*> mesh_components;
+        actor->GetComponents<UMeshComponent>(mesh_components);
+        for (UMeshComponent* mesh_component : mesh_components) {
+            if (!IsValid(mesh_component)) {
+                continue;
+            }
+
+            mesh_component->ComponentTags.AddUnique(InstanceSegmentationDisableTag);
+            mesh_component->SetRenderCustomDepth(false);
+            mesh_component->SetHiddenInGame(true, true);
+            mesh_component->SetVisibility(false, true);
+        }
     }
 
     bool UsesGlobalEquirectangularScenePipeline(int image_type)
@@ -137,6 +199,8 @@ APIPCamera::APIPCamera(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer
                 .SetDefaultSubobjectClass<UCineCameraComponent>(TEXT("CameraComponent")))
 {
+    Tags.AddUnique(InstanceSegmentationDisableTag);
+
     static ConstructorHelpers::FObjectFinder<UMaterial> mat_finder(TEXT("Material'/AirSim/HUDAssets/CameraSensorNoise.CameraSensorNoise'"));
     if (mat_finder.Succeeded()) {
         noise_material_static_ = mat_finder.Object;
@@ -302,6 +366,7 @@ void APIPCamera::PostInitializeComponents()
 void APIPCamera::BeginPlay()
 {
     Super::BeginPlay();
+    DisableCameraVisualizationMeshes(this);
 
     noise_materials_.AddZeroed(imageTypeCount() + 1);
     distortion_materials_.AddZeroed(imageTypeCount() + 1);
@@ -561,6 +626,12 @@ void APIPCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
     }
     source_stencil_annotation_material_map_.Empty();
     source_stencil_annotation_materials_.Empty();
+    for (const auto& stencil_extension_entry : source_stencil_view_extension_map_) {
+        if (IsValid(stencil_extension_entry.Key) && stencil_extension_entry.Value.IsValid()) {
+            stencil_extension_entry.Key->SceneViewExtensions.Remove(stencil_extension_entry.Value);
+        }
+    }
+    source_stencil_view_extension_map_.Empty();
     segmentation_stencil_material_static_ = nullptr;
     infrared_stencil_material_static_ = nullptr;
 
@@ -568,6 +639,8 @@ void APIPCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
     annotator_name_to_type_map_.Empty();
     annotator_name_to_source_stencil_map_.Empty();
     sphere_annotation_component_map_.Empty();
+    managed_annotation_hidden_components_.Empty();
+    managed_player_hidden_components_.Empty();
 
 
     int camera_full_count = static_cast<int>(cameraCaptureCount());
@@ -812,9 +885,21 @@ void APIPCamera::ensureEquirectangularCapture(int render_index, const FString& n
 
 void APIPCamera::setCameraTypeUpdate(ImageType type, bool nodisplay, std::string annotation_name)
 {
+    const bool uses_label_capture = UsesLabelImageType(type);
+    bool uses_source_stencil = UsesSourceStencilImageType(type);
+    if (type == ImageType::Annotation) {
+        const FString annotation_fstring(annotation_name.c_str());
+        if (const FObjectAnnotator::AnnotatorType* annotation_type = annotator_name_to_type_map_.Find(annotation_fstring)) {
+            uses_source_stencil = UsesSourceStencilAnnotationCamera(*annotation_type, annotator_name_to_source_stencil_map_.FindRef(annotation_fstring));
+        }
+    }
+
     if (isEquirectangularCapture(type, annotation_name)) {
         USceneCaptureComponentCube* cube_capture = getEquirectangularCaptureComponent(type, false, annotation_name);
         setEquirectangularCaptureUpdate(cube_capture, nodisplay);
+        if ((uses_label_capture || uses_source_stencil) && cube_capture != nullptr) {
+            ConfigureSourceStencilCaptureState(cube_capture);
+        }
         int render_index = Utils::toNumeric(type);
         if (type == ImageType::Annotation && annotator_name_to_index_map_.Contains(FString(annotation_name.c_str()))) {
             render_index = annotator_name_to_index_map_[FString(annotation_name.c_str())];
@@ -823,8 +908,12 @@ void APIPCamera::setCameraTypeUpdate(ImageType type, bool nodisplay, std::string
     }
     else {
         USceneCaptureComponent2D* capture = getCaptureComponent(type, false, annotation_name);
-        if (capture != nullptr)
+        if (capture != nullptr) {
             setCaptureUpdate(capture, nodisplay);
+            if (uses_label_capture || uses_source_stencil) {
+                ConfigureSourceStencilCaptureState(capture);
+            }
+        }
     }
 }
 
@@ -1025,17 +1114,29 @@ void APIPCamera::configureSourceStencilAnnotationCapture(USceneCaptureComponent2
         return;
     }
 
-    UMaterial* stencil_material = nullptr;
-    if (type == FObjectAnnotator::AnnotatorType::Infrared) {
-        stencil_material = infrared_stencil_material_static_;
-    }
-    else {
-        stencil_material = segmentation_stencil_material_static_;
-    }
+    UMaterial* stencil_material = type == FObjectAnnotator::AnnotatorType::Infrared
+        ? infrared_stencil_material_static_
+        : segmentation_stencil_material_static_;
 
     FObjectAnnotator::SetViewForSourceStencilAnnotationRender(annotation_capture->ShowFlags);
+    annotation_capture->CaptureSource = ESceneCaptureSource::SCS_FinalColorLDR;
     annotation_capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_RenderScenePrimitives;
     annotation_capture->ShowOnlyComponents.Empty();
+    annotation_capture->PostProcessBlendWeight = 1.0f;
+    ConfigureSourceStencilCaptureState(annotation_capture);
+
+    if (!source_stencil_view_extension_map_.Contains(annotation_capture)) {
+        const AirSimStencilViewExtension::EOutputMode output_mode =
+            type == FObjectAnnotator::AnnotatorType::Infrared
+            ? AirSimStencilViewExtension::EOutputMode::Infrared
+            : AirSimStencilViewExtension::EOutputMode::Segmentation;
+        TSharedPtr<ISceneViewExtension, ESPMode::ThreadSafe> stencil_view_extension =
+            AirSimStencilViewExtension::Create(output_mode);
+        if (stencil_view_extension.IsValid()) {
+            source_stencil_view_extension_map_.Add(annotation_capture, stencil_view_extension);
+            annotation_capture->SceneViewExtensions.Add(stencil_view_extension);
+        }
+    }
 
     if (!IsValid(stencil_material)) {
         UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation: Source stencil capture %s is missing its post-process material."), *annotation_capture->GetName());
@@ -1053,6 +1154,10 @@ void APIPCamera::configureSourceStencilAnnotationCapture(USceneCaptureComponent2
         source_stencil_annotation_materials_.Add(stencil_mid);
     }
 
+    annotation_capture->PostProcessSettings.WeightedBlendables.Array.Reset();
+    if (source_stencil_view_extension_map_.Contains(annotation_capture)) {
+        return;
+    }
     if (!hasBlendable(annotation_capture, stencil_mid)) {
         annotation_capture->PostProcessSettings.AddBlendable(stencil_mid, 1.0f);
     }
@@ -1061,69 +1166,144 @@ void APIPCamera::configureSourceStencilAnnotationCapture(USceneCaptureComponent2
 void APIPCamera::updateAnnotationCapture(USceneCaptureComponent2D* annotation_capture,
                                           const TArray<TWeakObjectPtr<UPrimitiveComponent> >& component_list,
                                           bool only_hide,
-                                         UPrimitiveComponent* extra_component)
+                                          UPrimitiveComponent* extra_component,
+                                          USceneCaptureComponent2D* additional_annotation_capture)
 {
-    if (!only_hide && annotation_capture != nullptr) {
-        annotation_capture->ShowOnlyComponents = component_list;
-        if (extra_component != nullptr) {
-            annotation_capture->ShowOnlyComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
+    bool capture_visibility_changed = false;
+    if (!only_hide) {
+        const auto update_show_only_components = [&component_list, extra_component, &capture_visibility_changed](USceneCaptureComponent2D* capture) {
+            if (capture == nullptr) {
+                return;
+            }
+
+            TArray<TWeakObjectPtr<UPrimitiveComponent>> expected_components = component_list;
+            if (extra_component != nullptr) {
+                expected_components.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
+            }
+            if (capture->ShowOnlyComponents != expected_components) {
+                capture->ShowOnlyComponents = MoveTemp(expected_components);
+                capture_visibility_changed = true;
+            }
+        };
+
+        update_show_only_components(annotation_capture);
+        if (additional_annotation_capture != annotation_capture) {
+            update_show_only_components(additional_annotation_capture);
         }
     }
 
     APlayerController* controller = this->GetWorld() ? this->GetWorld()->GetFirstPlayerController() : nullptr;
+    for (USceneCaptureComponent2D* capture : captures_) {
+        if (capture == nullptr) {
+            continue;
+        }
+
+        const bool is_annotation_capture = capture == annotation_capture ||
+                                           capture == additional_annotation_capture;
+        TSet<TWeakObjectPtr<UPrimitiveComponent>>& managed_hidden_components =
+            managed_annotation_hidden_components_.FindOrAdd(capture);
+        for (const TWeakObjectPtr<UPrimitiveComponent>& component : component_list) {
+            if (is_annotation_capture) {
+                if (managed_hidden_components.Remove(component) > 0) {
+                    capture->HiddenComponents.Remove(component);
+                    capture_visibility_changed = true;
+                }
+            }
+            else if (!managed_hidden_components.Contains(component)) {
+                capture->HiddenComponents.AddUnique(component);
+                managed_hidden_components.Add(component);
+                capture_visibility_changed = true;
+            }
+        }
+
+        if (extra_component != nullptr) {
+            const TWeakObjectPtr<UPrimitiveComponent> weak_extra_component(extra_component);
+            if (is_annotation_capture) {
+                if (managed_hidden_components.Remove(weak_extra_component) > 0) {
+                    capture->HiddenComponents.Remove(weak_extra_component);
+                    capture_visibility_changed = true;
+                }
+            }
+            else if (!managed_hidden_components.Contains(weak_extra_component)) {
+                capture->HiddenComponents.AddUnique(weak_extra_component);
+                managed_hidden_components.Add(weak_extra_component);
+                capture_visibility_changed = true;
+            }
+        }
+    }
+
     for (const TWeakObjectPtr<UPrimitiveComponent>& component : component_list) {
-        if (captures_[Utils::toNumeric(ImageType::Scene)] != nullptr) {
-            captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(component);
-        }
-        if (captures_[Utils::toNumeric(ImageType::Lighting)] != nullptr) {
-            captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(component);
-        }
-        if (controller != nullptr) {
+        if (controller != nullptr && !managed_player_hidden_components_.Contains(component)) {
             controller->HiddenPrimitiveComponents.AddUnique(component);
+            managed_player_hidden_components_.Add(component);
         }
     }
-
     if (extra_component != nullptr) {
-        if (captures_[Utils::toNumeric(ImageType::Scene)] != nullptr) {
-            captures_[Utils::toNumeric(ImageType::Scene)]->HiddenComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
-        }
-        if (captures_[Utils::toNumeric(ImageType::Lighting)] != nullptr) {
-            captures_[Utils::toNumeric(ImageType::Lighting)]->HiddenComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
-        }
-        if (controller != nullptr) {
-            controller->HiddenPrimitiveComponents.AddUnique(TWeakObjectPtr<UPrimitiveComponent>(extra_component));
+        const TWeakObjectPtr<UPrimitiveComponent> weak_extra_component(extra_component);
+        if (controller != nullptr && !managed_player_hidden_components_.Contains(weak_extra_component)) {
+            controller->HiddenPrimitiveComponents.AddUnique(weak_extra_component);
+            managed_player_hidden_components_.Add(weak_extra_component);
         }
     }
 
-    for (int render_index = 0; render_index < equirectangular_captures_.Num(); ++render_index) {
-        syncEquirectangularCaptureFrom2D(render_index);
+    if (capture_visibility_changed) {
+        for (int render_index = 0; render_index < equirectangular_captures_.Num(); ++render_index) {
+            syncEquirectangularCaptureFrom2D(render_index);
+        }
     }
 }
 
 void APIPCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
+    const int32 segmentation_index = Utils::toNumeric(ImageType::Segmentation);
+    const int32 infrared_index = Utils::toNumeric(ImageType::Infrared);
+    USceneCaptureComponent2D* segmentation_capture = captures_.IsValidIndex(segmentation_index) ? captures_[segmentation_index] : nullptr;
+    USceneCaptureComponent2D* infrared_capture = captures_.IsValidIndex(infrared_index) ? captures_[infrared_index] : nullptr;
+    if (!UsesSourceStencilImageType(ImageType::Segmentation)) {
+        updateAnnotationCapture(segmentation_capture, ComponentList, only_hide, nullptr, infrared_capture);
+        return;
+    }
+
     if (only_hide) {
         updateAnnotationCapture(nullptr, ComponentList, true);
         return;
     }
 
-    configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
+    configureSourceStencilAnnotationCapture(segmentation_capture, FObjectAnnotator::AnnotatorType::InstanceSegmentation);
     syncEquirectangularCaptureFrom2D(Utils::toNumeric(ImageType::Segmentation));
 }
 
-void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& /*ComponentList*/,
+void APIPCamera::updateInstanceSegmentationAndInfraredAnnotation(const TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList,
                                                                  bool only_hide)
 {
+    const int32 segmentation_index = Utils::toNumeric(ImageType::Segmentation);
+    const int32 infrared_index = Utils::toNumeric(ImageType::Infrared);
+    USceneCaptureComponent2D* segmentation_capture = captures_.IsValidIndex(segmentation_index) ? captures_[segmentation_index] : nullptr;
+    USceneCaptureComponent2D* infrared_capture = captures_.IsValidIndex(infrared_index) ? captures_[infrared_index] : nullptr;
+    if (!UsesSourceStencilImageType(ImageType::Segmentation)) {
+        updateAnnotationCapture(segmentation_capture, ComponentList, only_hide, nullptr, infrared_capture);
+        return;
+    }
+
     if (!only_hide) {
-        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Segmentation)], FObjectAnnotator::AnnotatorType::InstanceSegmentation);
-        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], FObjectAnnotator::AnnotatorType::Infrared);
+        configureSourceStencilAnnotationCapture(segmentation_capture, FObjectAnnotator::AnnotatorType::InstanceSegmentation);
+        configureSourceStencilAnnotationCapture(infrared_capture, FObjectAnnotator::AnnotatorType::Infrared);
         syncEquirectangularCaptureFrom2D(Utils::toNumeric(ImageType::Segmentation));
         syncEquirectangularCaptureFrom2D(Utils::toNumeric(ImageType::Infrared));
     }
 }
 
 void APIPCamera::updateInfraredAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList, bool only_hide) {
+    const int32 segmentation_index = Utils::toNumeric(ImageType::Segmentation);
+    const int32 infrared_index = Utils::toNumeric(ImageType::Infrared);
+    USceneCaptureComponent2D* segmentation_capture = captures_.IsValidIndex(segmentation_index) ? captures_[segmentation_index] : nullptr;
+    USceneCaptureComponent2D* infrared_capture = captures_.IsValidIndex(infrared_index) ? captures_[infrared_index] : nullptr;
+    if (!UsesSourceStencilImageType(ImageType::Infrared)) {
+        updateAnnotationCapture(infrared_capture, ComponentList, only_hide, nullptr, segmentation_capture);
+        return;
+    }
+
     if (!only_hide) {
-        configureSourceStencilAnnotationCapture(captures_[Utils::toNumeric(ImageType::Infrared)], FObjectAnnotator::AnnotatorType::Infrared);
+        configureSourceStencilAnnotationCapture(infrared_capture, FObjectAnnotator::AnnotatorType::Infrared);
         syncEquirectangularCaptureFrom2D(Utils::toNumeric(ImageType::Infrared));
     }
 }
@@ -1154,6 +1334,13 @@ void APIPCamera::updateAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& 
 
 void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance, bool use_source_stencil_backend)
 {
+    if (!use_source_stencil_backend) {
+        UE_LOG(LogTemp, Warning,
+            TEXT("AirSim Annotation [%s]: Camera was not created because proxy annotation rendering is disabled in this stencil-only build."),
+            *name);
+        return;
+    }
+
     USceneCaptureComponent2D* new_capture = NewObject<USceneCaptureComponent2D>(this, USceneCaptureComponent2D ::StaticClass(), *name);
 
     new_capture->bAutoActivate = false;
@@ -1217,10 +1404,11 @@ void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorTy
 
     if (sensor_params_.capture_settings.at(Utils::toNumeric(ImageType::Annotation)).ignore_marked)captures_[render_index]->HiddenActors.Append(ignore_actors_);
     
+    const bool force_linear_gamma = UsesSourceStencilAnnotationCamera(type, use_source_stencil_backend);
     updateCaptureComponentSetting(captures_[render_index], render_targets_[render_index],
         false, EPixelFormat::PF_B8G8R8A8,
         sensor_params_.capture_settings.at(Utils::toNumeric(ImageType::Annotation)),
-        *ned_transform_, false);
+        *ned_transform_, force_linear_gamma);
 
     copyCameraSettingsToSceneCapture(camera_, captures_[render_index]);
 
@@ -1233,7 +1421,7 @@ void APIPCamera::addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorTy
             false,
             EPixelFormat::PF_B8G8R8A8,
             annotation_capture_setting,
-            false);
+            force_linear_gamma);
 
         if (type == FObjectAnnotator::AnnotatorType::RGB ||
             type == FObjectAnnotator::AnnotatorType::InstanceSegmentation ||
@@ -1311,10 +1499,13 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
             bool force_linear_gamma = false;
             switch (Utils::toEnum<ImageType>(image_type)) {
             case ImageType::Scene:
-            case ImageType::Infrared:
             case ImageType::Lighting:
+                auto_format = false;
+                break;
+            case ImageType::Infrared:
             case ImageType::Segmentation:
                 auto_format = false;
+                force_linear_gamma = true;
                 break;
             case ImageType::SurfaceNormals:
                 auto_format = true;
@@ -1340,8 +1531,10 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
                 }
             }
             if(capture_setting.ignore_marked)captures_[image_type]->HiddenActors.Append(ignore_actors_);
-            setDistortionMaterial(image_type, captures_[image_type], captures_[image_type]->PostProcessSettings);
-            setNoiseMaterial(image_type, captures_[image_type], captures_[image_type]->PostProcessSettings, noise_setting);
+            if (!UsesLabelImageType(Utils::toEnum<ImageType>(image_type))) {
+                setDistortionMaterial(image_type, captures_[image_type], captures_[image_type]->PostProcessSettings);
+                setNoiseMaterial(image_type, captures_[image_type], captures_[image_type]->PostProcessSettings, noise_setting);
+            }
             copyCameraSettingsToSceneCapture(camera_, captures_[image_type]); //CinemAirSim
             if(image_type == Utils::toNumeric(ImageType::Scene) || image_type == Utils::toNumeric(ImageType::Lighting)) {
                 if (capture_setting.lumen_gi_enabled) {
@@ -1447,13 +1640,27 @@ void APIPCamera::syncEquirectangularCaptureFrom2D(int render_index)
         return;
     }
 
-    copySceneCaptureSettingsToCubeCapture(captures_[render_index], equirectangular_captures_[render_index]);
+    USceneCaptureComponent2D* source_capture = captures_[render_index];
+    USceneCaptureComponentCube* cube_capture = equirectangular_captures_[render_index];
+    if (source_capture == nullptr || cube_capture == nullptr) {
+        return;
+    }
+
+    copySceneCaptureSettingsToCubeCapture(source_capture, cube_capture);
 
     // Scene and Lighting use a seam-safe HDR path. Other image types keep the
     // source capture settings so labels, depth units, and annotation views match
     // the normal 2D capture as closely as possible.
     if (UsesGlobalEquirectangularScenePipeline(render_index)) {
-        ApplyGlobalEquirectangularSceneSettings(equirectangular_captures_[render_index]);
+        ApplyGlobalEquirectangularSceneSettings(cube_capture);
+    }
+    else if (render_index == Utils::toNumeric(ImageType::Segmentation) ||
+             render_index == Utils::toNumeric(ImageType::Infrared)) {
+        ConfigureSourceStencilCaptureState(cube_capture);
+        cube_capture->PostProcessSettings.WeightedBlendables.Array.Reset();
+        if (UMaterialInstanceDynamic* stencil_mid = source_stencil_annotation_material_map_.FindRef(source_capture)) {
+            cube_capture->PostProcessSettings.AddBlendable(stencil_mid, 1.0f);
+        }
     }
 }
 
@@ -1933,15 +2140,7 @@ void APIPCamera::onViewModeChanged(bool nodisplay)
             for (auto& annotator : annotator_name_to_index_map_)
             {
                 const std::string annotation_name = TCHAR_TO_UTF8(*annotator.Key);
-                if (isEquirectangularCapture(ImageType::Annotation, annotation_name)) {
-                    setEquirectangularCaptureUpdate(getEquirectangularCaptureComponent(ImageType::Annotation, false, annotation_name), nodisplay);
-                }
-                else {
-                    USceneCaptureComponent2D* capture = getCaptureComponent(ImageType::Annotation, false, annotation_name);
-                    if (capture) {
-                        setCaptureUpdate(capture, nodisplay);
-                    }
-                }
+                setCameraTypeUpdate(ImageType::Annotation, nodisplay, annotation_name);
             }
         }
         else
@@ -1949,15 +2148,7 @@ void APIPCamera::onViewModeChanged(bool nodisplay)
             if (Utils::toEnum<ImageType>(image_type) != ImageType::Scene)
             {
                 ImageType current_type = static_cast<ImageType>(image_type);
-                if (isEquirectangularCapture(current_type)) {
-                    setEquirectangularCaptureUpdate(getEquirectangularCaptureComponent(current_type, false), nodisplay);
-                }
-                else {
-                    USceneCaptureComponent2D* capture = getCaptureComponent(current_type, false);
-                    if (capture) {
-                        setCaptureUpdate(capture, nodisplay);
-                    }
-                }
+                setCameraTypeUpdate(current_type, nodisplay);
             }           
         }                
     }
