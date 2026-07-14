@@ -307,17 +307,30 @@ In case of multiple vehicles, different vehicles can be specified as follows-
 ```
 
 ## Recording
-The recording feature allows you to record data such as position, orientation, velocity along with the captured image at specified intervals. You can start recording by pressing red Record button on lower right or the R key. The data is stored in the `Documents\AirSim` folder (or the folder specified using `Folder`), in a time stamped subfolder for each recording session, as tab separated file.
+The recording feature allows you to record ground-truth pose, optional **configured sensors**, and captured images at specified intervals. You can start recording by pressing red Record button on lower right or the R key. The data is stored in the `Documents\AirSim` folder (or the folder specified using `Folder`), in a time stamped subfolder for each recording session, as a tab-separated file.
 
-* `RecordInterval`: specifies minimal interval in seconds between capturing two images.
+* `RecordInterval`: specifies minimal interval in seconds between samples.
 * `RecordOnMove`: specifies that do not record frame if there was vehicle's position or orientation hasn't changed.
 * `Folder`: Parent folder where timestamped subfolder with recordings are created. Absolute path of the directory must be specified. If not used, then `Documents/AirSim` folder will be used. E.g. `"Folder": "/home/<user>/Documents"`
 * `Enabled`: Whether Recording should start from the beginning itself, setting to `true` will start recording automatically when the simulation starts. By default, it's set to `false`
 * `Cameras`: this element controls which cameras are used to capture images. By default scene image from camera 0 is recorded as compressed png format. This setting is json array so you can specify multiple cameras to capture images, each with potentially different [image types](image_apis.md#available-imagetype-values).
     * When `PixelsAsFloat` is true, image is saved as [pfm](pfm.md) file instead of png file.
     * `VehicleName` option allows you to specify separate cameras for individual vehicles. If the `Cameras` element isn't present, `Scene` image from the default camera of each vehicle will be recorded.
-    * If you don't want to record any images and just the vehicle's physics data, then specify the `Cameras` element but leave it empty, like this: `"Cameras": []`
+    * If you don't want to record any images and just the vehicle's physics/sensor data, then specify the `Cameras` element but leave it empty, like this: `"Cameras": []`
     * add the field `Annotation`, a string allowing you to specify the annotation layer to use for the camera. This is only if using the Annotation camera type for `ImageType`.
+* `Sensors`: optional array selecting vehicle sensors by name (case-insensitive; defaults are lowercase `imu`, `gps`, `barometer`, `magnetometer`). Uses **real sensor outputs** (noise, latency, update rate as configured). Supported: IMU, GPS, Barometer, Magnetometer, Distance. Example:
+
+```json
+"Sensors": [
+    { "VehicleName": "drone1", "SensorName": "imu" },
+    { "VehicleName": "drone1", "SensorName": "gps" },
+    { "VehicleName": "drone1", "SensorName": "barometer" },
+    { "VehicleName": "drone1", "SensorName": "magnetometer" }
+]
+```
+
+Each sample freezes physics, snapshots pose/sensors, captures images while paused, then resumes (**logical same-snapshot association**, not a `<0.1 ms` exposure claim). See [Recording data](modify_recording_data.md).
+
 For example, the `Cameras` element below records scene & segmentation images for `Car1` & scene for `Car2`-
 
 ```json
@@ -328,7 +341,7 @@ For example, the `Cameras` element below records scene & segmentation images for
 ]
 ```
 
-Check out [Modifying Recording Data](modify_recording_data.md) for details on how to modify the kinematics data being recorded.
+Check out [Recording data / sensors](modify_recording_data.md) for the full column list and timestamp semantics.
 
 ## ClockSpeed
 This setting allows you to set the speed of simulation clock with respect to wall clock. For example, value of 5.0 would mean simulation clock has 5 seconds elapsed when wall clock has 1 second elapsed (i.e. simulation is running faster). The value of 0.1 means that simulation clock is 10X slower than wall clock. The value of 1 means simulation is running in real time. It is important to realize that quality of simulation may decrease as the simulation clock runs faster. You might see artifacts like object moving past obstacles because collision is not detected. However slowing down simulation clock (i.e. values < 1.0) generally improves the quality of simulation.

@@ -47,6 +47,11 @@ public:
     virtual void setPose(const Pose& pose, bool ignore_collision) override;
     virtual void setKinematics(const Kinematics::State& state, bool ignore_collision) override;
     virtual void pawnTick(float dt) override;
+    virtual std::string getRecordFileLine(bool is_header_line) const override;
+    virtual msr::airlib::RecordingCapture createRecordingCapture(
+        uint64_t sequence_id,
+        const std::vector<std::string>& sensor_names,
+        const std::vector<std::string>& schema_tokens) const override;
 
     msr::airlib::MultirotorApiBase* getVehicleApi() const
     {

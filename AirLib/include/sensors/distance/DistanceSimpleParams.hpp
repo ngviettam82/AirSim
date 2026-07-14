@@ -54,6 +54,10 @@ namespace airlib
             max_distance = settings_json.getFloat("MaxDistance", max_distance);
             draw_debug_points = settings_json.getBool("DrawDebugPoints", draw_debug_points);
             external_controller = settings_json.getBool("ExternalController", external_controller);
+            uncorrelated_noise_sigma = settings_json.getFloat("UncorrelatedNoiseSigma", uncorrelated_noise_sigma);
+            update_latency = settings_json.getFloat("UpdateLatency", update_latency);
+            update_frequency = settings_json.getFloat("UpdateFrequency", update_frequency);
+            startup_delay = settings_json.getFloat("StartupDelay", startup_delay);
 
             auto position = AirSimSettings::createVectorSetting(settings_json, VectorMath::nanVector());
             auto rotation = AirSimSettings::createRotationSetting(settings_json, AirSimSettings::Rotation::nanRotation());

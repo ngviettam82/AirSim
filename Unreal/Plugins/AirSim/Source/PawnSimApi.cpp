@@ -849,23 +849,36 @@ msr::airlib::Environment* PawnSimApi::getEnvironment()
     return environment_.get();
 }
 
-std::string PawnSimApi::getRecordFileLine(bool is_header_line) const
+msr::airlib::RecordingCapture PawnSimApi::createRecordingCapture(
+    uint64_t sequence_id,
+    const std::vector<std::string>& sensor_names,
+    const std::vector<std::string>& schema_tokens) const
 {
-    if (is_header_line) {
-        return "VehicleName\tTimeStamp\tPOS_X\tPOS_Y\tPOS_Z\tQ_W\tQ_X\tQ_Y\tQ_Z\t";
-    }
+    unused(sensor_names);
+    RecordingCapture capture;
+    capture.vehicle_name = getVehicleName();
+    capture.sequence_id = sequence_id;
+    capture.physics_step_id = clock()->getStepCount();
+    capture.frame_time_stamp = clock()->nowNanos();
+    capture.schema_tokens = schema_tokens;
+    capture.schema_sensor_names =
+        msr::airlib::AirSimSettings::singleton().recording_setting.sensor_schema;
+    capture.association_mode = "physics_paused_snapshot";
 
     const auto* kinematics = getGroundTruthKinematics();
-    const uint64_t timestamp_millis = static_cast<uint64_t>(clock()->nowNanos() / 1.0E6);
+    if (kinematics != nullptr)
+        capture.pose = kinematics->pose;
+    return capture;
+}
 
-    std::ostringstream ss;
-    ss << getVehicleName() << "\t";
-    ss << timestamp_millis << "\t";
-    ss << kinematics->pose.position.x() << "\t" << kinematics->pose.position.y() << "\t" << kinematics->pose.position.z() << "\t";
-    ss << kinematics->pose.orientation.w() << "\t" << kinematics->pose.orientation.x() << "\t"
-       << kinematics->pose.orientation.y() << "\t" << kinematics->pose.orientation.z() << "\t";
-
-    return ss.str();
+std::string PawnSimApi::getRecordFileLine(bool is_header_line) const
+{
+    const auto& schema = msr::airlib::AirSimSettings::singleton().recording_setting.sensor_schema;
+    const auto tokens = msr::airlib::RecordingCapture::buildSchemaTokens(schema);
+    auto capture = createRecordingCapture(0, {}, tokens);
+    if (is_header_line)
+        return capture.fullHeaderLine() + "\t";
+    return capture.toRecordLine();
 }
 
 msr::airlib::VehicleApiBase* PawnSimApi::getVehicleApiBase() const

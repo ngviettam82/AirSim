@@ -20,19 +20,22 @@ ACarPawn::ACarPawn()
     static ConstructorHelpers::FClassFinder<APIPCamera> pip_camera_class(TEXT("Blueprint'/AirSim/Blueprints/BP_PIPCamera'"));
     pip_camera_class_ = pip_camera_class.Succeeded() ? pip_camera_class.Class : nullptr;
 
-    const auto& car_mesh_paths = AirSimSettings::singleton().pawn_paths["DefaultCar"];
-    auto slippery_mat = Cast<UPhysicalMaterial>(
-        UAirBlueprintLib::LoadObject(car_mesh_paths.slippery_mat));
-    auto non_slippery_mat = Cast<UPhysicalMaterial>(
-        UAirBlueprintLib::LoadObject(car_mesh_paths.non_slippery_mat));
-    if (slippery_mat)
-        slippery_mat_ = slippery_mat;
-    else
-        UAirBlueprintLib::LogMessageString("Failed to load Slippery physics material", "", LogDebugLevel::Failure);
-    if (non_slippery_mat)
-        non_slippery_mat_ = non_slippery_mat;
-    else
-        UAirBlueprintLib::LogMessageString("Failed to load NonSlippery physics material", "", LogDebugLevel::Failure);
+    // CDO construction may run before settings are loaded; never touch missing paths.
+    const auto& pawn_paths = AirSimSettings::singleton().pawn_paths;
+    const auto car_path_it = pawn_paths.find("DefaultCar");
+    if (car_path_it != pawn_paths.end()) {
+        const auto& car_mesh_paths = car_path_it->second;
+        if (!car_mesh_paths.slippery_mat.empty()) {
+            if (auto* slippery_mat = Cast<UPhysicalMaterial>(
+                    UAirBlueprintLib::LoadObject(car_mesh_paths.slippery_mat)))
+                slippery_mat_ = slippery_mat;
+        }
+        if (!car_mesh_paths.non_slippery_mat.empty()) {
+            if (auto* non_slippery_mat = Cast<UPhysicalMaterial>(
+                    UAirBlueprintLib::LoadObject(car_mesh_paths.non_slippery_mat)))
+                non_slippery_mat_ = non_slippery_mat;
+        }
+    }
 
     setupVehicleMovementComponent();
 

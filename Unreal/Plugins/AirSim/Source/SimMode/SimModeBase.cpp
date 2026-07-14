@@ -194,8 +194,16 @@ void ASimModeBase::BeginPlay()
     setupVehiclesAndCamera();
     FRecordingThread::init();
 
-    if (getSettings().recording_setting.enabled)
-        startRecording();
+    // Defer auto-recording until the next tick so Multirotor/World modes finish
+    // initializeForPlay() and create physics_world_ (needed for pause/lock).
+    if (getSettings().recording_setting.enabled) {
+        if (UWorld* World = GetWorld()) {
+            World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([this]() {
+                if (getSettings().recording_setting.enabled && !isRecording())
+                    startRecording();
+            }));
+        }
+    }
 
     UWorld* World = GetWorld();
     if (World) {

@@ -36,6 +36,10 @@ public:
 	virtual void reportState(StateReporter& reporter) override;
 
 	virtual std::string getRecordFileLine(bool is_header_line) const override;
+	virtual msr::airlib::RecordingCapture createRecordingCapture(
+		uint64_t sequence_id,
+		const std::vector<std::string>& sensor_names,
+		const std::vector<std::string>& schema_tokens) const override;
 
 	virtual void updateRenderedState(float dt) override;
 	virtual void updateRendering(float dt) override;

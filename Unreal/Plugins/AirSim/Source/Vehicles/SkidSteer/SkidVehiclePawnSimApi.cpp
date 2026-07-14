@@ -4,7 +4,10 @@
 #include "AirBlueprintLib.h"
 #include "UnrealSensors/UnrealSensorFactory.h"
 #include "SkidVehiclePawnApi.h"
+#include "common/AirSimSettings.hpp"
+#include "common/RecordingCapture.hpp"
 #include <exception>
+#include <sstream>
 
 using namespace msr::airlib;
 
@@ -32,22 +35,31 @@ void SkidVehiclePawnSimApi::initialize()
 	joystick_controls_ = msr::airlib::CarApiBase::CarControls();
 }
 
+msr::airlib::RecordingCapture SkidVehiclePawnSimApi::createRecordingCapture(
+	uint64_t sequence_id,
+	const std::vector<std::string>& sensor_names,
+	const std::vector<std::string>& schema_tokens) const
+{
+	auto capture = PawnSimApi::createRecordingCapture(sequence_id, sensor_names, schema_tokens);
+	capture.vehicle_extra_header = "Throttle\tSteering\tBrake\tGear\tHandbrake\tRPM\tSpeed\t";
+	if (pawn_api_) {
+		const auto& state = pawn_api_->getCarState();
+		std::ostringstream ss;
+		ss << current_controls_.throttle << "\t" << current_controls_.steering << "\t" << current_controls_.brake << "\t";
+		ss << state.gear << "\t" << state.handbrake << "\t" << state.rpm << "\t" << state.speed << "\t";
+		capture.vehicle_extra_values = ss.str();
+	}
+	return capture;
+}
+
 std::string SkidVehiclePawnSimApi::getRecordFileLine(bool is_header_line) const
 {
-	std::string common_line = PawnSimApi::getRecordFileLine(is_header_line);
-	if (is_header_line) {
-		return common_line +
-			"Throttle\tSteering\tBrake\tGear\tHandbrake\tRPM\tSpeed\t";
-	}
-
-	const auto& state = pawn_api_->getCarState();
-
-	std::ostringstream ss;
-	ss << common_line;
-	ss << current_controls_.throttle << "\t" << current_controls_.steering << "\t" << current_controls_.brake << "\t";
-	ss << state.gear << "\t" << state.handbrake << "\t" << state.rpm << "\t" << state.speed << "\t";
-
-	return ss.str();
+	const auto& schema = msr::airlib::AirSimSettings::singleton().recording_setting.sensor_schema;
+	const auto tokens = msr::airlib::RecordingCapture::buildSchemaTokens(schema);
+	auto capture = createRecordingCapture(0, {}, tokens);
+	if (is_header_line)
+		return capture.fullHeaderLine() + "\t";
+	return capture.toRecordLine();
 }
 
 //these are called on render ticks

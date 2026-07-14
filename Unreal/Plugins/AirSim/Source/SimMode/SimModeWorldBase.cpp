@@ -3,6 +3,7 @@
 #include "physics/ExternalPhysicsEngine.hpp"
 #include <exception>
 #include "AirBlueprintLib.h"
+#include "Recording/RecordingThread.h"
 
 void ASimModeWorldBase::BeginPlay()
 {
@@ -33,7 +34,10 @@ void ASimModeWorldBase::registerPhysicsBody(msr::airlib::VehicleSimApiBase* phys
 
 void ASimModeWorldBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    //remove everything that we created in BeginPlay
+    // Stop recording before destroying physics / vehicle APIs.
+    FRecordingThread::stopRecording();
+    FRecordingThread::killRecording();
+    stopAsyncUpdator();
     physics_world_.reset();
 
     Super::EndPlay(EndPlayReason);
@@ -140,6 +144,33 @@ void ASimModeWorldBase::setWind(const msr::airlib::Vector3r& wind) const
 void ASimModeWorldBase::setExtForce(const msr::airlib::Vector3r& ext_force) const
 {
     physics_engine_->setExtForce(ext_force);
+}
+
+void ASimModeWorldBase::startRecording()
+{
+    FRecordingThread::PhysicsLockFn lock_fn;
+    FRecordingThread::PhysicsPauseFn pause_fn;
+    if (physics_world_) {
+        lock_fn = [this](const std::function<void()>& work) {
+            physics_world_->lock();
+            try {
+                work();
+            }
+            catch (...) {
+                physics_world_->unlock();
+                throw;
+            }
+            physics_world_->unlock();
+        };
+        pause_fn = [this](bool pause) {
+            physics_world_->pause(pause);
+        };
+    }
+    FRecordingThread::startRecording(
+        getSettings().recording_setting,
+        getApiProvider()->getVehicleSimApis(),
+        lock_fn,
+        pause_fn);
 }
 
 void ASimModeWorldBase::updateDebugReport(msr::airlib::StateReporterWrapper& debug_reporter)

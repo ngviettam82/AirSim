@@ -9,6 +9,7 @@
 #include "Settings.hpp"
 #include "common_utils/Utils.hpp"
 #include "sensors/SensorBase.hpp"
+#include <algorithm>
 #include <exception>
 #include <functional>
 #include <map>
@@ -98,6 +99,19 @@ namespace airlib
             }
         };
 
+        // One entry in Recording.Sensors (settings-driven sensor selection).
+        struct RecordingSensorRequest
+        {
+            std::string vehicle_name;
+            std::string sensor_name; // name from vehicle Sensors map (e.g. "Imu", "Gps")
+
+            RecordingSensorRequest() = default;
+            RecordingSensorRequest(const std::string& vehicle_name_val, const std::string& sensor_name_val)
+                : vehicle_name(vehicle_name_val), sensor_name(sensor_name_val)
+            {
+            }
+        };
+
         struct RecordingSetting
         {
             bool record_on_move = false;
@@ -106,6 +120,10 @@ namespace airlib
             bool enabled = false;
 
             std::map<std::string, std::vector<ImageCaptureBase::ImageRequest>> requests;
+            // vehicle_name -> ordered list of sensor names to record for that vehicle
+            std::map<std::string, std::vector<std::string>> sensors;
+            // first-seen sensor name order for deterministic column schema across vehicles
+            std::vector<std::string> sensor_schema;
 
             RecordingSetting()
             {
@@ -928,6 +946,8 @@ namespace airlib
         void loadRecordingSetting(const Settings& settings_json)
         {
             loadDefaultRecordingSettings();
+            recording_setting.sensors.clear();
+            recording_setting.sensor_schema.clear();
 
             Settings recording_json;
             if (settings_json.getChild("Recording", recording_json)) {
@@ -957,6 +977,33 @@ namespace airlib
                             std::string annotation_name = req_camera_settings.getString("Annotation", "");
                             recording_setting.requests[vehicle_name].push_back(ImageCaptureBase::ImageRequest(
                                 camera_name, image_type, pixels_as_float, compress, annotation_name));
+                        }
+                    }
+                }
+
+                // Optional Sensors list: [{ "VehicleName": "...", "SensorName": "Imu" }, ...]
+                Settings req_sensors_settings;
+                if (recording_json.getChild("Sensors", req_sensors_settings)) {
+                    std::string default_vehicle_name = vehicles.begin()->first;
+                    for (size_t child_index = 0; child_index < req_sensors_settings.size(); ++child_index) {
+                        Settings req_sensor_settings;
+                        if (req_sensors_settings.getChild(child_index, req_sensor_settings)) {
+                            std::string vehicle_name = req_sensor_settings.getString("VehicleName", default_vehicle_name);
+                            std::string sensor_name = req_sensor_settings.getString("SensorName", "");
+                            if (sensor_name.empty()) {
+                                // legacy alias
+                                sensor_name = req_sensor_settings.getString("Name", "");
+                            }
+                            if (sensor_name.empty()) {
+                                continue;
+                            }
+                            recording_setting.sensors[vehicle_name].push_back(sensor_name);
+                            // schema: first-seen order of SensorName values
+                            if (std::find(recording_setting.sensor_schema.begin(),
+                                           recording_setting.sensor_schema.end(),
+                                           sensor_name) == recording_setting.sensor_schema.end()) {
+                                recording_setting.sensor_schema.push_back(sensor_name);
+                            }
                         }
                     }
                 }

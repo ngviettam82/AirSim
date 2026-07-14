@@ -145,9 +145,16 @@ UnrealImageCapture::~UnrealImageCapture()
 {
 }
 
+namespace
+{
+    // Serialize scene captures across Recording / RPC / CameraHost.
+    FCriticalSection GAirSimImageCaptureMutex;
+}
+
 void UnrealImageCapture::getImages(const std::vector<msr::airlib::ImageCaptureBase::ImageRequest>& requests,
                                    std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses) const
 {
+    FScopeLock capture_lock(&GAirSimImageCaptureMutex);
     if (cameras_->valsSize() == 0) {
         for (unsigned int i = 0; i < requests.size(); ++i) {
             responses.push_back(ImageResponse());
@@ -163,6 +170,7 @@ void UnrealImageCapture::getImages(
     std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
     const std::shared_ptr<std::atomic<bool>>& cancellation) const
 {
+    FScopeLock capture_lock(&GAirSimImageCaptureMutex);
     if (cameras_->valsSize() == 0) {
         for (size_t index = 0; index < requests.size(); ++index) {
             responses.emplace_back();
@@ -361,6 +369,7 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         ImageResponse& response = responses.at(i);
 
         response.camera_name = request.camera_name;
+        // Keep render-thread capture timestamp; do not overwrite with frame snapshot.
         response.time_stamp = render_results[i]->time_stamp;
         response.image_data_uint8 = std::vector<uint8_t>(render_results[i]->image_data_uint8.GetData(), render_results[i]->image_data_uint8.GetData() + render_results[i]->image_data_uint8.Num());
         response.image_data_float = std::vector<float>(render_results[i]->image_data_float.GetData(), render_results[i]->image_data_float.GetData() + render_results[i]->image_data_float.Num());

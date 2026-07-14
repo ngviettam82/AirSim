@@ -7,9 +7,12 @@
 #include "common/CommonStructs.hpp"
 #include "common/UpdatableObject.hpp"
 #include "common/ImageCaptureBase.hpp"
+#include "common/RecordingCapture.hpp"
 #include "physics/Kinematics.hpp"
 #include "physics/Environment.hpp"
 #include "common/AirSimSettings.hpp"
+#include <vector>
+#include <string>
 
 namespace msr
 {
@@ -69,6 +72,19 @@ namespace airlib
         virtual RCData getRCData() const = 0; //get reading from RC from simulator's host OS
         virtual std::string getVehicleName() const = 0;
         virtual std::string getRecordFileLine(bool is_header_line) const = 0;
+        // Request-local capture: pose + configured sensor outputs.
+        // Call while physics is paused/locked. sequence_id is session-local.
+        // schema_tokens: unique column tokens matching the file header.
+        virtual RecordingCapture createRecordingCapture(
+            uint64_t sequence_id,
+            const std::vector<std::string>& sensor_names,
+            const std::vector<std::string>& schema_tokens) const
+        {
+            unused(sequence_id);
+            unused(sensor_names);
+            unused(schema_tokens);
+            return RecordingCapture();
+        }
         virtual void toggleTrace() = 0;
         virtual void setTraceLine(const std::vector<float>& color_rgba, float thickness) = 0;
 

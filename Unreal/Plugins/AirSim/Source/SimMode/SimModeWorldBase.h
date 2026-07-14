@@ -37,6 +37,9 @@ public:
     virtual void setWind(const msr::airlib::Vector3r& wind) const override;
     virtual void setExtForce(const msr::airlib::Vector3r& ext_force) const override;
 
+    // Provide physics lock so recording snapshots are consistent with sensor updates.
+    virtual void startRecording() override;
+
 protected:
     void startAsyncUpdator();
     void stopAsyncUpdator();

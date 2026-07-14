@@ -28,6 +28,7 @@
 #include "common/common_utils/UniqueValueMap.hpp"
 
 #include "PawnEvents.h"
+#include "common/RecordingCapture.hpp"
 
 class PawnSimApi : public msr::airlib::VehicleSimApiBase
 {
@@ -45,6 +46,7 @@ public: //types
     typedef msr::airlib::ImageCaptureBase ImageCaptureBase;
     typedef msr::airlib::DetectionInfo DetectionInfo;
     typedef msr::airlib::Kinematics Kinematics;
+    typedef msr::airlib::RecordingCapture RecordingCapture;
 
     struct Params
     {
@@ -110,6 +112,10 @@ public: //implementation of VehicleSimApiBase
     virtual void setPhysicsRawKinematics(const msr::airlib::Kinematics::State& state) override;
     virtual const msr::airlib::Environment* getGroundTruthEnvironment() const override;
     virtual std::string getRecordFileLine(bool is_header_line) const override;
+    virtual RecordingCapture createRecordingCapture(
+        uint64_t sequence_id,
+        const std::vector<std::string>& sensor_names,
+        const std::vector<std::string>& schema_tokens) const override;
     virtual void reportState(msr::airlib::StateReporter& reporter) override;
 
 protected: //additional interface for derived class

@@ -2,19 +2,26 @@
 
 #include "CoreMinimal.h"
 #include <string>
+#include <vector>
 #include "AirBlueprintLib.h"
 #include "physics/Kinematics.hpp"
 #include "HAL/FileManager.h"
-#include "PawnSimApi.h"
+#include "api/VehicleSimApiBase.hpp"
+#include "common/RecordingCapture.hpp"
+#include "common/ImageCaptureBase.hpp"
 
 class RecordingFile
 {
 public:
     ~RecordingFile();
 
-    void appendRecord(const std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses, msr::airlib::VehicleSimApiBase* vehicle_sim_api) const;
+    // Write a request-local capture transaction. Image I/O does not re-sample pose/sensors.
+    void appendRecord(const std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
+                      const msr::airlib::RecordingCapture& capture) const;
+
     void appendColumnHeader(const std::string& header_columns);
-    void startRecording(msr::airlib::VehicleSimApiBase* vehicle_sim_api, const std::string& folder = "");
+    void startRecording(const msr::airlib::RecordingCapture& header_template,
+                        const std::string& folder = "");
     void stopRecording(bool ignore_if_stopped);
     bool isRecording() const;
 

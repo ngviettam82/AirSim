@@ -1,62 +1,65 @@
-# Modifying Recording Data
+# Recording Data (Cameras + Sensors)
 
-Cosys-AirSim has a [Recording feature](settings.md#recording) to easily collect data and images. The [Recording APIs](apis.md#recording-apis) also allows starting and stopping the recording using API.
+## Synchronization guarantee
 
-However, the data recorded by default might not be sufficient for your use cases, and it might be preferable to record additional data such as IMU, GPS sensors, Rotor speed for copters, etc. You can use the existing Python and C++ APIs to get the information and store it as required, especially for Lidar. Another option for adding small fields such as GPS or internal data such as Unreal position or something else is possible through modifying the recording methods inside Cosys-AirSim. This page describes the specific methods which you might need to change.
+Each sample is a **logical same-snapshot association**:
 
-The recorded data is written in a `airsim_rec.txt` file in a tab-separated format, with images in an `images/` folder. The entire folder is by default present in the `Documents` folder (or specified in settings) with the timestamp of when the recording started in `%Y-%M-%D-%H-%M-%S` format.
+1. Physics is **paused**.
+2. Pose + configured sensor outputs are snapshotted under the physics lock (`PhysicsStepID`, `FrameTimeStamp`).
+3. Render pawn state is updated from that kinematics.
+4. Images are captured **while physics remains paused**.
+5. Physics is resumed; disk I/O is outside the pause.
 
-Car vehicle records the following fields -
+This is **not** continuous-time shutter accuracy. We do **not** claim wall-clock bounds such as `<0.1 ms`.
 
-```text
-VehicleName TimeStamp   POS_X   POS_Y   POS_Z   Q_W Q_X Q_Y Q_Z Throttle    Steering    Brake   Gear    Handbrake   RPM Speed   ImageFile
-```
+| Field | Meaning |
+|-------|---------|
+| `FrameTimeStamp` | Sim-clock ns at paused snapshot |
+| `PhysicsStepID` | ClockFactory step count at snapshot |
+| `SequenceID` | Monotonic id within the session (restarts each session) |
+| `RenderFrameNumber` | UE frame after image path (0 if no cameras) |
+| `S_TimeStamp` | Native sensor output timestamp (never rewritten) |
+| `S_Age` | `FrameTimeStamp - S_TimeStamp` (ns) |
+| Image filename | Includes `_s{SequenceID}_p{PhysicsStepID}_{FrameTimeStamp}` |
+| Image response timestamp | Native render/readback time (not forced equal to frame) |
 
-For Multirotor -
+Default multirotor sensor names are **lowercase** (`imu`, `gps`, `barometer`, `magnetometer`). Selection is **case-insensitive**.
 
-```text
-VehicleName TimeStamp   POS_X   POS_Y   POS_Z   Q_W Q_X Q_Y Q_Z ImageFile
-```
+## Settings example
 
-## Code Changes
-
-Note that this requires building and using Cosys-AirSim from source. You can compile a binary yourself after modifying if needed.
-
-The primary method which fills the data to be stored is [`PawnSimApi::getRecordFileLine`](https://github.com/microsoft/AirSim/blob/880c5541fd4824ee2cd9bb82ca5f611eb1ab236a/Unreal/Plugins/AirSim/Source/PawnSimApi.cpp#L544), it's the base method for all the vehicles, and Car overrides it to log additional data, as can be seen in [`CarPawnSimApi::getRecordFileLine`](https://github.com/microsoft/AirSim/blob/880c5541fd4824ee2cd9bb82ca5f611eb1ab236a/Unreal/Plugins/AirSim/Source/Vehicles/Car/CarPawnSimApi.cpp#L34).
-
-To record additional data for multirotor, you can add a similar method in [MultirotorPawnSimApi.cpp/h](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/Unreal/Plugins/AirSim/Source/Vehicles/Multirotor) files which overrides the base class implementation and append other data. The currently logged data can also be modified and removed as needed.
-
-E.g. recording GPS, IMU and Barometer data also for multirotor -
-
-```cpp
-// MultirotorPawnSimApi.cpp
-std::string MultirotorPawnSimApi::getRecordFileLine(bool is_header_line) const
-{
-    std::string common_line = PawnSimApi::getRecordFileLine(is_header_line);
-    if (is_header_line) {
-        return common_line +
-               "Latitude\tLongitude\tAltitude\tPressure\tAccX\tAccY\tAccZ\t";
-    }
-
-    const auto& state = vehicle_api_->getMultirotorState();
-    const auto& bar_data = vehicle_api_->getBarometerData("");
-    const auto& imu_data = vehicle_api_->getImuData("");
-
-    std::ostringstream ss;
-    ss << common_line;
-    ss << state.gps_location.latitude << "\t" << state.gps_location.longitude << "\t"
-       << state.gps_location.altitude << "\t";
-
-    ss << bar_data.pressure << "\t";
-
-    ss << imu_data.linear_acceleration.x() << "\t" << imu_data.linear_acceleration.y() << "\t"
-       << imu_data.linear_acceleration.z() << "\t";
-
-    return ss.str();
+```json
+"Recording": {
+  "RecordInterval": 0.05,
+  "Cameras": [
+    { "CameraName": "0", "ImageType": 0, "VehicleName": "drone1", "Compress": true }
+  ],
+  "Sensors": [
+    { "VehicleName": "drone1", "SensorName": "imu" },
+    { "VehicleName": "drone1", "SensorName": "gps" },
+    { "VehicleName": "drone1", "SensorName": "barometer" },
+    { "VehicleName": "drone1", "SensorName": "magnetometer" }
+  ]
 }
 ```
 
-```cpp
-// MultirotorPawnSimApi.h
-virtual std::string getRecordFileLine(bool is_header_line) const override;
-```
+- `"Cameras": []` — pose/sensors only.
+- Missing sensors: `S_Present=0`, empty value fields (column count fixed).
+- `S_Present=1` only when `time_stamp != 0`. GPS also has `S_GPS_Valid`.
+- Distance honors `UpdateLatency`, `UpdateFrequency`, `StartupDelay`, `UncorrelatedNoiseSigma`.
+
+## Columns
+
+Base (12): `VehicleName`, `SequenceID`, `PhysicsStepID`, `RenderFrameNumber`, `FrameTimeStamp`, `POS_*`, `Q_*`
+
+Per sensor token `S` (32): Present, TimeStamp, Age, 10 IMU, 10 GPS, 3 Baro, 3 Mag, 3 Distance (type-specific filled; others empty).
+
+Car/Skid extras: `Throttle`, `Steering`, `Brake`, `Gear`, `Handbrake`, `RPM`, `Speed`.
+
+Then `ImageFile` (only successfully saved files).
+
+## Lifecycle
+
+- `Recording.Enabled=true` starts on the **next tick** after vehicle/physics init.
+- Restart waits for the previous worker to finish; `SequenceID` restarts at 1.
+- EndPlay stops recording before destroying `physics_world_`.
+- Recording / RPC / CameraHost image captures are serialized.

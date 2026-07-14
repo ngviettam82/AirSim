@@ -2,7 +2,10 @@
 #include "AirBlueprintLib.h"
 #include "vehicles/multirotor/MultiRotorParamsFactory.hpp"
 #include "UnrealSensors/UnrealSensorFactory.h"
+#include "sensors/SensorBase.hpp"
+#include "common/RecordingCapture.hpp"
 #include <exception>
+#include <sstream>
 
 using namespace msr::airlib;
 
@@ -45,6 +48,173 @@ void MultirotorPawnSimApi::pawnTick(float dt)
 {
     unused(dt);
     //calls to update* are handled by physics engine and in SimModeWorldBase
+}
+
+namespace
+{
+    using SensorType = msr::airlib::SensorBase::SensorType;
+
+    const msr::airlib::SensorBase* findRecordingSensor(
+        const msr::airlib::VehicleApiBase* api,
+        const std::string& sensor_name,
+        SensorType& out_type)
+    {
+        if (api == nullptr)
+            return nullptr;
+        const SensorType candidates[] = {
+            SensorType::Imu, SensorType::Gps, SensorType::Barometer,
+            SensorType::Magnetometer, SensorType::Distance
+        };
+        try {
+            const auto& sensors = api->getSensors();
+            for (SensorType type : candidates) {
+                const uint count = sensors.size(type);
+                for (uint i = 0; i < count; ++i) {
+                    const auto* sensor = sensors.getByType(type, i);
+                    if (!sensor)
+                        continue;
+                    if (sensor_name.empty() ||
+                        msr::airlib::RecordingCapture::namesEqualIgnoreCase(sensor->getName(), sensor_name)) {
+                        out_type = type;
+                        return sensor;
+                    }
+                }
+            }
+        }
+        catch (...) {
+            return nullptr;
+        }
+        return nullptr;
+    }
+}
+
+msr::airlib::RecordingCapture MultirotorPawnSimApi::createRecordingCapture(
+    uint64_t sequence_id,
+    const std::vector<std::string>& sensor_names,
+    const std::vector<std::string>& schema_tokens) const
+{
+    RecordingCapture capture = PawnSimApi::createRecordingCapture(sequence_id, sensor_names, schema_tokens);
+    const auto* api = getVehicleApiBase();
+    const auto& schema_names = msr::airlib::AirSimSettings::singleton().recording_setting.sensor_schema;
+
+    for (size_t si = 0; si < sensor_names.size(); ++si) {
+        const auto& sensor_name = sensor_names[si];
+        msr::airlib::RecordingSensorSample sample;
+        sample.sensor_name = sensor_name;
+        for (size_t ti = 0; ti < schema_names.size() && ti < schema_tokens.size(); ++ti) {
+            if (msr::airlib::RecordingCapture::namesEqualIgnoreCase(schema_names[ti], sensor_name)) {
+                sample.schema_token = schema_tokens[ti];
+                break;
+            }
+        }
+        if (sample.schema_token.empty() && si < schema_tokens.size())
+            sample.schema_token = schema_tokens[si];
+
+        SensorType type = SensorType::Imu;
+        const auto* sensor = findRecordingSensor(api, sensor_name, type);
+        if (!sensor) {
+            sample.present = false;
+            sample.error = "sensor not found, disabled, or unsupported";
+            UAirBlueprintLib::LogMessageString("Recording sensor missing: ", sensor_name, LogDebugLevel::Failure);
+            capture.sensors.push_back(sample);
+            continue;
+        }
+
+        sample.sensor_type = type;
+        sample.sensor_name = sensor->getName();
+        try {
+            switch (type) {
+            case SensorType::Imu: {
+                const auto& out = api->getImuData(sensor->getName());
+                sample.sensor_time_stamp = out.time_stamp;
+                sample.imu_linear_acceleration = out.linear_acceleration;
+                sample.imu_angular_velocity = out.angular_velocity;
+                sample.imu_orientation = out.orientation;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present)
+                    sample.error = "IMU has no output yet (timestamp 0)";
+                break;
+            }
+            case SensorType::Gps: {
+                const auto& out = api->getGpsData(sensor->getName());
+                sample.sensor_time_stamp = out.time_stamp;
+                sample.gps_lat = out.gnss.geo_point.latitude;
+                sample.gps_lon = out.gnss.geo_point.longitude;
+                sample.gps_alt = out.gnss.geo_point.altitude;
+                sample.gps_velocity = out.gnss.velocity;
+                sample.gps_eph = out.gnss.eph;
+                sample.gps_epv = out.gnss.epv;
+                sample.gps_fix = static_cast<int>(out.gnss.fix_type);
+                sample.gps_valid = out.is_valid;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present)
+                    sample.error = "GPS has no output yet";
+                break;
+            }
+            case SensorType::Barometer: {
+                const auto& out = api->getBarometerData(sensor->getName());
+                sample.sensor_time_stamp = out.time_stamp;
+                sample.baro_altitude = out.altitude;
+                sample.baro_pressure = out.pressure;
+                sample.baro_qnh = out.qnh;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present)
+                    sample.error = "Barometer has no output yet";
+                break;
+            }
+            case SensorType::Magnetometer: {
+                const auto& out = api->getMagnetometerData(sensor->getName());
+                sample.sensor_time_stamp = out.time_stamp;
+                sample.mag_field_body = out.magnetic_field_body;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present)
+                    sample.error = "Magnetometer has no output yet";
+                break;
+            }
+            case SensorType::Distance: {
+                const auto& out = api->getDistanceSensorData(sensor->getName());
+                sample.sensor_time_stamp = out.time_stamp;
+                sample.distance = out.distance;
+                sample.distance_min = out.min_distance;
+                sample.distance_max = out.max_distance;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present)
+                    sample.error = "Distance has no output yet";
+                break;
+            }
+            default:
+                sample.present = false;
+                sample.error = "unsupported sensor type";
+                break;
+            }
+        }
+        catch (const std::exception& ex) {
+            sample.present = false;
+            sample.error = ex.what();
+        }
+
+        if (sample.present && sample.sensor_time_stamp != 0) {
+            sample.age_ns = msr::airlib::recordingSensorAgeNs(
+                capture.frame_time_stamp, sample.sensor_time_stamp);
+        }
+        capture.sensors.push_back(sample);
+    }
+    return capture;
+}
+
+std::string MultirotorPawnSimApi::getRecordFileLine(bool is_header_line) const
+{
+    const auto& schema = msr::airlib::AirSimSettings::singleton().recording_setting.sensor_schema;
+    const auto tokens = msr::airlib::RecordingCapture::buildSchemaTokens(schema);
+    if (is_header_line)
+        return msr::airlib::RecordingCapture::headerColumns(tokens);
+
+    std::vector<std::string> names;
+    const auto& sensors_map = msr::airlib::AirSimSettings::singleton().recording_setting.sensors;
+    const auto it = sensors_map.find(getVehicleName());
+    if (it != sensors_map.end())
+        names = it->second;
+    return createRecordingCapture(0, names, tokens).toRecordLine();
 }
 
 void MultirotorPawnSimApi::updateRenderedState(float dt)
