@@ -4,8 +4,6 @@
 int2 SceneTextureMin;
 int2 OutputTextureMin;
 uint OutputMode;
-Texture2D AirSimDepthTexture;
-Texture2D<uint2> AirSimStencilTexture;
 
 static const uint PublicSegmentationPalette[256] =
 {
@@ -46,17 +44,8 @@ static const uint PublicSegmentationPalette[256] =
 void MainPS(in float4 SvPosition : SV_POSITION, out float4 OutColor : SV_Target0)
 {
     const int2 ScenePixel = int2(SvPosition.xy) - OutputTextureMin + SceneTextureMin;
-    const float AirSimDeviceZ = AirSimDepthTexture.Load(int3(ScenePixel, 0)).r;
-    const float SceneDeviceZ = SceneTexturesStruct.SceneDepthTexture.Load(int3(ScenePixel, 0)).r;
-    const bool AirSimDepthIsValid = abs(AirSimDeviceZ - FarDepthValue) > 1.0e-7;
-#if HAS_INVERTED_Z_BUFFER
-    const bool AirSimDepthIsVisible = AirSimDeviceZ + 1.0e-6 >= SceneDeviceZ;
-#else
-    const bool AirSimDepthIsVisible = AirSimDeviceZ <= SceneDeviceZ + 1.0e-6;
-#endif
-    const uint Label = AirSimDepthIsValid && AirSimDepthIsVisible
-        ? AirSimStencilTexture.Load(int3(ScenePixel, 0)) STENCIL_COMPONENT_SWIZZLE
-        : CalcSceneCustomStencil(ScenePixel);
+    const uint Label = CalcSceneCustomStencil(ScenePixel);
+
     if (OutputMode == 1u)
     {
         const float Value = float(Label) / 255.0;

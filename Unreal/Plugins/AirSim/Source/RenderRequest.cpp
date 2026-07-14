@@ -82,13 +82,63 @@ namespace
             return;
         }
 
+        const bool capture_immediately =
+            params->image_type == ImageType::Segmentation ||
+            params->image_type == ImageType::Infrared;
+
         if (params->isEquirectangular() &&
             params->render_target_cube != nullptr &&
             params->render_component_cube != nullptr) {
-            params->render_component_cube->CaptureSceneDeferred();
+            if (capture_immediately) {
+                params->render_component_cube->CaptureScene();
+            }
+            else {
+                params->render_component_cube->CaptureSceneDeferred();
+            }
         }
         else if (params->render_target != nullptr && params->render_component != nullptr) {
-            params->render_component->CaptureSceneDeferred();
+            if (capture_immediately) {
+                params->render_component->CaptureScene();
+            }
+            else {
+                params->render_component->CaptureSceneDeferred();
+            }
+        }
+    }
+
+    bool UsesSameCaptureTarget(
+        const RenderRequest::RenderParams* lhs,
+        const RenderRequest::RenderParams* rhs)
+    {
+        if (lhs == nullptr || rhs == nullptr || lhs->isEquirectangular() != rhs->isEquirectangular()) {
+            return false;
+        }
+
+        if (lhs->isEquirectangular()) {
+            return lhs->render_component_cube == rhs->render_component_cube &&
+                   lhs->render_target_cube == rhs->render_target_cube;
+        }
+
+        return lhs->render_component == rhs->render_component &&
+               lhs->render_target == rhs->render_target;
+    }
+
+    void CaptureScenesForRequests(
+        std::shared_ptr<RenderRequest::RenderParams> params[],
+        unsigned int request_count)
+    {
+        for (unsigned int index = 0; index < request_count; ++index) {
+            bool already_captured = false;
+            for (unsigned int previous_index = 0; previous_index < index; ++previous_index) {
+                if (UsesSameCaptureTarget(params[index].get(), params[previous_index].get())) {
+                    already_captured = true;
+                    break;
+                }
+            }
+
+            if (!already_captured) {
+                CaptureSceneForRequest(params[index].get());
+            }
         }
     }
 
@@ -644,9 +694,7 @@ void RenderRequest::getScreenshot(
             });
 
             // while we're still on GameThread, enqueue request for capture the scene!
-            for (unsigned int i = 0; i < req_size_; ++i) {
-                CaptureSceneForRequest(params_[i].get());
-            }
+            CaptureScenesForRequests(params_, req_size_);
         });
 
         // wait for this task to complete
@@ -727,9 +775,7 @@ void RenderRequest::getScreenshot(
                 }
             });
 
-            for (unsigned int index = 0; index < request->req_size_; ++index) {
-                CaptureSceneForRequest(request->params_[index].get());
-            }
+            CaptureScenesForRequests(request->params_, request->req_size_);
         });
 
         double next_warning_time = FPlatformTime::Seconds() + 5.0;

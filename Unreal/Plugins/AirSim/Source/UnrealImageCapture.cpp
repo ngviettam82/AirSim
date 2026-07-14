@@ -12,9 +12,9 @@ namespace
     using ImageType = msr::airlib::ImageCaptureBase::ImageType;
     using AirSimSettings = msr::airlib::AirSimSettings;
 
-    FCriticalSection InfraredWarmupCriticalSection;
-    TSet<TWeakObjectPtr<USceneCaptureComponent2D>> WarmedInfrared2DCaptures;
-    TSet<TWeakObjectPtr<USceneCaptureComponentCube>> WarmedInfraredCubeCaptures;
+    FCriticalSection LabelCubeWarmupExecutionCriticalSection;
+    FCriticalSection LabelCubeWarmupCriticalSection;
+    TSet<TWeakObjectPtr<USceneCaptureComponentCube>> WarmedLabelCubeCaptures;
 
     struct EquirectangularExposureSettings
     {
@@ -70,43 +70,68 @@ namespace
         return result;
     }
 
-    bool MarkInfraredCaptureForWarmup(const RenderRequest::RenderParams* params)
+    bool MarkLabelCubeCaptureForWarmup(const RenderRequest::RenderParams* params)
     {
-        if (params == nullptr || params->image_type != ImageType::Infrared) {
+        if (params == nullptr ||
+            !params->isEquirectangular() ||
+            params->render_component_cube == nullptr ||
+            params->render_target_cube == nullptr ||
+            (params->image_type != ImageType::Segmentation &&
+             params->image_type != ImageType::Infrared)) {
             return false;
         }
 
-        FScopeLock lock(&InfraredWarmupCriticalSection);
-        if (params->isEquirectangular() && params->render_component_cube != nullptr) {
-            for (auto It = WarmedInfraredCubeCaptures.CreateIterator(); It; ++It) {
-                if (!It->IsValid()) {
-                    It.RemoveCurrent();
-                }
+        FScopeLock lock(&LabelCubeWarmupCriticalSection);
+        for (auto It = WarmedLabelCubeCaptures.CreateIterator(); It; ++It) {
+            if (!It->IsValid()) {
+                It.RemoveCurrent();
             }
-            const TWeakObjectPtr<USceneCaptureComponentCube> capture_key(params->render_component_cube);
-            if (WarmedInfraredCubeCaptures.Contains(capture_key)) {
-                return false;
-            }
-            WarmedInfraredCubeCaptures.Add(capture_key);
-            return true;
         }
 
-        if (params->render_component != nullptr) {
-            for (auto It = WarmedInfrared2DCaptures.CreateIterator(); It; ++It) {
-                if (!It->IsValid()) {
-                    It.RemoveCurrent();
-                }
-            }
-            const TWeakObjectPtr<USceneCaptureComponent2D> capture_key(params->render_component);
-            if (WarmedInfrared2DCaptures.Contains(capture_key)) {
-                return false;
-            }
-            WarmedInfrared2DCaptures.Add(capture_key);
-            return true;
+        const TWeakObjectPtr<USceneCaptureComponentCube> capture_key(
+            params->render_component_cube);
+        if (WarmedLabelCubeCaptures.Contains(capture_key)) {
+            return false;
         }
 
-        return false;
+        WarmedLabelCubeCaptures.Add(capture_key);
+        return true;
     }
+
+    void ResetLabelCubeWarmup(const RenderRequest::RenderParams* params)
+    {
+        if (params == nullptr || params->render_component_cube == nullptr) {
+            return;
+        }
+
+        FScopeLock lock(&LabelCubeWarmupCriticalSection);
+        WarmedLabelCubeCaptures.Remove(
+            TWeakObjectPtr<USceneCaptureComponentCube>(params->render_component_cube));
+    }
+
+    std::shared_ptr<RenderRequest::RenderParams> MakeLabelCubeWarmupParams(
+        const RenderRequest::RenderParams* params)
+    {
+        if (params == nullptr ||
+            params->render_component_cube == nullptr ||
+            params->render_target_cube == nullptr) {
+            return nullptr;
+        }
+
+        return std::make_shared<RenderRequest::RenderParams>(
+            params->render_component_cube,
+            params->render_target_cube,
+            false,
+            false,
+            params->disable_gamma,
+            params->image_type,
+            params->max_depth_meters,
+            params->equirectangular_exposure_compensation,
+            params->equirectangular_exposure_min,
+            params->equirectangular_exposure_max,
+            false);
+    }
+
 }
 
 UnrealImageCapture::UnrealImageCapture(const common_utils::UniqueValueMap<std::string, APIPCamera*>* cameras)
@@ -194,7 +219,6 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         bool useEquirectangular = false;
         const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
             camera->GetAnnotationNameExist(requests[i].annotation_name);
-
         if (!has_annotation) {
             response.message = "Can't take screenshot because the annotation name does not exist for this camera";
         }
@@ -265,25 +289,55 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         return;
     }
 
-    std::vector<std::shared_ptr<RenderRequest::RenderParams>> infrared_warmup_params;
-    for (const std::shared_ptr<RenderRequest::RenderParams>& params : render_params) {
-        if (MarkInfraredCaptureForWarmup(params.get())) {
-            infrared_warmup_params.push_back(params);
+    {
+        // Serialize first-use priming so a concurrent request cannot read the
+        // same cube between marking it warm and completing both prime frames.
+        FScopeLock warmup_execution_lock(&LabelCubeWarmupExecutionCriticalSection);
+        std::vector<std::shared_ptr<RenderRequest::RenderParams>> label_cube_warmup_params;
+        for (const std::shared_ptr<RenderRequest::RenderParams>& params : render_params) {
+            if (MarkLabelCubeCaptureForWarmup(params.get())) {
+                std::shared_ptr<RenderRequest::RenderParams> warmup_params =
+                    MakeLabelCubeWarmupParams(params.get());
+                if (warmup_params != nullptr) {
+                    label_cube_warmup_params.push_back(std::move(warmup_params));
+                }
+                else {
+                    ResetLabelCubeWarmup(params.get());
+                }
+            }
         }
-    }
-    if (!infrared_warmup_params.empty()) {
-        // The replacing-tonemapper path becomes visible one frame later in UE
-        // 5.5. Run two discarded captures once per Infrared component so the
-        // first user-visible response is already the stencil image.
-        for (int32 warmup_index = 0; warmup_index < 2; ++warmup_index) {
-            std::vector<std::shared_ptr<RenderRequest::RenderResult>> infrared_warmup_results;
-            RenderRequest infrared_warmup_request{ gameViewport, []() {} };
-            infrared_warmup_request.getScreenshot(
-                infrared_warmup_params.data(),
-                infrared_warmup_results,
-                infrared_warmup_params.size(),
-                use_safe_method,
-                cancellation);
+        if (!label_cube_warmup_params.empty()) {
+            // UE 5.5 exposes a newly activated cube capture's replacing-tonemapper
+            // material two completed capture frames later. Prime each label cube
+            // on first use so every user-visible response is labeled.
+            bool warmup_complete = false;
+            for (int32 warmup_index = 0; warmup_index < 2; ++warmup_index) {
+                std::vector<std::shared_ptr<RenderRequest::RenderResult>> warmup_results;
+                RenderRequest warmup_request{ gameViewport, []() {} };
+                warmup_request.getScreenshot(
+                    label_cube_warmup_params.data(),
+                    warmup_results,
+                    label_cube_warmup_params.size(),
+                    use_safe_method,
+                    cancellation);
+
+                warmup_complete = warmup_results.size() == label_cube_warmup_params.size();
+                for (const std::shared_ptr<RenderRequest::RenderResult>& result : warmup_results) {
+                    warmup_complete = warmup_complete &&
+                        result != nullptr &&
+                        result->width > 0 &&
+                        result->height > 0;
+                }
+                if (!warmup_complete) {
+                    break;
+                }
+            }
+
+            if (!warmup_complete) {
+                for (const std::shared_ptr<RenderRequest::RenderParams>& params : label_cube_warmup_params) {
+                    ResetLabelCubeWarmup(params.get());
+                }
+            }
         }
     }
 

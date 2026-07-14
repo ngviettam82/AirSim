@@ -280,13 +280,16 @@ namespace
 		{
 			if (ALandscapeProxy* landscape_proxy = landscape_component->GetLandscapeProxy())
 			{
-				landscape_proxy->CustomDepthStencilWriteMask = ERendererStencilMask::ERSM_255;
+				landscape_proxy->CustomDepthStencilWriteMask = ERendererStencilMask::ERSM_Default;
 				landscape_proxy->CustomDepthStencilValue = static_cast<int32>(stencil_value);
 				landscape_proxy->bRenderCustomDepth = true;
 			}
 		}
 
-		component->SetCustomDepthStencilWriteMask(ERendererStencilMask::ERSM_255);
+		// ERSM_255 is Unreal's "ignore depth" mode: a farther primitive can
+		// replace the stencil of a nearer one while leaving the nearer depth.
+		// ERSM_Default still writes all eight bits but honors the depth test.
+		component->SetCustomDepthStencilWriteMask(ERendererStencilMask::ERSM_Default);
 		component->SetCustomDepthStencilValue(static_cast<int32>(stencil_value));
 		component->SetRenderCustomDepth(true);
 	}
@@ -2469,8 +2472,14 @@ void FObjectAnnotator::SetViewForAnnotationRender(FEngineShowFlags& show_flags)
 
 void FObjectAnnotator::SetViewForSourceStencilAnnotationRender(FEngineShowFlags& show_flags)
 {
-	show_flags.SetMaterials(false);
-	show_flags.SetLighting(false);
+	// UE 5.5 treats a view with any of these flags disabled as a rich/debug
+	// view. Static-mesh proxies then leave the normal static visibility and
+	// CustomDepth command path, which makes source-stencil labels intermittent.
+	show_flags.SetMaterials(true);
+	show_flags.SetLighting(true);
+	show_flags.SetLOD(true);
+	show_flags.SetVolumetricLightmap(true);
+	show_flags.SetIndirectLightingCache(true);
 	show_flags.SetBSPTriangles(true);
 	show_flags.SetPostProcessing(true);
 	show_flags.SetPostProcessMaterial(true);
