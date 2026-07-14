@@ -5,15 +5,16 @@
 #include "Runtime/Engine/Public/EngineUtils.h"
 #include "SceneInterface.h"
 #include "PrimitiveSceneInfo.h"
-#include "Runtime/Launch/Resources/Version.h"
 #include "Components/SkinnedMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "LandscapeComponent.h"
 #include "LandscapeProxy.h"
 #include "AnnotationComponent.h"
-#include "AirBlueprintLib.h"
+#include "PublicSegmentationPalette.h"
 #include "Misc/DefaultValueHelper.h"
+#include "Misc/ScopeLock.h"
+#include "UObject/UObjectGlobals.h"
 
 // For UE4 < 17
 // check https://github.com/unrealcv/unrealcv/blob/1369a72be8428547318d8a52ae2d63e1eb57a001/Source/UnrealCV/Private/Controller/ObjectAnnotator.cpp#L1
@@ -22,6 +23,7 @@ namespace
 {
 	constexpr int32 MaxSourceStencilAnnotationId = 255;
 	constexpr int32 MaxRGBColorMapIndex = 2744000 - 1;
+	FCriticalSection ColorMapInitializationCriticalSection;
 
 	bool IsSourceStencilBackendName(const FString& render_backend)
 	{
@@ -132,25 +134,17 @@ namespace
 		return FString::Join(parts, TEXT("_"));
 	}
 
-	FString GetStableMeshLabel(UMeshComponent* component)
+	FString GetStableComponentLabel(UMeshComponent* component)
 	{
-		if (const UStaticMeshComponent* static_mesh_component = Cast<UStaticMeshComponent>(component))
+		if (!IsValid(component))
 		{
-			if (UStaticMesh* static_mesh = static_mesh_component->GetStaticMesh())
-			{
-				return static_mesh->GetName();
-			}
+			return FString();
 		}
 
-		if (const USkinnedMeshComponent* skinned_mesh_component = Cast<USkinnedMeshComponent>(component))
-		{
-			if (UObject* skinned_asset = skinned_mesh_component->GetSkinnedAsset())
-			{
-				return skinned_asset->GetName();
-			}
-		}
-
-		return FString();
+		// Stop at the world so PIE/package prefixes do not become part of the
+		// identity. The remaining actor/component path is unique within a world
+		// while repeated users of the same mesh asset remain separate instances.
+		return component->GetPathName(component->GetWorld());
 	}
 
 	FString GetStableLandscapeLabel(ULandscapeComponent* component)
@@ -302,9 +296,79 @@ namespace
 			return;
 		}
 
-		component->SetCustomDepthStencilWriteMask(ERendererStencilMask::ERSM_255);
+		if (ULandscapeComponent* landscape_component = Cast<ULandscapeComponent>(component))
+		{
+			if (ALandscapeProxy* landscape_proxy = landscape_component->GetLandscapeProxy())
+			{
+				landscape_proxy->CustomDepthStencilWriteMask = ERendererStencilMask::ERSM_Default;
+				landscape_proxy->CustomDepthStencilValue = static_cast<int32>(stencil_value);
+				landscape_proxy->bRenderCustomDepth = true;
+			}
+		}
+
+		// ERSM_255 is Unreal's "ignore depth" mode: a farther primitive can
+		// replace the stencil of a nearer one while leaving the nearer depth.
+		// ERSM_Default still writes all eight bits but honors the depth test.
+		component->SetCustomDepthStencilWriteMask(ERendererStencilMask::ERSM_Default);
 		component->SetCustomDepthStencilValue(static_cast<int32>(stencil_value));
 		component->SetRenderCustomDepth(true);
+	}
+
+	bool HasAnnotationGeometry(const UPrimitiveComponent* component)
+	{
+		if (!IsValid(component))
+		{
+			return false;
+		}
+
+		if (const UStaticMeshComponent* static_mesh_component = Cast<UStaticMeshComponent>(component))
+		{
+			return IsValid(static_mesh_component->GetStaticMesh());
+		}
+
+		if (const USkinnedMeshComponent* skinned_mesh_component = Cast<USkinnedMeshComponent>(component))
+		{
+			return IsValid(skinned_mesh_component->GetSkinnedAsset());
+		}
+
+		return true;
+	}
+
+	void LogIndexedAnnotationPaintFailure(const FString& annotation_name,
+		const FString& component_name,
+		UPrimitiveComponent* component,
+		const TCHAR* operation)
+	{
+		if (!IsValid(component))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Failed to %s %s because its component is invalid. Skipping it."), *annotation_name, operation, *component_name);
+			return;
+		}
+
+		FString asset_path = TEXT("<not applicable>");
+		if (const UStaticMeshComponent* static_mesh_component = Cast<UStaticMeshComponent>(component))
+		{
+			asset_path = IsValid(static_mesh_component->GetStaticMesh())
+				? static_mesh_component->GetStaticMesh()->GetPathName()
+				: TEXT("<none>");
+		}
+		else if (const USkinnedMeshComponent* skinned_mesh_component = Cast<USkinnedMeshComponent>(component))
+		{
+			asset_path = IsValid(skinned_mesh_component->GetSkinnedAsset())
+				? skinned_mesh_component->GetSkinnedAsset()->GetPathName()
+				: TEXT("<none>");
+		}
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("AirSim Annotation [%s]: Failed to %s %s. Skipping it. Component class=%s path=%s asset=%s registered=%s render_state=%s."),
+			*annotation_name,
+			operation,
+			*component_name,
+			*component->GetClass()->GetName(),
+			*component->GetPathName(),
+			*asset_path,
+			component->IsRegistered() ? TEXT("true") : TEXT("false"),
+			component->IsRenderStateCreated() ? TEXT("true") : TEXT("false"));
 	}
 }
 
@@ -316,9 +380,12 @@ FObjectAnnotator::FObjectAnnotator()
 	show_by_default_ = false;
 	set_direct_ = false;
 	max_view_distance_ = -1.0f;
+	// Built-in segmentation and infrared share the source primitive's single
+	// 8-bit stencil label, so no duplicate annotation geometry is required.
 	use_source_stencil_backend_ = true;
 	proxy_component_budget_ = 5000;
 	proxy_component_budget_warning_logged_ = false;
+	indexed_color_capacity_warning_logged_ = false;
 }
 
 FObjectAnnotator::FObjectAnnotator(FString name, AnnotatorType type, bool show_by_default, bool set_direct, FString texture_path, FString texture_prefix, float max_view_distance, FString render_backend, int32 proxy_component_budget)
@@ -332,18 +399,18 @@ FObjectAnnotator::FObjectAnnotator(FString name, AnnotatorType type, bool show_b
 	max_view_distance_ = max_view_distance;
 	proxy_component_budget_ = proxy_component_budget;
 	proxy_component_budget_warning_logged_ = false;
+	indexed_color_capacity_warning_logged_ = false;
 
-	const bool always_source_stencil = type_ == AnnotatorType::InstanceSegmentation || type_ == AnnotatorType::Infrared;
+	const bool indexed_annotation = type_ == AnnotatorType::InstanceSegmentation || type_ == AnnotatorType::Infrared;
 	const bool requested_source_stencil = IsSourceStencilBackendName(render_backend);
 	const bool requested_proxy = IsProxyBackendName(render_backend);
-	use_source_stencil_backend_ = always_source_stencil;
 
-	if (requested_source_stencil && !always_source_stencil)
+	use_source_stencil_backend_ = indexed_annotation;
+	if (requested_source_stencil && !indexed_annotation)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: SourceStencil is reserved for built-in InstanceSegmentation and Infrared because Unreal exposes one CustomDepth stencil value per primitive. Using proxy annotation for this custom layer."), *name_);
+		UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: SourceStencil is reserved for built-in InstanceSegmentation and Infrared because Unreal exposes one CustomDepth stencil value per primitive. This custom layer will not render because proxy annotation geometry is disabled."), *name_);
 	}
-
-	if (requested_proxy && always_source_stencil)
+	if (requested_proxy && indexed_annotation)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Proxy backend is disabled for built-in indexed segmentation/infrared. Using SourceStencil."), *name_);
 	}
@@ -881,8 +948,13 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 				component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 				const uint32 color_index = GetOrCreateLabelColorIndex(it.Key(), it.Value());
 				FColor Color = GetAnnotationColorForIndex(color_index);
+				if (!UpdatePaintRGBComponent(it.Value(), Color, it.Key()))
+				{
+					LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("update indexed annotation for"));
+					RemoveTrackedComponent(it.Key());
+					continue;
+				}
 				UpdateColorMappings(it.Key(), color_index);
-				check(UpdatePaintRGBComponent(it.Value(), Color, it.Key()));
 				annotated_any = true;
 			}
 			else {
@@ -895,8 +967,13 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 					component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 					uint32 ObjectIndex = GetOrCreateLabelColorIndex(it.Key(), it.Value());
 					FColor new_color = GetAnnotationColorForIndex(ObjectIndex);
+					if (!PaintRGBComponent(it.Value(), new_color, it.Key()))
+					{
+						LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("create indexed annotation for"));
+						RemoveTrackedComponent(it.Key());
+						continue;
+					}
 					UpdateColorMappings(it.Key(), ObjectIndex);
-					check(PaintRGBComponent(it.Value(), new_color, it.Key()));
 					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
 					annotated_any = true;
 				}else{
@@ -915,8 +992,13 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 				landscape_component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 				const uint32 color_index = GetOrCreateLandscapeLabelColorIndex(it.Key(), it.Value());
 				FColor Color = GetAnnotationColorForIndex(color_index);
+				if (!UpdatePaintLandscapeComponent(it.Value(), Color, it.Key()))
+				{
+					LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("update indexed landscape annotation for"));
+					RemoveTrackedComponent(it.Key());
+					continue;
+				}
 				UpdateColorMappings(it.Key(), color_index);
-				check(UpdatePaintLandscapeComponent(it.Value(), Color, it.Key()));
 				annotated_any = true;
 			}
 			else {
@@ -929,8 +1011,13 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 					landscape_component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 					uint32 ObjectIndex = GetOrCreateLandscapeLabelColorIndex(it.Key(), it.Value());
 					FColor new_color = GetAnnotationColorForIndex(ObjectIndex);
+					if (!PaintLandscapeComponent(it.Value(), new_color, it.Key()))
+					{
+						LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("create indexed landscape annotation for"));
+						RemoveTrackedComponent(it.Key());
+						continue;
+					}
 					UpdateColorMappings(it.Key(), ObjectIndex);
-					check(PaintLandscapeComponent(it.Value(), new_color, it.Key()));
 					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
 					annotated_any = true;
 				}
@@ -1201,7 +1288,11 @@ bool FObjectAnnotator::DeleteActor(AActor* actor)
 		for (auto it = paintable_components_meshes.CreateConstIterator(); it; ++it)
 		{
 			if (name_to_component_map_.Contains(it.Key())) {
-				check(DeleteComponent(it.Value(), it.Key()));
+				if (!DeleteComponent(it.Value(), it.Key()))
+				{
+					LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("delete annotation for"));
+					continue;
+				}
 				RemoveTrackedComponent(it.Key());
 				UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted object %s."), *name_, *it.Key());
 				deleted_any = true;
@@ -1221,7 +1312,11 @@ bool FObjectAnnotator::DeleteActor(AActor* actor)
 			for (auto it = paintable_landscape_components.CreateConstIterator(); it; ++it)
 			{
 				if (name_to_landscape_component_map_.Contains(it.Key())) {
-					check(DeleteLandscapeComponent(it.Value(), it.Key()));
+					if (!DeleteLandscapeComponent(it.Value(), it.Key()))
+					{
+						LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("delete landscape annotation for"));
+						continue;
+					}
 					RemoveTrackedComponent(it.Key());
 					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted landscape object %s."), *name_, *it.Key());
 					deleted_any = true;
@@ -1316,19 +1411,11 @@ bool FObjectAnnotator::UsesIndexedAnnotationColors() const
 
 bool FObjectAnnotator::CanCreateProxyAnnotationComponent(const FString& component_name)
 {
-	if (UsesIndexedAnnotationColors() || proxy_component_budget_ < 0)
-	{
-		return true;
-	}
-
-	if (name_to_annotation_component_map_.Num() < proxy_component_budget_)
-	{
-		return true;
-	}
-
 	if (!proxy_component_budget_warning_logged_)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Proxy annotation budget reached (%d components). Skipping additional proxy components; first skipped component: %s. Increase ProxyComponentBudget or narrow this annotation layer."), *name_, proxy_component_budget_, *component_name);
+		UE_LOG(LogTemp, Warning,
+			TEXT("AirSim Annotation [%s]: Proxy annotation rendering is disabled in this stencil-only build. Skipping custom annotation component %s; use the built-in Segmentation or Infrared image types."),
+			*name_, *component_name);
 		proxy_component_budget_warning_logged_ = true;
 	}
 
@@ -1350,7 +1437,12 @@ FString FObjectAnnotator::GetDisplayColorString(const FColor& color) const
 {
 	if (UsesSourceStencilBackend())
 	{
-		return FString::FromInt(color.R) + "," + FString::FromInt(color.G) + "," + FString::FromInt(color.B);
+		const FColor public_color = color.R == 0
+			? FColor::Black
+			: AirSimPublicSegmentationPalette::GetColor(color.R);
+		return FString::FromInt(public_color.R) + "," +
+			FString::FromInt(public_color.G) + "," +
+			FString::FromInt(public_color.B);
 	}
 
 	return FString::FromInt(ColorGenerator_.GetGammaCorrectedColor(color.R)) + "," +
@@ -1361,6 +1453,8 @@ FString FObjectAnnotator::GetDisplayColorString(const FColor& color) const
 void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR* annotation_mode)
 {
 	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level %s annotation."), *name_, annotation_mode);
+	int32 skipped_mesh_component_count = 0;
+	int32 skipped_landscape_component_count = 0;
 	for (AActor* actor : InLevel->Actors)
 	{
 		if (actor && IsPaintable(actor))
@@ -1379,8 +1473,21 @@ void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR*
 					component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 					const uint32 color_index = GetOrCreateLabelColorIndex(it.Key(), it.Value());
 					FColor new_color = GetAnnotationColorForIndex(color_index);
+					if (!PaintRGBComponent(it.Value(), new_color, it.Key()))
+					{
+						++skipped_mesh_component_count;
+						if (skipped_mesh_component_count <= 16)
+						{
+							LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("create indexed annotation for"));
+						}
+						else if (skipped_mesh_component_count == 17)
+						{
+							UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Additional indexed mesh paint failure warnings are suppressed for this initialization."), *name_);
+						}
+						RemoveTrackedComponent(it.Key());
+						continue;
+					}
 					UpdateColorMappings(it.Key(), color_index);
-					check(PaintRGBComponent(it.Value(), new_color, it.Key()));
 					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
 				}				
 			}
@@ -1399,14 +1506,29 @@ void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR*
 					landscape_component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 					const uint32 color_index = GetOrCreateLandscapeLabelColorIndex(it.Key(), it.Value());
 					FColor new_color = GetAnnotationColorForIndex(color_index);
+					if (!PaintLandscapeComponent(it.Value(), new_color, it.Key()))
+					{
+						++skipped_landscape_component_count;
+						if (skipped_landscape_component_count <= 16)
+						{
+							LogIndexedAnnotationPaintFailure(name_, it.Key(), it.Value(), TEXT("create indexed landscape annotation for"));
+						}
+						else if (skipped_landscape_component_count == 17)
+						{
+							UE_LOG(LogTemp, Warning, TEXT("AirSim Annotation [%s]: Additional indexed landscape paint failure warnings are suppressed for this initialization."), *name_);
+						}
+						RemoveTrackedComponent(it.Key());
+						continue;
+					}
 					UpdateColorMappings(it.Key(), color_index);
-					check(PaintLandscapeComponent(it.Value(), new_color, it.Key()));
 					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
 				}
 			}
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level %s annotation."), *name_, annotation_mode);
+	UE_LOG(LogTemp, Log,
+		TEXT("AirSim Annotation [%s]: Completed full level %s annotation. Skipped %d mesh components and %d landscape components that could not be painted."),
+		*name_, annotation_mode, skipped_mesh_component_count, skipped_landscape_component_count);
 }
 
 void FObjectAnnotator::InitializeInstanceSegmentation(ULevel* InLevel)
@@ -1661,24 +1783,18 @@ FString FObjectAnnotator::GetLabelKey(const FString& component_name, UMeshCompon
 		return *cached_label_key;
 	}
 
-	const FString stable_mesh_label = GetStableMeshLabel(component);
-	if (!stable_mesh_label.IsEmpty())
+	const FString stable_component_label = GetStableComponentLabel(component);
+	if (!stable_component_label.IsEmpty())
 	{
-		return stable_mesh_label;
-	}
-
-	const FString normalized_component_name = StripRuntimeSuffixes(component_name);
-	if (!normalized_component_name.IsEmpty())
-	{
-		return normalized_component_name;
+		return stable_component_label;
 	}
 
 	if (IsValid(component) && IsValid(component->GetOwner()))
 	{
-		return StripRuntimeSuffixes(component->GetOwner()->GetName());
+		return component->GetOwner()->GetPathName(component->GetWorld()) + TEXT(".") + component->GetName();
 	}
 
-	return StripRuntimeSuffixes(component_name);
+	return component_name;
 }
 
 FString FObjectAnnotator::GetLandscapeLabelKey(const FString& component_name, ULandscapeComponent* component) const
@@ -1735,14 +1851,50 @@ uint32 FObjectAnnotator::GetOrCreateLandscapeLabelColorIndex(const FString& comp
 	return color_index;
 }
 
-uint32 FObjectAnnotator::GetDefaultIndexedColorIndex(const FString& label_key) const
+uint32 FObjectAnnotator::GetDefaultIndexedColorIndex(const FString& label_key)
 {
 	if (!UsesIndexedAnnotationColors())
 	{
 		return GetNextAvailableColorIndex();
 	}
 
-	return (GetTypeHash(label_key) % 255) + 1;
+	const uint32 first_candidate = (GetTypeHash(label_key) % MaxSourceStencilAnnotationId) + 1;
+	TBitArray<> used_color_indices(false, MaxSourceStencilAnnotationId + 1);
+	int32 used_color_index_count = 0;
+	for (const auto& label_entry : label_to_color_index_map_)
+	{
+		if (label_entry.Value > 0 &&
+			label_entry.Value <= MaxSourceStencilAnnotationId &&
+			!used_color_indices[label_entry.Value])
+		{
+			used_color_indices[label_entry.Value] = true;
+			if (++used_color_index_count == MaxSourceStencilAnnotationId)
+			{
+				break;
+			}
+		}
+	}
+
+	if (used_color_index_count < MaxSourceStencilAnnotationId)
+	{
+		for (uint32 offset = 0; offset < MaxSourceStencilAnnotationId; ++offset)
+		{
+			const uint32 candidate = ((first_candidate - 1 + offset) % MaxSourceStencilAnnotationId) + 1;
+			if (!used_color_indices[candidate])
+			{
+				return candidate;
+			}
+		}
+	}
+
+	if (!indexed_color_capacity_warning_logged_)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("AirSim Annotation [%s]: Exhausted the 255 non-background indexed annotation IDs. Additional labels, beginning with %s, will deterministically reuse IDs 1..255; collisions are expected. Automatic assignment will not use reserved background ID 0."),
+			*name_, *label_key);
+		indexed_color_capacity_warning_logged_ = true;
+	}
+	return first_candidate;
 }
 
 void FObjectAnnotator::UpdateColorMappings(const FString& component_name, uint32 color_index)
@@ -1877,20 +2029,21 @@ void FObjectAnnotator::ReleaseAllSourceStencilComponents()
 
 bool FObjectAnnotator::PaintSourceStencilComponent(UPrimitiveComponent* component, const FColor& color, const FString& component_name)
 {
-	if (!IsValid(component))
+	if (!HasAnnotationGeometry(component))
 	{
 		return false;
 	}
 
+	const uint8 stencil_value = GetStencilValueForAnnotationColor(color, component_name);
 	TrackSourceStencilComponent(component);
-	ApplySourceStencilValue(component, GetStencilValueForAnnotationColor(color, component_name));
+	ApplySourceStencilValue(component, stencil_value);
 	return true;
 }
 
 bool FObjectAnnotator::PaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name)
 {
 	if (!component) return false;
-	if (UsesIndexedAnnotationColors())
+	if (UsesSourceStencilBackend())
 	{
 		return PaintSourceStencilComponent(component, color, component_name);
 	}
@@ -1903,8 +2056,9 @@ bool FObjectAnnotator::PaintRGBComponent(UMeshComponent* component, const FColor
 		return false;
 	}
 
-	FString newName = name_ + "_" + component_name;
-	UAnnotationComponent* AnnotationComponent = NewObject<UAnnotationComponent>(component, FName(*newName));
+	const FString newName = name_ + "_" + component_name;
+	const FName unique_component_name = MakeUniqueObjectName(component, UAnnotationComponent::StaticClass(), FName(*newName));
+	UAnnotationComponent* AnnotationComponent = NewObject<UAnnotationComponent>(component, unique_component_name);
 	AnnotationComponent->SetupAttachment(component);
 	AnnotationComponent->RegisterComponent();
 	AnnotationComponent->SetAnnotationColor(NewColor);
@@ -1923,7 +2077,7 @@ bool FObjectAnnotator::PaintRGBComponent(UMeshComponent* component, const FColor
 bool FObjectAnnotator::UpdatePaintRGBComponent(UMeshComponent* component, const FColor& color, const FString& component_name)
 {
 	if (!component) return false;
-	if (UsesIndexedAnnotationColors())
+	if (UsesSourceStencilBackend())
 	{
 		return PaintSourceStencilComponent(component, color, component_name);
 	}
@@ -1966,7 +2120,7 @@ bool FObjectAnnotator::UpdatePaintRGBComponent(UMeshComponent* component, const 
 bool FObjectAnnotator::PaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name)
 {
 	if (!IsValid(component)) return false;
-	if (UsesIndexedAnnotationColors())
+	if (UsesSourceStencilBackend())
 	{
 		return PaintSourceStencilComponent(component, color, component_name);
 	}
@@ -1979,8 +2133,9 @@ bool FObjectAnnotator::PaintLandscapeComponent(ULandscapeComponent* component, c
 		return false;
 	}
 
-	FString newName = name_ + "_" + component_name;
-	UAnnotationComponent* AnnotationComponent = NewObject<UAnnotationComponent>(component, FName(*newName));
+	const FString newName = name_ + "_" + component_name;
+	const FName unique_component_name = MakeUniqueObjectName(component, UAnnotationComponent::StaticClass(), FName(*newName));
+	UAnnotationComponent* AnnotationComponent = NewObject<UAnnotationComponent>(component, unique_component_name);
 	if (!IsValid(AnnotationComponent))
 	{
 		return false;
@@ -2006,7 +2161,7 @@ bool FObjectAnnotator::PaintLandscapeComponent(ULandscapeComponent* component, c
 bool FObjectAnnotator::UpdatePaintLandscapeComponent(ULandscapeComponent* component, const FColor& color, const FString& component_name)
 {
 	if (!IsValid(component)) return false;
-	if (UsesIndexedAnnotationColors())
+	if (UsesSourceStencilBackend())
 	{
 		return PaintSourceStencilComponent(component, color, component_name);
 	}
@@ -2113,7 +2268,7 @@ bool FObjectAnnotator::UpdatePaintTextureComponent(UMeshComponent* component, co
 bool FObjectAnnotator::DeleteComponent(UMeshComponent* component, const FString& component_name)
 {
 	if (!component) return false;
-	if (UsesIndexedAnnotationColors())
+	if (UsesSourceStencilBackend())
 	{
 		ReleaseSourceStencilComponent(component);
 		return true;
@@ -2161,7 +2316,7 @@ bool FObjectAnnotator::DeleteComponent(UMeshComponent* component, const FString&
 bool FObjectAnnotator::DeleteLandscapeComponent(ULandscapeComponent* component, const FString& component_name)
 {
 	if (!IsValid(component)) return false;
-	if (UsesIndexedAnnotationColors())
+	if (UsesSourceStencilBackend())
 	{
 		ReleaseSourceStencilComponent(component);
 		return true;
@@ -2239,7 +2394,7 @@ void FObjectAnnotator::RemoveTrackedComponent(const FString& component_name)
 {
 	if (UMeshComponent** component_ptr = name_to_component_map_.Find(component_name))
 	{
-		if (UsesIndexedAnnotationColors())
+		if (UsesSourceStencilBackend())
 		{
 			ReleaseSourceStencilComponent(Cast<UPrimitiveComponent>(*component_ptr));
 		}
@@ -2310,10 +2465,13 @@ void FObjectAnnotator::SetViewForAnnotationRender(FEngineShowFlags& show_flags)
 	show_flags.SetVisualizeSkyAtmosphere(false);
 	show_flags.SetAmbientOcclusion(false);
 	show_flags.SetAtmosphere(false);
+	show_flags.SetStaticMeshes(true);
+	show_flags.SetSkeletalMeshes(true);
+	show_flags.SetInstancedStaticMeshes(true);
 	show_flags.SetInstancedFoliage(true);
 	show_flags.SetInstancedGrass(true);
 	show_flags.SetLandscape(true);
-	show_flags.SetNaniteMeshes(false);
+	show_flags.SetNaniteMeshes(true);
 	show_flags.SetTextRender(false);
 	show_flags.SetTemporalAA(false);
 	show_flags.SetDecals(false);
@@ -2321,26 +2479,58 @@ void FObjectAnnotator::SetViewForAnnotationRender(FEngineShowFlags& show_flags)
 
 void FObjectAnnotator::SetViewForSourceStencilAnnotationRender(FEngineShowFlags& show_flags)
 {
-	show_flags.SetMaterials(false);
-	show_flags.SetLighting(false);
+	// UE 5.5+ treats a view with any of these flags disabled as a rich/debug
+	// view. Static-mesh proxies then leave the normal static visibility and
+	// CustomDepth command path, which makes source-stencil labels intermittent.
+	show_flags.SetMaterials(true);
+	show_flags.SetLighting(true);
+	show_flags.SetLOD(true);
+	show_flags.SetVolumetricLightmap(true);
+	show_flags.SetIndirectLightingCache(true);
 	show_flags.SetBSPTriangles(true);
 	show_flags.SetPostProcessing(true);
 	show_flags.SetPostProcessMaterial(true);
+	show_flags.SetAntiAliasing(false);
 	show_flags.SetHMDDistortion(false);
-	show_flags.SetTonemapper(false);
+	// The fallback material replaces the tonemapper with the raw CustomStencil
+	// value. Unreal skips BL_ReplacingTonemapper materials when this flag is off.
+	show_flags.SetTonemapper(true);
 	show_flags.SetEyeAdaptation(false);
+	show_flags.SetLocalExposure(false);
 	show_flags.SetFog(false);
 	show_flags.SetPaper2DSprites(false);
 	show_flags.SetBloom(false);
+	show_flags.SetLensFlares(false);
+	show_flags.SetLensDistortion(false);
+	show_flags.SetColorGrading(false);
+	show_flags.SetCameraImperfections(false);
+	show_flags.SetDepthOfField(false);
+	show_flags.SetVignette(false);
+	show_flags.SetGrain(false);
+	show_flags.SetSceneColorFringe(false);
+	show_flags.SetToneCurve(false);
 	show_flags.SetMotionBlur(false);
 	show_flags.SetSkyLighting(false);
 	show_flags.SetVisualizeSkyAtmosphere(false);
 	show_flags.SetAmbientOcclusion(false);
+	show_flags.SetScreenSpaceReflections(false);
+	show_flags.SetScreenSpaceAO(false);
+	show_flags.SetDistanceFieldAO(false);
+	show_flags.SetContactShadows(false);
+	show_flags.SetLightShafts(false);
 	show_flags.SetAtmosphere(false);
+	show_flags.SetRefraction(false);
+	show_flags.SetTranslucency(false);
+	show_flags.SetSeparateTranslucency(false);
+	show_flags.SetScreenPercentage(false);
+	show_flags.SetStaticMeshes(true);
+	show_flags.SetSkeletalMeshes(true);
+	show_flags.SetInstancedStaticMeshes(true);
 	show_flags.SetInstancedFoliage(true);
 	show_flags.SetInstancedGrass(true);
 	show_flags.SetLandscape(true);
 	show_flags.SetNaniteMeshes(true);
+	show_flags.SetDisableOcclusionQueries(true);
 	show_flags.SetTextRender(false);
 	show_flags.SetTemporalAA(false);
 	show_flags.SetDecals(false);
@@ -2380,7 +2570,7 @@ void FObjectAnnotator::UpdateAnnotationComponents(UWorld* World)
 		}
 	}
 
-	if (UsesIndexedAnnotationColors())
+	if (UsesSourceStencilBackend())
 	{
 		TArray<FString> stale_component_names;
 		for (const auto& component_entry : name_to_component_map_)
@@ -2518,7 +2708,7 @@ void FObjectAnnotator::EndPlay() {
 
 	ReleaseAllSourceStencilComponents();
 
-	if (!UsesIndexedAnnotationColors())
+	if (!UsesSourceStencilBackend())
 	{
 		TSet<TWeakObjectPtr<UPrimitiveComponent>> components_to_destroy;
 		for (const TWeakObjectPtr<UPrimitiveComponent>& component_ptr : annotation_component_list_)
@@ -2551,6 +2741,7 @@ void FObjectAnnotator::EndPlay() {
 	name_to_texture_path_map_.Empty();
 	component_to_name_map_.Empty();
 	landscape_component_to_name_map_.Empty();
+	indexed_color_capacity_warning_logged_ = false;
 }
 
 int32 FColorGenerator::GetChannelValue(uint32 index) const
@@ -2614,23 +2805,25 @@ FColor FColorGenerator::GetColorFromColorMap(int32 color_index) const
 	int uneven_start = 79;
 	int full_start = 149;
 	int uneven_count = FMath::FloorToInt((full_start - uneven_start + 2) / 2.0f);
-	if (color_map_.Num() == 0) {
-
-		for (int32 i = uneven_start; i <= full_start; i += 2) {
-			ok_values_.Emplace(i);
-		}
-		for (int32 i = full_start + 1; i < num_per_channel; i++) {
-			ok_values_.Emplace(i);
-		}
-		for (int32 max_channel_index = 0; max_channel_index < num_per_channel; max_channel_index++)
-		{
-			GetColors(max_channel_index, false, false, true, color_map_, ok_values_);
-			GetColors(max_channel_index, false, true, false, color_map_, ok_values_);
-			GetColors(max_channel_index, false, true, true, color_map_, ok_values_);
-			GetColors(max_channel_index, true, false, false, color_map_, ok_values_);
-			GetColors(max_channel_index, true, false, true, color_map_, ok_values_);
-			GetColors(max_channel_index, true, true, false, color_map_, ok_values_);
-			GetColors(max_channel_index, true, true, true, color_map_, ok_values_);
+	{
+		FScopeLock lock(&ColorMapInitializationCriticalSection);
+		if (color_map_.Num() == 0) {
+			for (int32 i = uneven_start; i <= full_start; i += 2) {
+				ok_values_.Emplace(i);
+			}
+			for (int32 i = full_start + 1; i < num_per_channel; i++) {
+				ok_values_.Emplace(i);
+			}
+			for (int32 max_channel_index = 0; max_channel_index < num_per_channel; max_channel_index++)
+			{
+				GetColors(max_channel_index, false, false, true, color_map_, ok_values_);
+				GetColors(max_channel_index, false, true, false, color_map_, ok_values_);
+				GetColors(max_channel_index, false, true, true, color_map_, ok_values_);
+				GetColors(max_channel_index, true, false, false, color_map_, ok_values_);
+				GetColors(max_channel_index, true, false, true, color_map_, ok_values_);
+				GetColors(max_channel_index, true, true, false, color_map_, ok_values_);
+				GetColors(max_channel_index, true, true, true, color_map_, ok_values_);
+			}
 		}
 	}
 	if (color_index < 0 || color_index >= pow((num_per_channel - full_start) + uneven_count - 3, 3))
@@ -2644,6 +2837,7 @@ FColor FColorGenerator::GetColorFromColorMap(int32 color_index) const
 }
 
 int FColorGenerator::GetIndexForColor(FColor color) const {
+	GetColorFromColorMap(0);
 	return color_map_.Find(color);
 }
 
@@ -2652,10 +2846,7 @@ int FColorGenerator::GetGammaCorrectedColor(int color_index) const {
 }
 
  TArray<FColor> FColorGenerator::GetColorMap() const{
-	if (color_map_.Num() == 0)
-	{
-		GetColorFromColorMap(0);
-	}
+	GetColorFromColorMap(0);
 	return color_map_;
 }
 
