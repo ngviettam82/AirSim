@@ -20,7 +20,11 @@ if "%VisualStudioVersion%" lss "17.0" (
     goto :buildfailed_nomsg
 )
 
-set "REQUIRED_MSVC_FAMILY=14.38"
+REM UE 5.5 prefers MSVC 14.38.x, but CI runners and newer VS installs often
+REM only ship later 14.4x/14.5x toolsets. Prefer 14.38.*, else accept newest
+REM 14.x that is at least 14.38.33130.
+set "PREFERRED_MSVC_FAMILY=14.38"
+set "MIN_MSVC_MINOR=38"
 set "MIN_MSVC_BUILD=33130"
 set "VS_MAJOR=17"
 set "CMAKE_GENERATOR=Visual Studio 17 2022"
@@ -34,26 +38,45 @@ if "%VCINSTALLDIR%" == "" (
 )
 
 set "REQUIRED_MSVC_VERSION="
-for /f "delims=" %%V in ('dir /b /ad /o-n "%VCINSTALLDIR%Tools\MSVC\%REQUIRED_MSVC_FAMILY%.*" 2^>nul') do if not defined REQUIRED_MSVC_VERSION set "REQUIRED_MSVC_VERSION=%%V"
+for /f "delims=" %%V in ('dir /b /ad /o-n "%VCINSTALLDIR%Tools\MSVC\%PREFERRED_MSVC_FAMILY%.*" 2^>nul') do if not defined REQUIRED_MSVC_VERSION set "REQUIRED_MSVC_VERSION=%%V"
+if not defined REQUIRED_MSVC_VERSION (
+    for /f "delims=" %%V in ('dir /b /ad /o-n "%VCINSTALLDIR%Tools\MSVC\14.*" 2^>nul') do if not defined REQUIRED_MSVC_VERSION set "REQUIRED_MSVC_VERSION=%%V"
+)
 
 if not defined REQUIRED_MSVC_VERSION (
     echo(
-    echo Required MSVC %REQUIRED_MSVC_FAMILY%.x toolset was not found.
-    echo Unreal Engine 5.5 requires MSVC %REQUIRED_MSVC_FAMILY%.x build %MIN_MSVC_BUILD% or newer.
-    echo Install the matching VS 2022 C++ toolset, then run build.cmd again.
+    echo No MSVC 14.x toolset was found under "%VCINSTALLDIR%Tools\MSVC".
+    echo Unreal Engine 5.5 needs MSVC 14.38.x or newer ^(v143^).
+    echo Install the VS 2022/2026 C++ toolset, then run build.cmd again.
     goto :buildfailed_nomsg
 )
 
-for /f "tokens=1-3 delims=." %%A in ("%REQUIRED_MSVC_VERSION%") do set "MSVC_BUILD=%%C"
+for /f "tokens=1-3 delims=." %%A in ("%REQUIRED_MSVC_VERSION%") do (
+    set "MSVC_MAJOR=%%A"
+    set "MSVC_MINOR=%%B"
+    set "MSVC_BUILD=%%C"
+)
 if "%MSVC_BUILD%" == "" (
     echo Invalid MSVC toolset directory: %REQUIRED_MSVC_VERSION%
     goto :buildfailed_nomsg
 )
-if %MSVC_BUILD% LSS %MIN_MSVC_BUILD% (
+if not "%MSVC_MAJOR%" == "14" (
+    echo(
+    echo Unsupported MSVC toolset %REQUIRED_MSVC_VERSION% ^(expected 14.x / v143^).
+    goto :buildfailed_nomsg
+)
+if %MSVC_MINOR% LSS %MIN_MSVC_MINOR% (
     echo(
     echo Installed MSVC %REQUIRED_MSVC_VERSION% is too old.
-    echo Unreal Engine 5.5 requires MSVC %REQUIRED_MSVC_FAMILY%.x build %MIN_MSVC_BUILD% or newer.
-    echo Update the matching VS 2022 C++ toolset, then run build.cmd again.
+    echo Unreal Engine 5.5 requires MSVC 14.%MIN_MSVC_MINOR%.x build %MIN_MSVC_BUILD% or newer.
+    echo Install a newer VS 2022 C++ toolset, then run build.cmd again.
+    goto :buildfailed_nomsg
+)
+if %MSVC_MINOR% EQU %MIN_MSVC_MINOR% if %MSVC_BUILD% LSS %MIN_MSVC_BUILD% (
+    echo(
+    echo Installed MSVC %REQUIRED_MSVC_VERSION% is too old.
+    echo Unreal Engine 5.5 requires MSVC 14.%MIN_MSVC_MINOR%.x build %MIN_MSVC_BUILD% or newer.
+    echo Update the VS 2022 C++ toolset, then run build.cmd again.
     goto :buildfailed_nomsg
 )
 

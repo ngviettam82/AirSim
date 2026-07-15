@@ -63,6 +63,11 @@ obj/
 /settings*.json
 /settings*.json.bak*
 
+# AirSim recording sessions (timestamped folders with airsim_rec.txt + images/).
+# Matches e.g. 2026-07-15-14-02-59/ when written under the repo root.
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+**/airsim_rec.txt
+
 # Visual Studio 2015 cache/options directory
 .vs/
 .vscode/
