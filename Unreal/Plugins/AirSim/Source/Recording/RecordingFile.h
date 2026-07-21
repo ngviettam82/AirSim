@@ -15,7 +15,7 @@ class RecordingFile
 public:
     ~RecordingFile();
 
-    // Write a request-local capture transaction. Image I/O does not re-sample pose/sensors.
+    // Persist one completed sensor-only or frame-latched image record.
     void appendRecord(const std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
                       const msr::airlib::RecordingCapture& capture) const;
 

@@ -127,17 +127,24 @@ msr::airlib::RecordingCapture MultirotorPawnSimApi::createRecordingCapture(
             case SensorType::Imu: {
                 const auto& out = api->getImuData(sensor->getName());
                 sample.sensor_time_stamp = out.time_stamp;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present) {
+                    sample.error = "IMU has no output yet (timestamp 0)";
+                    break;
+                }
                 sample.imu_linear_acceleration = out.linear_acceleration;
                 sample.imu_angular_velocity = out.angular_velocity;
                 sample.imu_orientation = out.orientation;
-                sample.present = (out.time_stamp != 0);
-                if (!sample.present)
-                    sample.error = "IMU has no output yet (timestamp 0)";
                 break;
             }
             case SensorType::Gps: {
                 const auto& out = api->getGpsData(sensor->getName());
                 sample.sensor_time_stamp = out.time_stamp;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present) {
+                    sample.error = "GPS has no output yet";
+                    break;
+                }
                 sample.gps_lat = out.gnss.geo_point.latitude;
                 sample.gps_lon = out.gnss.geo_point.longitude;
                 sample.gps_alt = out.gnss.geo_point.altitude;
@@ -146,40 +153,43 @@ msr::airlib::RecordingCapture MultirotorPawnSimApi::createRecordingCapture(
                 sample.gps_epv = out.gnss.epv;
                 sample.gps_fix = static_cast<int>(out.gnss.fix_type);
                 sample.gps_valid = out.is_valid;
-                sample.present = (out.time_stamp != 0);
-                if (!sample.present)
-                    sample.error = "GPS has no output yet";
                 break;
             }
             case SensorType::Barometer: {
                 const auto& out = api->getBarometerData(sensor->getName());
                 sample.sensor_time_stamp = out.time_stamp;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present) {
+                    sample.error = "Barometer has no output yet";
+                    break;
+                }
                 sample.baro_altitude = out.altitude;
                 sample.baro_pressure = out.pressure;
                 sample.baro_qnh = out.qnh;
-                sample.present = (out.time_stamp != 0);
-                if (!sample.present)
-                    sample.error = "Barometer has no output yet";
                 break;
             }
             case SensorType::Magnetometer: {
                 const auto& out = api->getMagnetometerData(sensor->getName());
                 sample.sensor_time_stamp = out.time_stamp;
-                sample.mag_field_body = out.magnetic_field_body;
                 sample.present = (out.time_stamp != 0);
-                if (!sample.present)
+                if (!sample.present) {
                     sample.error = "Magnetometer has no output yet";
+                    break;
+                }
+                sample.mag_field_body = out.magnetic_field_body;
                 break;
             }
             case SensorType::Distance: {
                 const auto& out = api->getDistanceSensorData(sensor->getName());
                 sample.sensor_time_stamp = out.time_stamp;
+                sample.present = (out.time_stamp != 0);
+                if (!sample.present) {
+                    sample.error = "Distance has no output yet";
+                    break;
+                }
                 sample.distance = out.distance;
                 sample.distance_min = out.min_distance;
                 sample.distance_max = out.max_distance;
-                sample.present = (out.time_stamp != 0);
-                if (!sample.present)
-                    sample.error = "Distance has no output yet";
                 break;
             }
             default:

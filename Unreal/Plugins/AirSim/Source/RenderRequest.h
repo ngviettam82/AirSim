@@ -7,7 +7,10 @@
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SceneCaptureComponentCube.h"
 #include "Engine/GameViewportClient.h"
+#include <atomic>
+#include <functional>
 #include <memory>
+#include <vector>
 #include "common/Common.hpp"
 #include "common/ImageCaptureBase.hpp"
 
@@ -85,7 +88,9 @@ public:
         int width;
         int height;
 
+        msr::airlib::TTimePoint request_time_stamp;
         msr::airlib::TTimePoint time_stamp;
+        uint64_t render_frame_number;
     };
 
 private:
@@ -102,9 +107,15 @@ private:
     UGameViewportClient * const game_viewport_;
     FDelegateHandle end_draw_handle_;
     std::function<void()> query_camera_pose_cb_;
+    std::function<void()> prepare_capture_cb_;
+    msr::airlib::TTimePoint request_time_stamp_ = 0;
+    msr::airlib::TTimePoint render_time_stamp_ = 0;
+    uint64_t render_frame_number_ = 0;
 
 public:
-    RenderRequest(UGameViewportClient * game_viewport, std::function<void()>&& query_camera_pose_cb);
+    RenderRequest(UGameViewportClient * game_viewport,
+                  std::function<void()>&& query_camera_pose_cb,
+                  std::function<void()>&& prepare_capture_cb = std::function<void()>());
     ~RenderRequest();
 
     void DoTask(ENamedThreads::Type CurrentThread, const FGraphEventRef& MyCompletionGraphEvent)

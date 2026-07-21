@@ -44,15 +44,19 @@ namespace airlib
             c.sensors.push_back(imu);
 
             const std::string header = c.fullHeaderLine();
-            const std::string row = c.toRecordLine() + "img.png";
+            const std::string row = c.toRecordLine() +
+                                    "frame_latched_freerun\t950\t1000\t0\t0.000000\t1\timg.png";
             const size_t hf = RecordingCapture::countFields(header);
             const size_t rf = RecordingCapture::countFields(row);
             testAssert(hf == rf, "header/row field count");
-            testAssert(hf == RecordingCapture::expectedFieldCount(2, 0, true), "expected count");
+            testAssert(hf == RecordingCapture::expectedFieldCount(2, 0), "expected count");
+            testAssert(header.find("ImageDelayMs") != std::string::npos, "image timing header");
 
             RecordingCapture missing = c;
             missing.sensors.clear();
-            testAssert(RecordingCapture::countFields(missing.toRecordLine() + "x") == hf, "missing cols");
+            testAssert(RecordingCapture::countFields(
+                           missing.toRecordLine() + "sensor_only\t\t\t\t\t\t") == hf,
+                       "missing cols");
 
             testAssert(row.find("\t900\t") != std::string::npos, "native ts");
             testAssert(row.find("\t100\t") != std::string::npos, "age");
@@ -60,7 +64,8 @@ namespace airlib
             c.vehicle_extra_header = "Throttle\tSteering\tBrake\tGear\tHandbrake\tRPM\tSpeed\t";
             c.vehicle_extra_values = "0.1\t0\t0\t1\t0\t1000\t5\t";
             testAssert(RecordingCapture::countFields(c.fullHeaderLine()) ==
-                           RecordingCapture::countFields(c.toRecordLine() + "img.png"),
+                           RecordingCapture::countFields(
+                               c.toRecordLine() + "sensor_only\t\t\t\t\t\t"),
                        "car fields");
 
             // restart sequence independent

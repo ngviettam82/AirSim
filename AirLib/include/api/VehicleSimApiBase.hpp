@@ -73,7 +73,8 @@ namespace airlib
         virtual std::string getVehicleName() const = 0;
         virtual std::string getRecordFileLine(bool is_header_line) const = 0;
         // Request-local capture: pose + configured sensor outputs.
-        // Call while physics is paused/locked. sequence_id is session-local.
+        // Call under the simulator's physics/state lock when one is available.
+        // sequence_id is session-local.
         // schema_tokens: unique column tokens matching the file header.
         virtual RecordingCapture createRecordingCapture(
             uint64_t sequence_id,

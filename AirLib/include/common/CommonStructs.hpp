@@ -394,10 +394,10 @@ namespace airlib
 
     struct DistanceSensorData
     {
-        TTimePoint time_stamp;
-        real_T distance; //meters
-        real_T min_distance; //m
-        real_T max_distance; //m
+        TTimePoint time_stamp = 0;
+        real_T distance = 0; //meters
+        real_T min_distance = 0; //m
+        real_T max_distance = 0; //m
         Pose relative_pose;
 
         DistanceSensorData()

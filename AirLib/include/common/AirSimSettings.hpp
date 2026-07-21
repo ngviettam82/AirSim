@@ -10,6 +10,7 @@
 #include "common_utils/Utils.hpp"
 #include "sensors/SensorBase.hpp"
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <functional>
 #include <map>
@@ -115,7 +116,14 @@ namespace airlib
         struct RecordingSetting
         {
             bool record_on_move = false;
+            // Minimum sim-time between camera captures (and between full image rows).
             float record_interval = 0.05f;
+            // Minimum sim-time between sensor/pose rows (high-rate IMU path). When
+            // smaller than record_interval, most rows are sensors-only (empty ImageFile).
+            float sensor_record_interval = 0.005f;
+            // Maximum absolute image-to-snapshot timestamp delta considered in sync.
+            // Images are always saved; this threshold only controls metadata flags.
+            float image_sync_tolerance_ms = 5.0f;
             std::string folder = "";
             bool enabled = false;
 
@@ -953,6 +961,19 @@ namespace airlib
             if (settings_json.getChild("Recording", recording_json)) {
                 recording_setting.record_on_move = recording_json.getBool("RecordOnMove", recording_setting.record_on_move);
                 recording_setting.record_interval = recording_json.getFloat("RecordInterval", recording_setting.record_interval);
+                if (!std::isfinite(recording_setting.record_interval) || recording_setting.record_interval <= 0)
+                    recording_setting.record_interval = 0.05f;
+                // Default keeps high-rate sensors when unset; clamp invalid values.
+                recording_setting.sensor_record_interval = recording_json.getFloat(
+                    "SensorRecordInterval", recording_setting.sensor_record_interval);
+                if (!std::isfinite(recording_setting.sensor_record_interval) ||
+                    recording_setting.sensor_record_interval <= 0)
+                    recording_setting.sensor_record_interval = recording_setting.record_interval;
+                recording_setting.image_sync_tolerance_ms = recording_json.getFloat(
+                    "ImageSyncToleranceMs", recording_setting.image_sync_tolerance_ms);
+                if (!std::isfinite(recording_setting.image_sync_tolerance_ms) ||
+                    recording_setting.image_sync_tolerance_ms < 0)
+                    recording_setting.image_sync_tolerance_ms = 5.0f;
                 recording_setting.folder = recording_json.getString("Folder", recording_setting.folder);
                 recording_setting.enabled = recording_json.getBool("Enabled", recording_setting.enabled);
 

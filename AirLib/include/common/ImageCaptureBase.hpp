@@ -70,7 +70,11 @@ namespace airlib
             std::string camera_name;
             Vector3r camera_position = Vector3r::Zero();
             Quaternionr camera_orientation = Quaternionr::Identity();
+            // Sim-clock time immediately before the render request is submitted.
+            TTimePoint request_time_stamp = 0;
+            // Sim-clock time and UE frame for the rendered frame, before readback.
             TTimePoint time_stamp = 0;
+            uint64_t render_frame_number = 0;
             std::string message;
             bool pixels_as_float = false;
             bool compress = true;

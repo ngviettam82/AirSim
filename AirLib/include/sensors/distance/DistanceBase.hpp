@@ -40,7 +40,7 @@ namespace airlib
         }
 
     private:
-        DistanceSensorData output_;
+        DistanceSensorData output_{};
     };
 }
 } //namespace

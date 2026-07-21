@@ -149,7 +149,6 @@ void ASimModeWorldBase::setExtForce(const msr::airlib::Vector3r& ext_force) cons
 void ASimModeWorldBase::startRecording()
 {
     FRecordingThread::PhysicsLockFn lock_fn;
-    FRecordingThread::PhysicsPauseFn pause_fn;
     if (physics_world_) {
         lock_fn = [this](const std::function<void()>& work) {
             physics_world_->lock();
@@ -162,15 +161,11 @@ void ASimModeWorldBase::startRecording()
             }
             physics_world_->unlock();
         };
-        pause_fn = [this](bool pause) {
-            physics_world_->pause(pause);
-        };
     }
     FRecordingThread::startRecording(
         getSettings().recording_setting,
         getApiProvider()->getVehicleSimApis(),
-        lock_fn,
-        pause_fn);
+        lock_fn);
 }
 
 void ASimModeWorldBase::updateDebugReport(msr::airlib::StateReporterWrapper& debug_reporter)

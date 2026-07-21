@@ -5,6 +5,10 @@
 #include "UnrealClient.h"
 #include "common/ImageCaptureBase.hpp"
 #include "common/common_utils/UniqueValueMap.hpp"
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <vector>
 
 class AIRSIM_API UnrealImageCapture : public msr::airlib::ImageCaptureBase
 {
@@ -19,12 +23,19 @@ public:
         const std::vector<ImageRequest>& requests,
         std::vector<ImageResponse>& responses,
         const std::shared_ptr<std::atomic<bool>>& cancellation) const;
+    void getImagesForRecording(
+        const std::vector<ImageRequest>& requests,
+        std::vector<ImageResponse>& responses,
+        const std::shared_ptr<std::atomic<bool>>& cancellation,
+        std::function<void()>&& prepare_capture) const;
 
 private:
     void getSceneCaptureImage(const std::vector<msr::airlib::ImageCaptureBase::ImageRequest>& requests,
                               std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
                               bool use_safe_method,
-                              const std::shared_ptr<std::atomic<bool>>& cancellation = nullptr) const;
+                              const std::shared_ptr<std::atomic<bool>>& cancellation = nullptr,
+                              std::function<void()> prepare_capture = std::function<void()>(),
+                              bool activate_camera_types = true) const;
 
     void addScreenCaptureHandler(UWorld* world);
     bool getScreenshotScreen(ImageType image_type, std::vector<uint8_t>& compressedPng);

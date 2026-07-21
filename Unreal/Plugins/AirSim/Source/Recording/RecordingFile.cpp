@@ -1,5 +1,8 @@
 #include "RecordingFile.h"
 #include "HAL/PlatformFileManager.h"
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <sstream>
 #include "common/common_utils/FileSystem.hpp"
 
@@ -7,6 +10,11 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
                                  const msr::airlib::RecordingCapture& capture) const
 {
     std::ostringstream image_file_names;
+    std::ostringstream image_request_time_stamps;
+    std::ostringstream image_time_stamps;
+    std::ostringstream image_delays_ns;
+    std::ostringstream image_delays_ms;
+    std::ostringstream image_sync_flags;
     int saved = 0;
 
     for (size_t i = 0; i < responses.size(); ++i) {
@@ -24,7 +32,25 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
             image_file_name << "_" << response.annotation_name;
         image_file_name << "_s" << capture.sequence_id
                         << "_p" << capture.physics_step_id
-                        << "_" << capture.frame_time_stamp;
+                        << "_fs" << capture.frame_time_stamp;
+
+        const bool has_timing = response.time_stamp != 0 && capture.frame_time_stamp != 0;
+        const int64_t delay_ns = has_timing
+            ? static_cast<int64_t>(response.time_stamp) - static_cast<int64_t>(capture.frame_time_stamp)
+            : 0;
+        const int64_t delay_us = delay_ns / 1000;
+        const bool within_tolerance = has_timing &&
+            std::llabs(delay_ns) <= capture.image_sync_tolerance_ns;
+        if (response.time_stamp != 0)
+            image_file_name << "_it" << response.time_stamp;
+        if (has_timing) {
+            image_file_name << "_dt" << (delay_ns < 0 ? "m" : "p")
+                            << std::llabs(delay_us) << "us_"
+                            << (within_tolerance ? "ok" : "over");
+        }
+        else {
+            image_file_name << "_dt_unknown";
+        }
 
         std::string extension = ".png";
         if (response.pixels_as_float)
@@ -44,12 +70,29 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
             }
             else {
                 std::ofstream file(full, std::ios::binary);
+                file.exceptions(std::ios::failbit | std::ios::badbit);
                 file.write(reinterpret_cast<const char*>(response.image_data_uint8.data()),
                            static_cast<std::streamsize>(response.image_data_uint8.size()));
+                file.close();
             }
             if (saved > 0)
+            {
                 image_file_names << ";";
+                image_request_time_stamps << ";";
+                image_time_stamps << ";";
+                image_delays_ns << ";";
+                image_delays_ms << ";";
+                image_sync_flags << ";";
+            }
             image_file_names << fname;
+            image_request_time_stamps << response.request_time_stamp;
+            image_time_stamps << response.time_stamp;
+            if (has_timing) {
+                image_delays_ns << delay_ns;
+                image_delays_ms << std::fixed << std::setprecision(6)
+                                << static_cast<double>(delay_ns) / 1.0E6;
+                image_sync_flags << (within_tolerance ? "1" : "0");
+            }
             ++saved;
         }
         catch (std::exception& ex) {
@@ -57,7 +100,15 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
         }
     }
 
-    writeString(capture.toRecordLine().append(image_file_names.str()).append("\n"));
+    std::ostringstream metadata;
+    metadata << capture.association_mode << "\t"
+             << image_request_time_stamps.str() << "\t"
+             << image_time_stamps.str() << "\t"
+             << image_delays_ns.str() << "\t"
+             << image_delays_ms.str() << "\t"
+             << image_sync_flags.str() << "\t"
+             << image_file_names.str() << "\n";
+    writeString(capture.toRecordLine().append(metadata.str()));
 }
 
 void RecordingFile::appendColumnHeader(const std::string& header_columns)

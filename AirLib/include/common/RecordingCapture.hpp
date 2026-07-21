@@ -20,8 +20,8 @@ namespace airlib
 {
 
     // Immutable request-local capture transaction for one discrete sample.
-    // Logical same-snapshot association: physics paused for snapshot + images.
-    // Not continuous-time / shutter exposure accuracy (no <0.1 ms claim).
+    // Image rows use timestamped, frame-latched free-run association. Sensor-only
+    // rows and image rows may be produced by independent recording workers.
     struct RecordingSensorSample
     {
         std::string sensor_name;
@@ -54,9 +54,13 @@ namespace airlib
         std::string vehicle_name;
         uint64_t sequence_id = 0; // session-local monotonic (restarts each session)
         uint64_t physics_step_id = 0; // ClockFactory step at snapshot
-        uint64_t render_frame_number = 0; // UE frame after image path (0 if no cameras)
-        TTimePoint frame_time_stamp = 0; // sim-clock ns at paused snapshot
-        std::vector<TTimePoint> image_time_stamps; // native render/readback times
+        uint64_t render_frame_number = 0; // UE frame containing the image (0 for sensor-only rows)
+        TTimePoint frame_time_stamp = 0; // sim-clock ns at pose/sensor snapshot
+        std::vector<TTimePoint> image_request_time_stamps;
+        std::vector<TTimePoint> image_time_stamps; // native rendered-frame times
+        std::vector<int64_t> image_delays_ns; // ImageTimeStamp - FrameTimeStamp
+        std::vector<bool> image_sync_within_tolerance;
+        int64_t image_sync_tolerance_ns = 5000000;
 
         Pose pose;
         std::vector<RecordingSensorSample> sensors;
@@ -67,11 +71,12 @@ namespace airlib
         std::string vehicle_extra_header;
         std::string vehicle_extra_values;
 
-        std::string association_mode = "unlocked"; // physics_paused_snapshot | ...
+        std::string association_mode = "sensor_only";
 
         // Present+TS+Age(3)+IMU(10)+GPS(10)+Baro(3)+Mag(3)+Dist(3)=32
         static constexpr int kBaseFieldCount = 12;
         static constexpr int kFieldsPerSensor = 32;
+        static constexpr int kImageMetadataFieldCount = 7;
 
         static std::string toLower(const std::string& s)
         {
@@ -136,12 +141,14 @@ namespace airlib
             return tabs + 1;
         }
 
-        static size_t expectedFieldCount(size_t sensor_count, size_t vehicle_extra_fields = 0, bool image_file = true)
+        static size_t expectedFieldCount(size_t sensor_count,
+                                         size_t vehicle_extra_fields = 0,
+                                         bool image_metadata = true)
         {
             return static_cast<size_t>(kBaseFieldCount) +
                    sensor_count * static_cast<size_t>(kFieldsPerSensor) +
                    vehicle_extra_fields +
-                   (image_file ? 1u : 0u);
+                   (image_metadata ? static_cast<size_t>(kImageMetadataFieldCount) : 0u);
         }
 
         static std::string headerColumns(const std::vector<std::string>& schema_tokens)
@@ -251,7 +258,9 @@ namespace airlib
 
         std::string fullHeaderLine() const
         {
-            return headerColumns(schema_tokens) + vehicle_extra_header + "ImageFile";
+            return headerColumns(schema_tokens) + vehicle_extra_header +
+                   "AssociationMode\tImageRequestTimeStamp\tImageTimeStamp\t"
+                   "ImageDelayNs\tImageDelayMs\tImageSyncWithinTolerance\tImageFile";
         }
     };
 

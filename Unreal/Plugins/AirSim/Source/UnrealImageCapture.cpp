@@ -1,11 +1,16 @@
 #include "UnrealImageCapture.h"
+#include "AirBlueprintLib.h"
 #include "Engine/World.h"
 #include "ImageUtils.h"
 
 #include "RenderRequest.h"
 #include "common/ClockFactory.hpp"
 #include "Misc/ScopeLock.h"
+#include <chrono>
+#include <exception>
 #include <limits>
+#include <thread>
+#include <utility>
 
 namespace
 {
@@ -162,7 +167,7 @@ void UnrealImageCapture::getImages(const std::vector<msr::airlib::ImageCaptureBa
         }
     }
     else
-        getSceneCaptureImage(requests, responses, false);
+        getSceneCaptureImage(requests, responses, false, nullptr, std::function<void()>(), true);
 }
 
 void UnrealImageCapture::getImages(
@@ -178,119 +183,153 @@ void UnrealImageCapture::getImages(
         }
     }
     else {
-        getSceneCaptureImage(requests, responses, false, cancellation);
+        getSceneCaptureImage(requests, responses, false, cancellation, std::function<void()>(), false);
+    }
+}
+
+void UnrealImageCapture::getImagesForRecording(
+    const std::vector<msr::airlib::ImageCaptureBase::ImageRequest>& requests,
+    std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
+    const std::shared_ptr<std::atomic<bool>>& cancellation,
+    std::function<void()>&& prepare_capture) const
+{
+    FScopeLock capture_lock(&GAirSimImageCaptureMutex);
+    if (cancellation && cancellation->load())
+        return;
+    if (cameras_->valsSize() == 0) {
+        for (size_t index = 0; index < requests.size(); ++index) {
+            responses.emplace_back();
+            responses.back().message = "camera is not set";
+        }
+    }
+    else {
+        getSceneCaptureImage(requests, responses, false, cancellation, std::move(prepare_capture), true);
     }
 }
 
 void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::ImageCaptureBase::ImageRequest>& requests,
                                               std::vector<msr::airlib::ImageCaptureBase::ImageResponse>& responses,
                                               bool use_safe_method,
-                                              const std::shared_ptr<std::atomic<bool>>& cancellation) const
+                                              const std::shared_ptr<std::atomic<bool>>& cancellation,
+                                              std::function<void()> prepare_capture,
+                                              bool activate_camera_types) const
 {
     std::vector<std::shared_ptr<RenderRequest::RenderParams>> render_params;
     std::vector<std::shared_ptr<RenderRequest::RenderResult>> render_results;
 
+    if (cancellation && cancellation->load())
+        return;
+
     bool visibilityChanged = false;
-    for (unsigned int i = 0; i < requests.size(); ++i) {
-        APIPCamera* camera = cameras_->at(requests.at(i).camera_name);
-        //TODO: may be we should have these methods non-const?
-        const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
-            camera->GetAnnotationNameExist(requests[i].annotation_name);
-        // Settings-hosted captures are pre-enabled by ASimModeBase on the
-        // game thread. Do not activate components from the host worker.
-        if (has_annotation && cancellation == nullptr) {
-            visibilityChanged = const_cast<UnrealImageCapture*>(this)->updateCameraVisibility(camera, requests[i]) || visibilityChanged;
-        }
-    }
+    UGameViewportClient* gameViewport = nullptr;
+    std::exception_ptr preparation_exception;
+    // Camera lookup, component activation, and render-target access all touch
+    // UObjects. Keep that preparation on the game thread; only the completed
+    // CPU image buffers cross back to the caller's worker thread.
+    UAirBlueprintLib::RunCommandOnGameThread(
+        [this, &requests, &responses, &render_params, &visibilityChanged, &gameViewport, &preparation_exception, cancellation, activate_camera_types]() {
+            try {
+                if (cancellation && cancellation->load())
+                    return;
+                for (unsigned int i = 0; i < requests.size(); ++i) {
+                APIPCamera* camera = cameras_->at(requests.at(i).camera_name);
+                const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
+                    camera->GetAnnotationNameExist(requests[i].annotation_name);
+                if (activate_camera_types && has_annotation) {
+                    visibilityChanged = const_cast<UnrealImageCapture*>(this)->updateCameraVisibility(camera, requests[i]) || visibilityChanged;
+                }
+
+                if (gameViewport == nullptr) {
+                    gameViewport = camera->GetWorld()->GetGameViewport();
+                }
+
+                responses.emplace_back();
+                ImageResponse& response = responses.back();
+                UTextureRenderTarget2D* textureTarget = nullptr;
+                USceneCaptureComponent2D* capture = nullptr;
+                UTextureRenderTargetCube* equirectangularTextureTarget = nullptr;
+                USceneCaptureComponentCube* equirectangularCapture = nullptr;
+                bool useEquirectangular = false;
+                if (!has_annotation) {
+                    response.message = "Can't take screenshot because the annotation name does not exist for this camera";
+                }
+                else {
+                    useEquirectangular = camera->isEquirectangularCapture(requests[i].image_type, requests[i].annotation_name);
+                    if (useEquirectangular) {
+                        equirectangularCapture = camera->getEquirectangularCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
+                        if (equirectangularCapture == nullptr) {
+                            response.message = "Can't take equirectangular screenshot because cube camera type is not active";
+                        }
+                        else if (equirectangularCapture->TextureTarget == nullptr) {
+                            response.message = "Can't take equirectangular screenshot because cube texture target is null";
+                        }
+                        else {
+                            equirectangularTextureTarget = equirectangularCapture->TextureTarget;
+                        }
+                    }
+                    else {
+                        capture = camera->getCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
+                        if (capture == nullptr) {
+                            response.message = "Can't take screenshot because camera type is not active";
+                        }
+                        else if (capture->TextureTarget == nullptr) {
+                            response.message = "Can't take screenshot because texture target is null";
+                        }
+                        else {
+                            textureTarget = capture->TextureTarget;
+                        }
+                    }
+                }
+
+                const bool disable_gamma = requests[i].image_type == ImageCaptureBase::ImageType::Segmentation ||
+                    requests[i].image_type == ImageCaptureBase::ImageType::Annotation ||
+                    requests[i].image_type == ImageCaptureBase::ImageType::Infrared;
+                const float max_depth_meters = getMaxDepthMeters(camera, requests[i].image_type);
+                const EquirectangularExposureSettings equirectangular_exposure =
+                    getEquirectangularExposureSettings(camera, requests[i].image_type);
+                if (useEquirectangular) {
+                    render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
+                        equirectangularCapture,
+                        equirectangularTextureTarget,
+                        requests[i].pixels_as_float,
+                        requests[i].compress,
+                        disable_gamma,
+                        requests[i].image_type,
+                        max_depth_meters,
+                        equirectangular_exposure.compensation,
+                        equirectangular_exposure.min,
+                        equirectangular_exposure.max,
+                        requests[i].float_as_bytes));
+                }
+                else {
+                    render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
+                        capture,
+                        textureTarget,
+                        requests[i].pixels_as_float,
+                        requests[i].compress,
+                        disable_gamma,
+                        requests[i].image_type,
+                        max_depth_meters,
+                        equirectangular_exposure.compensation,
+                        equirectangular_exposure.min,
+                        equirectangular_exposure.max,
+                        requests[i].float_as_bytes));
+                }
+                }
+            }
+            catch (...) {
+                preparation_exception = std::current_exception();
+            }
+        },
+        true);
+
+    if (preparation_exception)
+        std::rethrow_exception(preparation_exception);
 
     if (use_safe_method && visibilityChanged) {
         // We don't do game/render thread synchronization for safe method.
         // We just blindly sleep for 200ms (the old way)
         std::this_thread::sleep_for(std::chrono::duration<double>(0.2));
-    }
-
-    UGameViewportClient* gameViewport = nullptr;
-    for (unsigned int i = 0; i < requests.size(); ++i) {
-
-        APIPCamera* camera = cameras_->at(requests.at(i).camera_name);
-
-        if (gameViewport == nullptr) {
-            gameViewport = camera->GetWorld()->GetGameViewport();
-        }
-
-        responses.push_back(ImageResponse());
-        ImageResponse& response = responses.at(i);          
-        UTextureRenderTarget2D* textureTarget = nullptr;
-        USceneCaptureComponent2D* capture = nullptr;
-        UTextureRenderTargetCube* equirectangularTextureTarget = nullptr;
-        USceneCaptureComponentCube* equirectangularCapture = nullptr;
-        bool useEquirectangular = false;
-        const bool has_annotation = requests[i].image_type != ImageType::Annotation ||
-            camera->GetAnnotationNameExist(requests[i].annotation_name);
-        if (!has_annotation) {
-            response.message = "Can't take screenshot because the annotation name does not exist for this camera";
-        }
-        else {
-            useEquirectangular = camera->isEquirectangularCapture(requests[i].image_type, requests[i].annotation_name);
-            if (useEquirectangular) {
-                equirectangularCapture = camera->getEquirectangularCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
-                if (equirectangularCapture == nullptr) {
-                    response.message = "Can't take equirectangular screenshot because cube camera type is not active";
-                }
-                else if (equirectangularCapture->TextureTarget == nullptr) {
-                    response.message = "Can't take equirectangular screenshot because cube texture target is null";
-                }
-                else {
-                    equirectangularTextureTarget = equirectangularCapture->TextureTarget;
-                }
-            }
-            else {
-                capture = camera->getCaptureComponent(requests[i].image_type, false, requests[i].annotation_name);
-                if (capture == nullptr) {
-                    response.message = "Can't take screenshot because camera type is not active";
-                }
-                else if (capture->TextureTarget == nullptr) {
-                    response.message = "Can't take screenshot because texture target is null";
-                }
-                else
-                    textureTarget = capture->TextureTarget;
-            }
-        }
-        
-        bool disable_gamma = false;
-        if (requests[i].image_type == ImageCaptureBase::ImageType::Segmentation ||
-            requests[i].image_type == ImageCaptureBase::ImageType::Annotation ||
-            requests[i].image_type == ImageCaptureBase::ImageType::Infrared)disable_gamma = true;
-        const float max_depth_meters = getMaxDepthMeters(camera, requests[i].image_type);
-        const EquirectangularExposureSettings equirectangular_exposure = getEquirectangularExposureSettings(camera, requests[i].image_type);
-        if (useEquirectangular) {
-            render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
-                equirectangularCapture,
-                equirectangularTextureTarget,
-                requests[i].pixels_as_float,
-                requests[i].compress,
-                disable_gamma,
-                requests[i].image_type,
-                max_depth_meters,
-                equirectangular_exposure.compensation,
-                equirectangular_exposure.min,
-                equirectangular_exposure.max,
-                requests[i].float_as_bytes));
-        }
-        else {
-            render_params.push_back(std::make_shared<RenderRequest::RenderParams>(
-                capture,
-                textureTarget,
-                requests[i].pixels_as_float,
-                requests[i].compress,
-                disable_gamma,
-                requests[i].image_type,
-                max_depth_meters,
-                equirectangular_exposure.compensation,
-                equirectangular_exposure.min,
-                equirectangular_exposure.max,
-                requests[i].float_as_bytes));
-        }
     }
 
     if (nullptr == gameViewport) {
@@ -360,7 +399,7 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
             response.camera_orientation = camera_pose.orientation;
         }
     };
-    RenderRequest render_request{ gameViewport, std::move(query_camera_pose_cb) };
+    RenderRequest render_request{ gameViewport, std::move(query_camera_pose_cb), std::move(prepare_capture) };
 
     render_request.getScreenshot(render_params.data(), render_results, render_params.size(), use_safe_method, cancellation);
 
@@ -369,14 +408,18 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         ImageResponse& response = responses.at(i);
 
         response.camera_name = request.camera_name;
-        // Keep render-thread capture timestamp; do not overwrite with frame snapshot.
+        response.request_time_stamp = render_results[i]->request_time_stamp;
         response.time_stamp = render_results[i]->time_stamp;
+        response.render_frame_number = render_results[i]->render_frame_number;
         response.image_data_uint8 = std::vector<uint8_t>(render_results[i]->image_data_uint8.GetData(), render_results[i]->image_data_uint8.GetData() + render_results[i]->image_data_uint8.Num());
         response.image_data_float = std::vector<float>(render_results[i]->image_data_float.GetData(), render_results[i]->image_data_float.GetData() + render_results[i]->image_data_float.Num());
         if (use_safe_method) {
             // Currently, we don't have a way to synthronize image capturing and camera pose when safe method is used,
-            APIPCamera* camera = cameras_->at(request.camera_name);
-            msr::airlib::Pose pose = camera->getPose();
+            msr::airlib::Pose pose;
+            UAirBlueprintLib::RunCommandOnGameThread([this, &request, &pose]() {
+                APIPCamera* camera = cameras_->at(request.camera_name);
+                pose = camera->getPose();
+            }, true);
             response.camera_position = pose.position;
             response.camera_orientation = pose.orientation;
         }

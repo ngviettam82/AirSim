@@ -73,6 +73,8 @@ Note this does not include most sensor types.
   "Recording": {
     "RecordOnMove": false,
     "RecordInterval": 0.05,
+    "SensorRecordInterval": 0.005,
+    "ImageSyncToleranceMs": 5.0,
     "Folder": "",
     "Enabled": false,
     "Cameras": [
@@ -309,7 +311,9 @@ In case of multiple vehicles, different vehicles can be specified as follows-
 ## Recording
 The recording feature allows you to record ground-truth pose, optional **configured sensors**, and captured images at specified intervals. You can start recording by pressing red Record button on lower right or the R key. The data is stored in the `Documents\AirSim` folder (or the folder specified using `Folder`), in a time stamped subfolder for each recording session, as a tab-separated file.
 
-* `RecordInterval`: specifies minimal interval in seconds between samples.
+* `RecordInterval`: minimal interval in seconds between independently scheduled **camera** captures (default `0.05`).
+* `SensorRecordInterval`: minimal interval in seconds between **sensor/pose** rows (default `0.005`). Camera capture and image file writing run separately and do not block this sampler.
+* `ImageSyncToleranceMs`: maximum absolute image-to-snapshot delta marked as synchronized (default `5.0`). Images outside the tolerance are still saved with `ImageSyncWithinTolerance=0` and an `_over` filename suffix.
 * `RecordOnMove`: specifies that do not record frame if there was vehicle's position or orientation hasn't changed.
 * `Folder`: Parent folder where timestamped subfolder with recordings are created. Absolute path of the directory must be specified. If not used, then `Documents/AirSim` folder will be used. E.g. `"Folder": "/home/<user>/Documents"`
 * `Enabled`: Whether Recording should start from the beginning itself, setting to `true` will start recording automatically when the simulation starts. By default, it's set to `false`
@@ -329,7 +333,7 @@ The recording feature allows you to record ground-truth pose, optional **configu
 ]
 ```
 
-Each sample freezes physics, snapshots pose/sensors, captures images while paused, then resumes (**logical same-snapshot association**, not a `<0.1 ms` exposure claim). See [Recording data](modify_recording_data.md).
+Recording does not pause physics. Sensor rows are sampled independently. For an image row, the game thread briefly snapshots pose/sensors and latches the vehicle's rendered state immediately before `CaptureScene`; rendering, readback, and file I/O then continue asynchronously from sensor sampling. The TSV stores request/render timestamps and the signed synchronization delta. See [Recording data](modify_recording_data.md).
 
 For example, the `Cameras` element below records scene & segmentation images for `Car1` & scene for `Car2`-
 

@@ -27,6 +27,8 @@
     "Recording": {
         "RecordOnMove": false,
         "RecordInterval": 0.05,
+        "SensorRecordInterval": 0.005,
+        "ImageSyncToleranceMs": 5.0,
         "Folder": "",
         "Enabled": false,
         "Cameras": [

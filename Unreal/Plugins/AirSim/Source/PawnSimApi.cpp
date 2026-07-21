@@ -863,7 +863,7 @@ msr::airlib::RecordingCapture PawnSimApi::createRecordingCapture(
     capture.schema_tokens = schema_tokens;
     capture.schema_sensor_names =
         msr::airlib::AirSimSettings::singleton().recording_setting.sensor_schema;
-    capture.association_mode = "physics_paused_snapshot";
+    capture.association_mode = "sensor_only";
 
     const auto* kinematics = getGroundTruthKinematics();
     if (kinematics != nullptr)

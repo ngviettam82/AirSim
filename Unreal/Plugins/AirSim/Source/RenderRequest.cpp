@@ -8,6 +8,13 @@
 
 #include "AirBlueprintLib.h"
 #include "Async/Async.h"
+#include "common/ClockFactory.hpp"
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <utility>
+
+extern CORE_API uint32 GFrameNumber;
 
 namespace
 {
@@ -549,8 +556,12 @@ namespace
     }
 }
 
-RenderRequest::RenderRequest(UGameViewportClient* game_viewport, std::function<void()>&& query_camera_pose_cb)
-    : params_(nullptr), results_(nullptr), req_size_(0), wait_signal_(new msr::airlib::WorkerThreadSignal), game_viewport_(game_viewport), query_camera_pose_cb_(std::move(query_camera_pose_cb))
+RenderRequest::RenderRequest(UGameViewportClient* game_viewport,
+                             std::function<void()>&& query_camera_pose_cb,
+                             std::function<void()>&& prepare_capture_cb)
+    : params_(nullptr), results_(nullptr), req_size_(0), wait_signal_(new msr::airlib::WorkerThreadSignal),
+      game_viewport_(game_viewport), query_camera_pose_cb_(std::move(query_camera_pose_cb)),
+      prepare_capture_cb_(std::move(prepare_capture_cb))
 {
 }
 
@@ -590,13 +601,27 @@ void RenderRequest::getScreenshot(
             results[i]->bmp_float.Reset();
         results[i]->width = 0;
         results[i]->height = 0;
+        results[i]->request_time_stamp = 0;
         results[i]->time_stamp = 0;
+        results[i]->render_frame_number = 0;
     }
+
+    request_time_stamp_ = 0;
+    render_time_stamp_ = 0;
+    render_frame_number_ = 0;
 
     //make sure we are not on the rendering thread
     CheckNotBlockedOnRenderThread();
 
     if (use_safe_method) {
+        if (prepare_capture_cb_) {
+            UAirBlueprintLib::RunCommandOnGameThread([this]() {
+                prepare_capture_cb_();
+            }, true);
+        }
+        request_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
+        render_time_stamp_ = request_time_stamp_;
+        render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
         for (unsigned int i = 0; i < req_size; ++i) {
             if (params[i]->isEquirectangular() && params[i]->render_target_cube != nullptr && params[i]->render_component_cube != nullptr) {
                 FIntPoint cube_size;
@@ -658,6 +683,11 @@ void RenderRequest::getScreenshot(
                 }
             }
         }
+        for (unsigned int i = 0; i < req_size; ++i) {
+            results[i]->request_time_stamp = request_time_stamp_;
+            results[i]->time_stamp = render_time_stamp_;
+            results[i]->render_frame_number = render_frame_number_;
+        }
     }
     else if (cancellation == nullptr) {
         //wait for render thread to pick up our task
@@ -671,10 +701,15 @@ void RenderRequest::getScreenshot(
 
             saved_DisableWorldRendering_ = game_viewport_->bDisableWorldRendering;
             game_viewport_->bDisableWorldRendering = 0;
+            if (prepare_capture_cb_)
+                prepare_capture_cb_();
+            request_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
             end_draw_handle_ = game_viewport_->OnEndDraw().AddLambda([this] {
                 check(IsInGameThread());
 
                 // capture CameraPose for this frame
+                render_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
+                render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
                 query_camera_pose_cb_();
 
                 // The completion is called immeidately after GameThread sends the
@@ -729,6 +764,9 @@ void RenderRequest::getScreenshot(
             request->saved_DisableWorldRendering_ = request->game_viewport_->bDisableWorldRendering;
             request->game_viewport_->bDisableWorldRendering = 0;
             state->ViewportModified = true;
+            if (request->prepare_capture_cb_)
+                request->prepare_capture_cb_();
+            request->request_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
             request->end_draw_handle_ = request->game_viewport_->OnEndDraw().AddLambda([state]() {
                 std::lock_guard<std::mutex> end_draw_lock(state->Mutex);
                 RenderRequest* active_request = state->Request;
@@ -750,6 +788,8 @@ void RenderRequest::getScreenshot(
                     return;
                 }
 
+                active_request->render_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
+                active_request->render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
                 active_request->query_camera_pose_cb_();
                 state->RenderCommandQueued = true;
                 ENQUEUE_RENDER_COMMAND(SceneDrawCompletionCancellable)
@@ -884,7 +924,16 @@ void RenderRequest::setupEquirectangularRenderResource(const UTextureRenderTarge
 void RenderRequest::ExecuteTask(bool signal_completion)
 {
     if (params_ != nullptr && req_size_ > 0) {
+        const msr::airlib::TTimePoint request_time_stamp = request_time_stamp_ != 0
+            ? request_time_stamp_
+            : msr::airlib::ClockFactory::get()->nowNanos();
+        const msr::airlib::TTimePoint render_time_stamp = render_time_stamp_ != 0
+            ? render_time_stamp_
+            : request_time_stamp;
         for (unsigned int i = 0; i < req_size_; ++i) {
+            results_[i]->request_time_stamp = request_time_stamp;
+            results_[i]->time_stamp = render_time_stamp;
+            results_[i]->render_frame_number = render_frame_number_;
             if (params_[i]->isEquirectangular() && params_[i]->render_target_cube != nullptr && params_[i]->render_component_cube != nullptr) {
                 FIntPoint cube_size;
                 setupEquirectangularRenderResource(params_[i]->render_target_cube, cube_size);
@@ -974,7 +1023,6 @@ void RenderRequest::ExecuteTask(bool signal_completion)
                     }
                 }
             }
-            results_[i]->time_stamp = msr::airlib::ClockFactory::get()->nowNanos();
         }
 
         req_size_ = 0;

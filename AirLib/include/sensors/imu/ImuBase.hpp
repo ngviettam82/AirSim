@@ -51,7 +51,7 @@ namespace airlib
         }
 
     private:
-        Output output_;
+        Output output_{};
     };
 }
 } //namespace
