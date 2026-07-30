@@ -10,6 +10,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 #include "common/Common.hpp"
 #include "common/ImageCaptureBase.hpp"
@@ -34,6 +35,11 @@ public:
         float equirectangular_exposure_compensation;
         float equirectangular_exposure_min;
         float equirectangular_exposure_max;
+        // Game-thread snapshot filled immediately before CaptureScene.  It
+        // travels with the CPU result so downstream writers need not access
+        // the capture component from a worker thread.
+        bool camera_info_is_perspective = false;
+        float camera_horizontal_fov_degrees = 0.0f;
 
         RenderParams(USceneCaptureComponent2D * render_component_val, UTextureRenderTarget2D* render_target_val,
                      bool pixels_as_float_val, bool compress_val, bool disable_gamma_val,
@@ -81,6 +87,7 @@ public:
     struct RenderResult {
         TArray<uint8> image_data_uint8;
         TArray<float> image_data_float;
+        std::string message;
 
         TArray<FColor> bmp;
         TArray<FFloat16Color> bmp_float;
@@ -91,6 +98,7 @@ public:
         msr::airlib::TTimePoint request_time_stamp;
         msr::airlib::TTimePoint time_stamp;
         uint64_t render_frame_number;
+        bool has_render_frame_timestamp;
     };
 
 private:
@@ -111,6 +119,7 @@ private:
     msr::airlib::TTimePoint request_time_stamp_ = 0;
     msr::airlib::TTimePoint render_time_stamp_ = 0;
     uint64_t render_frame_number_ = 0;
+    bool has_render_frame_timestamp_ = false;
 
 public:
     RenderRequest(UGameViewportClient * game_viewport,

@@ -19,7 +19,6 @@
 #include "Engine/SkeletalMesh.h"
 #include "Slate/SceneViewport.h"
 #include "IImageWrapper.h"
-#include "Misc/ObjectThumbnail.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include <exception>
@@ -1045,43 +1044,48 @@ UClass* UAirBlueprintLib::LoadClass(const std::string& name)
     return cls;
 }
 
-void UAirBlueprintLib::CompressImageArray(int32 width, int32 height, const TArray<FColor>& src, TArray<uint8>& dest)
+bool UAirBlueprintLib::CompressImageArrayToJpeg(int32 width, int32 height, const TArray<FColor>& src, TArray<uint8>& dest)
 {
-    TArray<FColor> MutableSrcData = src;
+    dest.Reset();
 
-    // PNGs are saved as RGBA but FColors are stored as BGRA. An option to swap the order upon compression may be added at
-    // some point. At the moment, manually swapping Red and Blue
-    for (int32 Index = 0; Index < width * height; Index++) {
-        uint8 TempRed = MutableSrcData[Index].R;
-        MutableSrcData[Index].R = MutableSrcData[Index].B;
-        MutableSrcData[Index].B = TempRed;
-        MutableSrcData[Index].A = 255;
+    const int64 pixel_count = static_cast<int64>(width) * static_cast<int64>(height);
+    if (width <= 0 || height <= 0 || pixel_count <= 0 ||
+        pixel_count > static_cast<int64>(MAX_int32 / 4) ||
+        pixel_count != src.Num()) {
+        return false;
     }
 
-    FObjectThumbnail TempThumbnail;
-    TempThumbnail.SetImageSize(width, height);
-    TArray<uint8>& ThumbnailByteArray = TempThumbnail.AccessImageData();
+    // FColor is stored as BGRA. ImageWrapper expects a contiguous RGBA buffer.
+    TArray<uint8> rgba;
+    rgba.SetNumUninitialized(static_cast<int32>(pixel_count * 4));
+    for (int32 pixel = 0; pixel < src.Num(); ++pixel) {
+        const FColor& color = src[pixel];
+        const int32 offset = pixel * 4;
+        rgba[offset] = color.R;
+        rgba[offset + 1] = color.G;
+        rgba[offset + 2] = color.B;
+        rgba[offset + 3] = 255;
+    }
 
-    // Copy scaled image into destination thumb
-    int32 MemorySize = width * height * sizeof(FColor);
-    ThumbnailByteArray.AddUninitialized(MemorySize);
-    FMemory::Memcpy(ThumbnailByteArray.GetData(), MutableSrcData.GetData(), MemorySize);
-
-    // Compress data - convert into a .png
-    CompressUsingImageWrapper(ThumbnailByteArray, width, height, dest);
-    ;
+    return CompressRgbaToJpeg(rgba, width, height, dest);
 }
 
-bool UAirBlueprintLib::CompressUsingImageWrapper(const TArray<uint8>& uncompressed, const int32 width, const int32 height, TArray<uint8>& compressed)
+bool UAirBlueprintLib::CompressRgbaToJpeg(const TArray<uint8>& rgba, const int32 width, const int32 height, TArray<uint8>& jpeg)
 {
     bool bSucceeded = false;
-    compressed.Reset();
-    if (uncompressed.Num() > 0) {
-        IImageWrapperModule* ImageWrapperModule = UAirBlueprintLib::getImageWrapperModule();
-        TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule->CreateImageWrapper(EImageFormat::PNG);
-        if (ImageWrapper.IsValid() && ImageWrapper->SetRaw(&uncompressed[0], uncompressed.Num(), width, height, ERGBFormat::RGBA, 8)) {
-            compressed = ImageWrapper->GetCompressed();
-            bSucceeded = true;
+    jpeg.Reset();
+    if (rgba.Num() > 0) {
+        IImageWrapperModule* image_wrapper_module = UAirBlueprintLib::getImageWrapperModule();
+        if (image_wrapper_module == nullptr)
+            return false;
+
+        TSharedPtr<IImageWrapper> image_wrapper = image_wrapper_module->CreateImageWrapper(EImageFormat::JPEG);
+        if (image_wrapper.IsValid() && image_wrapper->SetRaw(rgba.GetData(), rgba.Num(), width, height, ERGBFormat::RGBA, 8)) {
+            const TArray64<uint8> compressed = image_wrapper->GetCompressed(85);
+            if (compressed.Num() > 0 && compressed.Num() <= MAX_int32) {
+                jpeg.Append(compressed.GetData(), static_cast<int32>(compressed.Num()));
+                bSucceeded = true;
+            }
         }
     }
 

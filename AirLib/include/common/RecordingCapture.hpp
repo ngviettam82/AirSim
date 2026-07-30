@@ -8,6 +8,7 @@
 #include "common/CommonStructs.hpp"
 #include "sensors/SensorBase.hpp"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <sstream>
 #include <string>
@@ -46,7 +47,31 @@ namespace airlib
 
         real_T baro_altitude = 0, baro_pressure = 0, baro_qnh = 0;
         Vector3r mag_field_body = Vector3r::Zero();
+        std::array<real_T, 9> mag_field_covariance{};
+        bool mag_field_covariance_known = false;
         real_T distance = 0, distance_min = 0, distance_max = 0;
+    };
+
+    // A native IMU update retained by the source sensor while ROS bag recording
+    // is active. These samples are deliberately independent of the recorder's
+    // polling interval so a nominal 333 Hz IMU is not reduced to 200 Hz.
+    struct RecordingImuSample
+    {
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+        TTimePoint time_stamp = 0;
+        uint64_t physics_step_id = 0;
+        Quaternionr orientation = Quaternionr::Identity();
+        Vector3r angular_velocity = Vector3r::Zero();
+        Vector3r linear_acceleration = Vector3r::Zero();
+    };
+
+    struct RecordingImuBatch
+    {
+        std::string vehicle_name;
+        std::string sensor_name;
+        std::vector<RecordingImuSample> samples;
+        // Number overwritten in this sensor's bounded source ring before this drain.
+        uint64_t dropped_samples = 0;
     };
 
     struct RecordingCapture

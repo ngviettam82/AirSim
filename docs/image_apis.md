@@ -4,7 +4,7 @@ Please read [general API doc](apis.md) first if you are not familiar with AirSim
 
 ## Getting a Single Image
 
-Here's a sample code to get a single image from camera named "0". The returned value is bytes of png format image. To get uncompressed and other format as well as available cameras please see next sections.
+Here's a sample code to get a single image from camera named "0". The returned value is JPEG image bytes. To get uncompressed and floating-point images as well as available cameras, see the next sections.
 
 ### Python
 
@@ -14,7 +14,7 @@ import cosysairsim as airsim
 # for car use CarClient()
 client = airsim.MultirotorClient()
 
-png_image = client.simGetImage("0", airsim.ImageType.Scene)
+jpeg_image = client.simGetImage("0", airsim.ImageType.Scene)
 # do something with image
 ```
 
@@ -30,7 +30,7 @@ int getOneImage()
     // for car use CarRpcLibClient
     MultirotorRpcLibClient client;
 
-    std::vector<uint8_t> png_image = client.simGetImage("0", VehicleCameraBase::ImageType::Scene);
+    std::vector<uint8_t> jpeg_image = client.simGetImage("0", VehicleCameraBase::ImageType::Scene);
     // do something with images
 }
 ```
@@ -48,7 +48,7 @@ import cosysairsim as airsim
 client = airsim.MultirotorClient()
 
 responses = client.simGetImages([
-    # png format
+    # JPEG format
     airsim.ImageRequest(0, airsim.ImageType.Scene),
     # uncompressed RGB array bytes
     airsim.ImageRequest(1, airsim.ImageType.Scene, False, False),
@@ -69,24 +69,24 @@ response = responses[0]
 # get numpy array
 img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8)
 
-# reshape array to 4 channel image array H X W X 4
+# reshape array to 3-channel RGB image array H X W X 3
 img_rgb = img1d.reshape(response.height, response.width, 3)
 
 # original image is flipped vertically
 img_rgb = np.flipud(img_rgb)
 
-# write to png
+# write exact raw RGB locally as a lossless PNG
 airsim.write_png(os.path.normpath(filename + '.png'), img_rgb)
 ```
 
 #### Quick Tips
-- The API `simGetImage` returns `binary string literal` which means you can simply dump it in binary file to create a .png file. However, if you want to process it in any other way, you can use the helper function `airsim.string_to_uint8_array`. This converts binary string literal to NumPy uint8 array.
+- The API `simGetImage` returns a `binary string literal` which you can dump into a `.jpg` file. To process it another way, use `airsim.string_to_uint8_array` to convert it to a NumPy `uint8` array before decoding it with an image library.
 
-- The API `simGetImages` can accept request for multiple image types from any cameras in single call. You can specify if image is png compressed, RGB uncompressed or float array. For png compressed images, you get `binary string literal`. For float array you get Python list of float64. You can convert this float array to NumPy 2D array using
+- The API `simGetImages` can accept requests for multiple image types from any cameras in one call. For non-float images, `compress=True` returns JPEG bytes and `compress=False` returns uncompressed RGB bytes. Float images are returned separately as float values (or exact float bytes when `float_as_bytes=True`) and can be saved as `.pfm` files with `airsim.write_pfm()`. You can convert the float array to a NumPy 2D array using
     ```
     airsim.list_to_2d_float_array(response.image_data_float, response.width, response.height)
     ```
-    You can also save float array to .pfm file (Portable Float Map format) using `airsim.write_pfm()` function.
+- Direct image API JPEG encoding uses quality 85. Settings-driven recording can select its JPEG quality separately with `Recording.Cameras[].JpegQuality`.
 
 - For exact `DepthPlanar` and `DepthPerspective`, `pixels_as_float=True, float_as_bytes=True` returns little-endian `float32` depth bytes in `image_data_uint8`. This is much faster for high-resolution depth transport. Decode it with `np.frombuffer(response.image_data_uint8, dtype="<f4").reshape(response.height, response.width)` or `airsim.response_to_2d_float_array(response)`.
 
@@ -130,9 +130,9 @@ int getStereoAndDepthImages()
     // CarRpcLibClient client;
     MultirotorRpcLibClient client;
 
-    // get right, left and depth images. First two as png, second as float16.
+    // get right, left and depth images. First two as JPEG, second as float data.
     std::vector<ImageRequest> request = {
-        //png format
+        // JPEG format
         ImageRequest("0", ImageType::Scene),
         //uncompressed RGB array bytes
         ImageRequest("1", ImageType::Scene, false, false),

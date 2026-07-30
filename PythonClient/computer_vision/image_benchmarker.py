@@ -30,8 +30,8 @@ def saveImage(response, filename):
         # save pic
         cv2.imwrite(os.path.normpath(filename + '.png'), depth)
 
-    elif response.compress: #png format
-        airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+    elif response.compress: # JPEG format
+        airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
 
     else: #uncompressed array
         img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) # get numpy array
@@ -99,8 +99,9 @@ class ImageBenchmarker():
         self.image_benchmark_num_images += 1
         image = self.airsim_client.simGetImage(CAM_NAME, self.img_type)
         np_arr = np.frombuffer(image, dtype=np.uint8)
-        # Change the below dimensions appropriately for the camera settings
-        img_rgb = np_arr.reshape(240, 512, 4)
+        img_rgb = cv2.imdecode(np_arr, cv2.IMREAD_UNCHANGED)
+        if img_rgb is None:
+            raise RuntimeError("simGetImage returned an invalid JPEG payload")
 
         self.update_benchmark_results()
 

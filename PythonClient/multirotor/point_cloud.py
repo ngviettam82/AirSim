@@ -50,8 +50,8 @@ while True:
         airsim.wait_key("Press any key to exit")
         sys.exit(0)
     else:
-        png = cv2.imdecode(np.frombuffer(rawImage, np.uint8) , cv2.IMREAD_UNCHANGED)
-        gray = cv2.cvtColor(png, cv2.COLOR_BGR2GRAY)
+        image = cv2.imdecode(np.frombuffer(rawImage, np.uint8) , cv2.IMREAD_UNCHANGED)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         Image3D = cv2.reprojectImageTo3D(gray, projectionMatrix)
         savePointCloud(Image3D, outputFile)
         print("saved " + outputFile)

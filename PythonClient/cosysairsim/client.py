@@ -293,7 +293,7 @@ class VehicleClient:
         """
         Get a single image
 
-        Returns bytes of png format image which can be dumped into a binary file to create .png image
+        Returns JPEG bytes which can be dumped into a binary file to create a .jpg image.
         `string_to_uint8_array()` can be used to convert into Numpy uint8 array
 
         Args:
@@ -304,7 +304,7 @@ class VehicleClient:
             annotation_name (str, optional): Name of the annotation to be applied if using image type Annotation.
 
         Returns:
-            bytes: Binary string literal of compressed png image
+            bytes: Binary string literal of compressed JPEG image
         """
         # todo: in future remove below, it's only for compatibility to pre v1.2
         camera_name = str(camera_name)

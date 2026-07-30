@@ -213,11 +213,11 @@ class OrbitNavigator:
         pos = self.client.getMultirotorState().kinematics_estimated.position
         self.client.moveToPositionAsync(pos.x_val, pos.y_val, self.z, 0.5, 10, airsim.DrivetrainType.MaxDegreeOfFreedom, 
             airsim.YawMode(False, self.camera_heading)).join()
-        responses = self.client.simGetImages([airsim.ImageRequest(1, airsim.ImageType.Scene)]) #scene vision image in png format
+        responses = self.client.simGetImages([airsim.ImageRequest(1, airsim.ImageType.Scene)]) #scene vision image in JPEG format
         response = responses[0]
         filename = "photo_" + str(self.snapshot_index)
         self.snapshot_index += 1
-        airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)        
+        airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
         print("Saved snapshot: {}".format(filename))
         self.start_time = time.time()  # cause smooth ramp up to happen again after photo is taken.
 

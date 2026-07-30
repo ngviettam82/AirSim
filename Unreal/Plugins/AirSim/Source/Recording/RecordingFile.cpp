@@ -23,6 +23,11 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
             (response.image_data_uint8.empty() && response.image_data_float.empty())) {
             continue; // do not list failed captures
         }
+        if (response.recording_jpeg && !response.pixels_as_float && !response.compress) {
+            UE_LOG(LogTemp, Error, TEXT("Skipping unencoded JPEG recording image from %s"),
+                   UTF8_TO_TCHAR(response.camera_name.c_str()));
+            continue;
+        }
 
         std::ostringstream image_file_name;
         image_file_name << "img_" << capture.vehicle_name << "_"
@@ -34,14 +39,16 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
                         << "_p" << capture.physics_step_id
                         << "_fs" << capture.frame_time_stamp;
 
-        const bool has_timing = response.time_stamp != 0 && capture.frame_time_stamp != 0;
+        const bool has_render_frame_time =
+            response.has_render_frame_timestamp && response.time_stamp != 0;
+        const bool has_timing = has_render_frame_time && capture.frame_time_stamp != 0;
         const int64_t delay_ns = has_timing
             ? static_cast<int64_t>(response.time_stamp) - static_cast<int64_t>(capture.frame_time_stamp)
             : 0;
         const int64_t delay_us = delay_ns / 1000;
         const bool within_tolerance = has_timing &&
             std::llabs(delay_ns) <= capture.image_sync_tolerance_ns;
-        if (response.time_stamp != 0)
+        if (has_render_frame_time)
             image_file_name << "_it" << response.time_stamp;
         if (has_timing) {
             image_file_name << "_dt" << (delay_ns < 0 ? "m" : "p")
@@ -52,7 +59,7 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
             image_file_name << "_dt_unknown";
         }
 
-        std::string extension = ".png";
+        std::string extension = ".jpg";
         if (response.pixels_as_float)
             extension = ".pfm";
         else if (!response.compress)
@@ -86,7 +93,8 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
             }
             image_file_names << fname;
             image_request_time_stamps << response.request_time_stamp;
-            image_time_stamps << response.time_stamp;
+            if (has_render_frame_time)
+                image_time_stamps << response.time_stamp;
             if (has_timing) {
                 image_delays_ns << delay_ns;
                 image_delays_ms << std::fixed << std::setprecision(6)
@@ -96,7 +104,7 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
             ++saved;
         }
         catch (std::exception& ex) {
-            UAirBlueprintLib::LogMessage(TEXT("Image file save failed"), FString(ex.what()), LogDebugLevel::Failure);
+            UE_LOG(LogTemp, Error, TEXT("Image file save failed: %s"), UTF8_TO_TCHAR(ex.what()));
         }
     }
 
@@ -125,7 +133,8 @@ void RecordingFile::createFile(const std::string& file_path, const std::string& 
         appendColumnHeader(header_columns);
     }
     catch (std::exception& ex) {
-        UAirBlueprintLib::LogMessageString(std::string("createFile Failed for ") + file_path, ex.what(), LogDebugLevel::Failure);
+        UE_LOG(LogTemp, Error, TEXT("Failed to create recording file %s: %s"),
+               UTF8_TO_TCHAR(file_path.c_str()), UTF8_TO_TCHAR(ex.what()));
     }
 }
 
@@ -149,11 +158,11 @@ void RecordingFile::writeString(const std::string& str) const
             log_file_handle_->Write((const uint8*)TCHAR_TO_ANSI(*line_f), line_f.Len());
         }
         else {
-            UAirBlueprintLib::LogMessageString("Attempt to write to recording log file when file was not opened", "", LogDebugLevel::Failure);
+            UE_LOG(LogTemp, Error, TEXT("Attempted to write to a recording log file that was not open"));
         }
     }
     catch (std::exception& ex) {
-        UAirBlueprintLib::LogMessageString(std::string("file write to recording file failed "), ex.what(), LogDebugLevel::Failure);
+        UE_LOG(LogTemp, Error, TEXT("Recording file write failed: %s"), UTF8_TO_TCHAR(ex.what()));
     }
 }
 
@@ -162,28 +171,32 @@ RecordingFile::~RecordingFile()
     stopRecording(true);
 }
 
-void RecordingFile::startRecording(const msr::airlib::RecordingCapture& header_template, const std::string& folder)
+bool RecordingFile::startRecording(const msr::airlib::RecordingCapture& header_template, const std::string& folder)
 {
     try {
-        std::string log_folderpath = common_utils::FileSystem::getLogFolderPath(true, folder);
-        image_path_ = common_utils::FileSystem::ensureFolder(log_folderpath, "images");
-        std::string log_filepath = common_utils::FileSystem::getLogFileNamePath(log_folderpath, record_filename, "", ".txt", false);
+        session_path_ = common_utils::FileSystem::getLogFolderPath(true, folder);
+        image_path_ = common_utils::FileSystem::ensureFolder(session_path_, "images");
+        std::string log_filepath = common_utils::FileSystem::getLogFileNamePath(session_path_, record_filename, "", ".txt", false);
         if (log_filepath != "")
             createFile(log_filepath, header_template.fullHeaderLine());
         else {
-            UAirBlueprintLib::LogMessageString("Cannot start recording because path for log file is not available", "", LogDebugLevel::Failure);
-            return;
+            UE_LOG(LogTemp, Error, TEXT("Cannot start recording because a log-file path is not available"));
+            return false;
         }
         if (isFileOpen()) {
             is_recording_ = true;
-            UAirBlueprintLib::LogMessage(TEXT("Recording: "), TEXT("Started"), LogDebugLevel::Success);
+            UE_LOG(LogTemp, Log, TEXT("Recording started"));
+            return true;
         }
         else {
-            UAirBlueprintLib::LogMessageString("Error creating log file", log_filepath.c_str(), LogDebugLevel::Failure);
+            UE_LOG(LogTemp, Error, TEXT("Error creating recording log file: %s"),
+                   UTF8_TO_TCHAR(log_filepath.c_str()));
+            return false;
         }
     }
     catch (...) {
-        UAirBlueprintLib::LogMessageString("Error in startRecording", "", LogDebugLevel::Failure);
+        UE_LOG(LogTemp, Error, TEXT("Error starting recording"));
+        return false;
     }
 }
 
@@ -193,16 +206,20 @@ void RecordingFile::stopRecording(bool ignore_if_stopped)
     if (!isFileOpen()) {
         if (ignore_if_stopped)
             return;
-        UAirBlueprintLib::LogMessage(TEXT("Recording Error"), TEXT("File was not open"), LogDebugLevel::Failure);
+        UE_LOG(LogTemp, Error, TEXT("Recording file was not open during stop"));
     }
     else {
         closeFile();
     }
-    UAirBlueprintLib::LogMessage(TEXT("Recording: "), TEXT("Stopped"), LogDebugLevel::Success);
-    UAirBlueprintLib::LogMessage(TEXT("Data saved to: "), FString(image_path_.c_str()), LogDebugLevel::Success);
+    UE_LOG(LogTemp, Log, TEXT("Recording stopped; data saved to %s"), UTF8_TO_TCHAR(image_path_.c_str()));
 }
 
 bool RecordingFile::isRecording() const
 {
     return is_recording_;
+}
+
+const std::string& RecordingFile::sessionPath() const
+{
+    return session_path_;
 }

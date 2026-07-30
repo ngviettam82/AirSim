@@ -60,7 +60,7 @@ def to_str(obj):
 def write_file(filename, bstr):
     """
     Write binary data to file.
-    Used for writing compressed PNG images
+    Used for writing compressed image payloads
     """
     with open(filename, 'wb') as afile:
         afile.write(bstr)

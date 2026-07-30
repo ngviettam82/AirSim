@@ -116,6 +116,10 @@ public: //implementation of VehicleSimApiBase
         uint64_t sequence_id,
         const std::vector<std::string>& sensor_names,
         const std::vector<std::string>& schema_tokens) const override;
+    virtual size_t startRecordingImuHistory(size_t max_samples,
+                                            const std::vector<std::string>& sensor_names) override;
+    virtual std::vector<msr::airlib::RecordingImuBatch> drainRecordingImuHistory() override;
+    virtual std::vector<msr::airlib::RecordingImuBatch> stopRecordingImuHistory() override;
     virtual void reportState(msr::airlib::StateReporter& reporter) override;
 
 protected: //additional interface for derived class

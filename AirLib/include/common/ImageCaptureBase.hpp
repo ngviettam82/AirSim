@@ -6,6 +6,7 @@
 
 #include "common/Common.hpp"
 #include "common/common_utils/EnumFlags.hpp"
+#include <limits>
 
 namespace msr
 {
@@ -38,9 +39,16 @@ namespace airlib
             std::string camera_name;
             ImageCaptureBase::ImageType image_type = ImageCaptureBase::ImageType::Scene;
             bool pixels_as_float = false;
+            // For non-float images, true returns JPEG bytes and false returns
+            // uncompressed RGB bytes.
             bool compress = true;
             std::string annotation_name;
             bool float_as_bytes = false;
+            // Settings-driven recording can defer JPEG encoding until after
+            // raw render readback. These fields remain recorder-private so
+            // the public RPC request remains unchanged.
+            bool recording_jpeg = false;
+            int recording_jpeg_quality = 85;
 
             ImageRequest()
             {
@@ -75,12 +83,78 @@ namespace airlib
             // Sim-clock time and UE frame for the rendered frame, before readback.
             TTimePoint time_stamp = 0;
             uint64_t render_frame_number = 0;
+            // True only when time_stamp was captured by RenderRequest's
+            // OnEndDraw callback for this rendered frame. A request or
+            // readback fallback must never be used as a bag-image stamp.
+            bool has_render_frame_timestamp = false;
+            // These are snapped on the game thread immediately before the
+            // scene capture is requested. They describe that capture request
+            // without requiring a writer worker to touch Unreal objects.
+            bool camera_info_is_perspective = false;
+            float camera_horizontal_fov_degrees = 0.0f;
             std::string message;
             bool pixels_as_float = false;
+            // For non-float images, true means JPEG bytes and false means raw
+            // RGB bytes.
             bool compress = true;
             int width = 0, height = 0;
-            ImageType image_type;
+            ImageType image_type = ImageType::Scene;
 			std::string annotation_name;
+            // Set only by the settings-driven recorder when JPEG encoding is
+            // deferred to the recorder writer worker.
+            bool recording_jpeg = false;
+            int recording_jpeg_quality = 85;
+
+            // Image responses cross the Unreal/RPC boundary and may later be
+            // written by a worker.  Validate their shape before copying or
+            // serializing them so a corrupted container header cannot turn
+            // into an unbounded allocation.  Empty payloads are retained for
+            // ordinary capture-error responses; populated payloads must match
+            // the requested layout exactly (except compressed JPEG data, whose
+            // bounded encoded size varies with image content).
+            static bool hasValidPayloadLayout(int width,
+                                              int height,
+                                              bool pixels_as_float,
+                                              bool compress,
+                                              size_t uint8_count,
+                                              size_t float_count)
+            {
+                if (width < 0 || height < 0)
+                    return false;
+
+                if (width == 0 || height == 0)
+                    return uint8_count == 0 && float_count == 0;
+
+                constexpr uint64_t kMaxImagePixels = 16384ULL * 16384ULL;
+                constexpr uint64_t kMaxCompressedOverheadBytes = 64ULL * 1024ULL;
+                const uint64_t pixel_count = static_cast<uint64_t>(width) *
+                    static_cast<uint64_t>(height);
+                if (pixel_count == 0 || pixel_count > kMaxImagePixels)
+                    return false;
+
+                if (uint8_count == 0 && float_count == 0)
+                    return true;
+
+                if (pixels_as_float) {
+                    const uint64_t expected_float_count = pixel_count;
+                    const uint64_t expected_byte_count = pixel_count * sizeof(float);
+                    return (float_count == expected_float_count && uint8_count == 0) ||
+                           (uint8_count == expected_byte_count && float_count == 0);
+                }
+
+                if (!compress) {
+                    const uint64_t expected_byte_count = pixel_count * 3ULL;
+                    return float_count == 0 && uint8_count == expected_byte_count;
+                }
+
+                // JPEG payloads vary with image content. Five bytes per pixel
+                // plus fixed overhead is deliberately generous for the
+                // supported encoder while still bounding a malformed response
+                // before network copy.
+                const uint64_t maximum_byte_count = pixel_count * 5ULL +
+                    kMaxCompressedOverheadBytes;
+                return float_count == 0 && uint8_count <= maximum_byte_count;
+            }
         };
 
     public: //methods

@@ -741,10 +741,10 @@ public:
             for (int j = 0; j < width; j++) {
                 int id = (i * width + j) * 3; // Pixel index
 
-                // Image is in BGR, write as RGB
-                write_binary(image_data[id + 2]); // R
+                // Image data is RGB.
+                write_binary(image_data[id]); // R
                 write_binary(image_data[id + 1]); // G
-                write_binary(image_data[id]); // B
+                write_binary(image_data[id + 2]); // B
             }
         }
 

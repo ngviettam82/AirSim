@@ -48,7 +48,7 @@ int main()
                         Utils::writePFMfile(image_info.image_data_float.data(), image_info.width, image_info.height, file_path + ".pfm");
                     }
                     else {
-                        std::ofstream file(file_path + ".png", std::ios::binary);
+                        std::ofstream file(file_path + ".jpg", std::ios::binary);
                         file.write(reinterpret_cast<const char*>(image_info.image_data_uint8.data()), image_info.image_data_uint8.size());
                         file.close();
                     }

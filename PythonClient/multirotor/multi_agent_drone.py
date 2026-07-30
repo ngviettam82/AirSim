@@ -81,9 +81,9 @@ for idx, response in enumerate(responses1 + responses2):
     if response.pixels_as_float:
         print("Type %d, size %d" % (response.image_type, len(response.image_data_float)))
         airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
-    elif response.compress: #png format
+    elif response.compress: # JPEG format
         print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
-        airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+        airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
     else: #uncompressed array
         print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
         img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) #get numpy array
@@ -99,5 +99,4 @@ client.reset()
 # that's enough fun for now. let's quit cleanly
 client.enableApiControl(False, "Drone1")
 client.enableApiControl(False, "Drone2")
-
 

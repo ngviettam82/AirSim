@@ -133,6 +133,16 @@ namespace airlib
             return doc_.size();
         }
 
+        bool isObject() const
+        {
+            return doc_.type() == nlohmann::detail::value_t::object;
+        }
+
+        bool isArray() const
+        {
+            return doc_.type() == nlohmann::detail::value_t::array;
+        }
+
         template <typename Container>
         void getChildNames(Container& c) const
         {

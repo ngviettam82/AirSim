@@ -35,7 +35,7 @@ def save_images(responses, prefix = ""):
             airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
         else:
             print(f"Type {response.image_type}, size {len(response.image_data_uint8)}, pos {response.camera_position}")
-            airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+            airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
 
 
 responses = client.simGetImages(requests)

@@ -10,10 +10,12 @@
 #include "common_utils/Utils.hpp"
 #include "sensors/SensorBase.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <exception>
 #include <functional>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -115,6 +117,19 @@ namespace airlib
 
         struct RecordingSetting
         {
+            enum class OutputMode
+            {
+                Default,
+                Rosbag
+            };
+
+            struct RosbagSetting
+            {
+                std::string file_name = "airsim_rec.mcap";
+                // Per selected IMU. This bounds memory if the writer falls behind.
+                uint32_t max_imu_buffer_samples = 4096;
+            };
+
             bool record_on_move = false;
             // Minimum sim-time between camera captures (and between full image rows).
             float record_interval = 0.05f;
@@ -126,6 +141,10 @@ namespace airlib
             float image_sync_tolerance_ms = 5.0f;
             std::string folder = "";
             bool enabled = false;
+            // Default keeps AirSim's TSV plus image-file recording behavior.
+            // Rosbag writes only a direct ROS 2-compatible MCAP recording.
+            OutputMode output = OutputMode::Default;
+            RosbagSetting rosbag;
 
             std::map<std::string, std::vector<ImageCaptureBase::ImageRequest>> requests;
             // vehicle_name -> ordered list of sensor names to record for that vehicle
@@ -140,6 +159,37 @@ namespace airlib
             RecordingSetting(bool record_on_move_val, float record_interval_val, const std::string& folder_val, bool enabled_val)
                 : record_on_move(record_on_move_val), record_interval(record_interval_val), folder(folder_val), enabled(enabled_val)
             {
+            }
+
+            bool isRosbagOutput() const
+            {
+                return output == OutputMode::Rosbag;
+            }
+        };
+
+        struct Ros2Setting
+        {
+            // Explicit per-vehicle sensor whitelist for the ROS 2 wrapper.
+            // An omitted or empty list creates no per-sensor ROS 2 topics.
+            std::map<std::string, std::vector<std::string>> sensors;
+
+            bool isSensorSelected(const std::string& vehicle_name,
+                                  const std::string& sensor_name) const
+            {
+                const auto vehicle_it = sensors.find(vehicle_name);
+                if (vehicle_it == sensors.end())
+                    return false;
+
+                return std::any_of(vehicle_it->second.begin(), vehicle_it->second.end(),
+                                   [&sensor_name](const std::string& selected_name) {
+                                       if (selected_name.size() != sensor_name.size())
+                                           return false;
+                                       return std::equal(selected_name.begin(), selected_name.end(),
+                                                         sensor_name.begin(),
+                                                         [](unsigned char lhs, unsigned char rhs) {
+                                                             return std::tolower(lhs) == std::tolower(rhs);
+                                                         });
+                                   });
             }
         };
 
@@ -642,6 +692,7 @@ namespace airlib
 
         std::vector<SubwindowSetting> subwindow_settings;
         RecordingSetting recording_setting;
+        Ros2Setting ros2_setting;
         TimeOfDaySetting tod_setting;
         std::vector<AnnotatorSetting> annotator_settings;
 
@@ -719,6 +770,7 @@ namespace airlib
 
             //this should be done last because it depends on vehicles (and/or their type) we have
             loadRecordingSetting(settings_json);
+            loadRos2Setting(settings_json);
             loadClockSettings(settings_json);
         }
 
@@ -941,13 +993,87 @@ namespace airlib
                                            std::to_string(settings_json.getInt("CameraID", 0)));
         }
 
+        static bool sensorNamesEqualIgnoreCase(const std::string& lhs, const std::string& rhs)
+        {
+            if (lhs.size() != rhs.size())
+                return false;
+            return std::equal(lhs.begin(), lhs.end(), rhs.begin(),
+                              [](unsigned char lhs_char, unsigned char rhs_char) {
+                                  return std::tolower(lhs_char) == std::tolower(rhs_char);
+                              });
+        }
+
+        static void appendSelectedSensor(std::map<std::string, std::vector<std::string>>& selections,
+                                         const std::string& vehicle_name,
+                                         const std::string& sensor_name)
+        {
+            auto& names = selections[vehicle_name];
+            if (std::none_of(names.begin(), names.end(),
+                             [&sensor_name](const std::string& selected_name) {
+                                 return sensorNamesEqualIgnoreCase(selected_name, sensor_name);
+                             })) {
+                names.push_back(sensor_name);
+            }
+        }
+
+        const SensorSetting& resolveSelectedSensor(const std::string& vehicle_name,
+                                                    const std::string& requested_sensor_name,
+                                                    const char* setting_path) const
+        {
+            const auto vehicle_it = vehicles.find(vehicle_name);
+            if (vehicle_it == vehicles.end()) {
+                throw std::invalid_argument(std::string(setting_path) +
+                                            ".VehicleName does not name a configured vehicle: " +
+                                            vehicle_name);
+            }
+
+            for (const auto& sensor : vehicle_it->second->sensors) {
+                if (sensorNamesEqualIgnoreCase(sensor.first, requested_sensor_name)) {
+                    if (!sensor.second->enabled) {
+                        throw std::invalid_argument(std::string(setting_path) +
+                                                    ".SensorName names a disabled sensor: " +
+                                                    requested_sensor_name);
+                    }
+                    return *sensor.second;
+                }
+            }
+
+            throw std::invalid_argument(std::string(setting_path) +
+                                        ".SensorName does not name an enabled configured sensor: " +
+                                        requested_sensor_name);
+        }
+
+        static bool isRecordingSensorType(SensorBase::SensorType sensor_type)
+        {
+            return sensor_type == SensorBase::SensorType::Imu ||
+                   sensor_type == SensorBase::SensorType::Gps ||
+                   sensor_type == SensorBase::SensorType::Barometer ||
+                   sensor_type == SensorBase::SensorType::Magnetometer ||
+                   sensor_type == SensorBase::SensorType::Distance;
+        }
+
+        static bool isRos2SensorType(SensorBase::SensorType sensor_type)
+        {
+            return sensor_type == SensorBase::SensorType::Imu ||
+                   sensor_type == SensorBase::SensorType::Gps ||
+                   sensor_type == SensorBase::SensorType::Barometer ||
+                   sensor_type == SensorBase::SensorType::Magnetometer ||
+                   sensor_type == SensorBase::SensorType::Distance ||
+                   sensor_type == SensorBase::SensorType::Lidar ||
+                   sensor_type == SensorBase::SensorType::GPULidar ||
+                   sensor_type == SensorBase::SensorType::Echo;
+        }
+
         void loadDefaultRecordingSettings()
         {
             recording_setting.requests.clear();
             // Add Scene image for each vehicle
             for (const auto& vehicle : vehicles) {
-                recording_setting.requests[vehicle.first].push_back(ImageCaptureBase::ImageRequest(
-                    "", ImageType::Scene, false, true));
+                ImageCaptureBase::ImageRequest image_request("", ImageType::Scene, false, false);
+                // Keep JPEG encoding off the capture path so recording I/O
+                // cannot delay the rendered-frame timestamp.
+                image_request.recording_jpeg = true;
+                recording_setting.requests[vehicle.first].push_back(std::move(image_request));
             }
         }
 
@@ -956,6 +1082,8 @@ namespace airlib
             loadDefaultRecordingSettings();
             recording_setting.sensors.clear();
             recording_setting.sensor_schema.clear();
+            recording_setting.output = RecordingSetting::OutputMode::Default;
+            recording_setting.rosbag = RecordingSetting::RosbagSetting();
 
             Settings recording_json;
             if (settings_json.getChild("Recording", recording_json)) {
@@ -977,6 +1105,50 @@ namespace airlib
                 recording_setting.folder = recording_json.getString("Folder", recording_setting.folder);
                 recording_setting.enabled = recording_json.getBool("Enabled", recording_setting.enabled);
 
+                if (recording_json.hasKey("Output")) {
+                    const std::string output = Utils::toLower(
+                        recording_json.getString("Output", ""));
+                    if (output == "default") {
+                        recording_setting.output = RecordingSetting::OutputMode::Default;
+                    }
+                    else if (output == "rosbag") {
+                        recording_setting.output = RecordingSetting::OutputMode::Rosbag;
+                    }
+                    else {
+                        throw std::invalid_argument(
+                            "Recording.Output must be one of: Default, Rosbag.");
+                    }
+                }
+
+                if (recording_json.hasKey("Rosbag")) {
+                    Settings rosbag_json;
+                    if (!recording_json.getChild("Rosbag", rosbag_json) || !rosbag_json.isObject()) {
+                        throw std::invalid_argument("Recording.Rosbag must be a JSON object.");
+                    }
+                    if (rosbag_json.hasKey("Enabled")) {
+                        throw std::invalid_argument(
+                            "Recording.Rosbag.Enabled was replaced by Recording.Output: \"Rosbag\".");
+                    }
+                    if (!recording_setting.isRosbagOutput()) {
+                        throw std::invalid_argument(
+                            "Recording.Rosbag requires Recording.Output to be \"Rosbag\".");
+                    }
+                    recording_setting.rosbag.file_name = rosbag_json.getString(
+                        "FileName", recording_setting.rosbag.file_name);
+                    const int max_imu_buffer_samples = rosbag_json.getInt(
+                        "MaxImuBufferSamples",
+                        static_cast<int>(recording_setting.rosbag.max_imu_buffer_samples));
+                    if (max_imu_buffer_samples < 1 || max_imu_buffer_samples > 65536) {
+                        throw std::invalid_argument(
+                            "Recording.Rosbag.MaxImuBufferSamples must be between 1 and 65536.");
+                    }
+                    recording_setting.rosbag.max_imu_buffer_samples =
+                        static_cast<uint32_t>(max_imu_buffer_samples);
+                    if (rosbag_json.hasKey("FileName") && recording_setting.rosbag.file_name.empty()) {
+                        throw std::invalid_argument("Recording.Rosbag.FileName must not be empty.");
+                    }
+                }
+
                 Settings req_cameras_settings;
                 if (recording_json.getChild("Cameras", req_cameras_settings)) {
                     // If 'Cameras' field is present, clear defaults
@@ -990,44 +1162,190 @@ namespace airlib
 
                         if (req_cameras_settings.getChild(child_index, req_camera_settings)) {
                             std::string camera_name = getCameraName(req_camera_settings);
-                            ImageType image_type = Utils::toEnum<ImageType>(
-                                req_camera_settings.getInt("ImageType", 0));
+                            const int image_type_value = req_camera_settings.getInt("ImageType", 0);
+                            if (image_type_value < Utils::toNumeric(ImageType::Scene) ||
+                                image_type_value >= Utils::toNumeric(ImageType::Count)) {
+                                throw std::invalid_argument(
+                                    "Recording.Cameras[].ImageType must be between 0 and 11.");
+                            }
+                            ImageType image_type = Utils::toEnum<ImageType>(image_type_value);
                             bool compress = req_camera_settings.getBool("Compress", true);
                             bool pixels_as_float = req_camera_settings.getBool("PixelsAsFloat", false);
+                            bool recording_jpeg = false;
+                            int recording_jpeg_quality = 85;
+                            const bool has_image_format = req_camera_settings.hasKey("ImageFormat");
+                            const bool has_jpeg_quality = req_camera_settings.hasKey("JpegQuality");
+                            const auto read_jpeg_quality = [&req_camera_settings]() {
+                                const int jpeg_quality = req_camera_settings.getInt("JpegQuality", 85);
+                                if (jpeg_quality < 40 || jpeg_quality > 100) {
+                                    throw std::invalid_argument(
+                                        "Recording.Cameras[].JpegQuality must be between 40 and 100.");
+                                }
+                                return jpeg_quality;
+                            };
+
+                            if (pixels_as_float) {
+                                if (has_image_format && Utils::toLower(
+                                        req_camera_settings.getString("ImageFormat", "")) != "raw") {
+                                    throw std::invalid_argument(
+                                        "Recording.Cameras[].ImageFormat must be \"raw\" when PixelsAsFloat is true.");
+                                }
+                                if (has_jpeg_quality) {
+                                    throw std::invalid_argument(
+                                        "Recording.Cameras[].JpegQuality is not valid when PixelsAsFloat is true.");
+                                }
+                                compress = false;
+                            }
+                            else if (has_image_format) {
+                                const std::string image_format = Utils::toLower(
+                                    req_camera_settings.getString("ImageFormat", ""));
+                                if (image_format == "raw") {
+                                    if (has_jpeg_quality) {
+                                        throw std::invalid_argument(
+                                            "Recording.Cameras[].JpegQuality requires ImageFormat to be \"jpeg\".");
+                                    }
+                                    compress = false;
+                                }
+                                else if (image_format == "jpeg") {
+                                    recording_jpeg_quality = read_jpeg_quality();
+                                    // Recording defers JPEG encoding until after raw
+                                    // render readback so the writer owns codec work.
+                                    compress = false;
+                                    recording_jpeg = true;
+                                }
+                                else {
+                                    throw std::invalid_argument(
+                                        "Recording.Cameras[].ImageFormat must be one of: raw, jpeg.");
+                                }
+                            }
+                            else if (compress) {
+                                // The legacy compression flag now selects JPEG.
+                                recording_jpeg_quality = read_jpeg_quality();
+                                compress = false;
+                                recording_jpeg = true;
+                            }
+                            else if (has_jpeg_quality) {
+                                throw std::invalid_argument(
+                                    "Recording.Cameras[].JpegQuality requires JPEG compression.");
+                            }
                             std::string vehicle_name = req_camera_settings.getString("VehicleName", default_vehicle_name);
                             std::string annotation_name = req_camera_settings.getString("Annotation", "");
-                            recording_setting.requests[vehicle_name].push_back(ImageCaptureBase::ImageRequest(
-                                camera_name, image_type, pixels_as_float, compress, annotation_name));
+                            ImageCaptureBase::ImageRequest image_request(
+                                camera_name, image_type, pixels_as_float, compress, annotation_name);
+                            image_request.recording_jpeg = recording_jpeg;
+                            image_request.recording_jpeg_quality = recording_jpeg_quality;
+                            recording_setting.requests[vehicle_name].push_back(std::move(image_request));
                         }
                     }
                 }
 
-                // Optional Sensors list: [{ "VehicleName": "...", "SensorName": "Imu" }, ...]
+                // Explicit recording selection. A missing or empty list records no
+                // per-sensor data and starts no direct-MCAP IMU history.
                 Settings req_sensors_settings;
-                if (recording_json.getChild("Sensors", req_sensors_settings)) {
+                if (recording_json.hasKey("Sensors")) {
+                    if (!recording_json.getChild("Sensors", req_sensors_settings) ||
+                        !req_sensors_settings.isArray()) {
+                        throw std::invalid_argument("Recording.Sensors must be a JSON array.");
+                    }
                     std::string default_vehicle_name = vehicles.begin()->first;
                     for (size_t child_index = 0; child_index < req_sensors_settings.size(); ++child_index) {
                         Settings req_sensor_settings;
-                        if (req_sensors_settings.getChild(child_index, req_sensor_settings)) {
-                            std::string vehicle_name = req_sensor_settings.getString("VehicleName", default_vehicle_name);
-                            std::string sensor_name = req_sensor_settings.getString("SensorName", "");
-                            if (sensor_name.empty()) {
-                                // legacy alias
-                                sensor_name = req_sensor_settings.getString("Name", "");
+                        if (!req_sensors_settings.getChild(child_index, req_sensor_settings) ||
+                            !req_sensor_settings.isObject()) {
+                            throw std::invalid_argument("Recording.Sensors[] must be a JSON object.");
+                        }
+                        std::string vehicle_name = req_sensor_settings.getString("VehicleName", default_vehicle_name);
+                        std::string sensor_name = req_sensor_settings.getString("SensorName", "");
+                        if (sensor_name.empty()) {
+                            // legacy alias
+                            sensor_name = req_sensor_settings.getString("Name", "");
+                        }
+                        if (vehicle_name.empty() || sensor_name.empty()) {
+                            throw std::invalid_argument(
+                                "Recording.Sensors[] requires a non-empty VehicleName and SensorName.");
+                        }
+
+                        const SensorSetting& sensor_setting = resolveSelectedSensor(
+                            vehicle_name, sensor_name, "Recording.Sensors[]");
+                        if (!isRecordingSensorType(sensor_setting.sensor_type)) {
+                            throw std::invalid_argument(
+                                "Recording.Sensors[] supports only IMU, GPS, Barometer, Magnetometer, and Distance sensors.");
+                        }
+                        if (recording_setting.isRosbagOutput() &&
+                            sensor_setting.sensor_type == SensorBase::SensorType::Distance) {
+                            throw std::invalid_argument(
+                                "Recording.Output \"Rosbag\" does not support Distance sensors; use Output \"Default\".");
+                        }
+                        if (recording_setting.isRosbagOutput()) {
+                            const std::string& vehicle_type = vehicles.at(vehicle_name)->vehicle_type;
+                            const bool supports_direct_rosbag_sensors =
+                                vehicle_type == kVehicleTypePX4 ||
+                                vehicle_type == kVehicleTypeArduCopterSolo ||
+                                vehicle_type == kVehicleTypeSimpleFlight ||
+                                vehicle_type == kVehicleTypeArduCopter;
+                            if (!supports_direct_rosbag_sensors) {
+                                throw std::invalid_argument(
+                                    "Recording.Output \"Rosbag\" supports configured sensors only for multirotor vehicles; " +
+                                    vehicle_name + " is " + vehicle_type + ".");
                             }
-                            if (sensor_name.empty()) {
-                                continue;
-                            }
-                            recording_setting.sensors[vehicle_name].push_back(sensor_name);
-                            // schema: first-seen order of SensorName values
-                            if (std::find(recording_setting.sensor_schema.begin(),
-                                           recording_setting.sensor_schema.end(),
-                                           sensor_name) == recording_setting.sensor_schema.end()) {
-                                recording_setting.sensor_schema.push_back(sensor_name);
-                            }
+                        }
+                        const std::string& canonical_sensor_name = sensor_setting.sensor_name;
+                        appendSelectedSensor(recording_setting.sensors, vehicle_name, canonical_sensor_name);
+                        // schema: first-seen order of SensorName values
+                        if (std::none_of(recording_setting.sensor_schema.begin(),
+                                         recording_setting.sensor_schema.end(),
+                                         [&canonical_sensor_name](const std::string& existing_sensor_name) {
+                                             return sensorNamesEqualIgnoreCase(existing_sensor_name,
+                                                                               canonical_sensor_name);
+                                         })) {
+                            recording_setting.sensor_schema.push_back(canonical_sensor_name);
                         }
                     }
                 }
+            }
+        }
+
+        void loadRos2Setting(const Settings& settings_json)
+        {
+            ros2_setting = Ros2Setting();
+
+            Settings ros2_json;
+            if (!settings_json.hasKey("Ros2"))
+                return;
+            if (!settings_json.getChild("Ros2", ros2_json) || !ros2_json.isObject()) {
+                throw std::invalid_argument("Ros2 must be a JSON object.");
+            }
+            if (!ros2_json.hasKey("Sensors"))
+                return;
+
+            Settings requested_sensors;
+            if (!ros2_json.getChild("Sensors", requested_sensors) || !requested_sensors.isArray()) {
+                throw std::invalid_argument("Ros2.Sensors must be a JSON array.");
+            }
+
+            const std::string default_vehicle_name = vehicles.begin()->first;
+            for (size_t child_index = 0; child_index < requested_sensors.size(); ++child_index) {
+                Settings requested_sensor;
+                if (!requested_sensors.getChild(child_index, requested_sensor) ||
+                    !requested_sensor.isObject()) {
+                    throw std::invalid_argument("Ros2.Sensors[] must be a JSON object.");
+                }
+
+                const std::string vehicle_name = requested_sensor.getString(
+                    "VehicleName", default_vehicle_name);
+                const std::string sensor_name = requested_sensor.getString("SensorName", "");
+                if (vehicle_name.empty() || sensor_name.empty()) {
+                    throw std::invalid_argument(
+                        "Ros2.Sensors[] requires a non-empty VehicleName and SensorName.");
+                }
+
+                const SensorSetting& sensor_setting = resolveSelectedSensor(
+                    vehicle_name, sensor_name, "Ros2.Sensors[]");
+                if (!isRos2SensorType(sensor_setting.sensor_type)) {
+                    throw std::invalid_argument(
+                        "Ros2.Sensors[] names a sensor type the ROS 2 wrapper does not publish.");
+                }
+                appendSelectedSensor(ros2_setting.sensors, vehicle_name, sensor_setting.sensor_name);
             }
         }
 
@@ -1634,6 +1952,11 @@ namespace airlib
             capture_setting.fov_degrees = settings_json.getFloat("FOV_Degrees", capture_setting.fov_degrees);
           
             capture_setting.image_type = settings_json.getInt("ImageType", 0);
+            if (capture_setting.image_type < -1 ||
+                capture_setting.image_type >= Utils::toNumeric(ImageType::Count)) {
+                throw std::invalid_argument(
+                    "CaptureSettings[].ImageType must be -1 or between 0 and 11.");
+            }
             capture_setting.target_gamma = settings_json.getFloat("TargetGamma",
                                                                   capture_setting.image_type == 0 ? CaptureSetting::kSceneTargetGamma : Utils::nan<float>());
 		    capture_setting.ignore_marked = settings_json.getBool("IgnoreMarked", capture_setting.ignore_marked);

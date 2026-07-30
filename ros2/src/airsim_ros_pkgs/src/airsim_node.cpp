@@ -1,6 +1,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include "airsim_ros_wrapper.h"
 
+#include <exception>
+
 int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
@@ -20,11 +22,18 @@ int main(int argc, char** argv)
     nh->get_parameter("enable_api_control", enable_api_control);
     nh->get_parameter("enable_object_transforms_list", enable_object_transforms_list);
     auto callbackGroup = nh->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
-    AirsimROSWrapper airsim_ros_wrapper(nh, nh_img, nh_lidar, nh_gpulidar, nh_echo, host_ip, callbackGroup, enable_api_control, enable_object_transforms_list, host_port);
+    try {
+        AirsimROSWrapper airsim_ros_wrapper(nh, nh_img, nh_lidar, nh_gpulidar, nh_echo, host_ip, callbackGroup, enable_api_control, enable_object_transforms_list, host_port);
 
-    rclcpp::executors::MultiThreadedExecutor executor;
-    executor.add_node(nh);
-    executor.spin();
+        rclcpp::executors::MultiThreadedExecutor executor;
+        executor.add_node(nh);
+        executor.spin();
+    }
+    catch (const std::exception& error) {
+        RCLCPP_FATAL(nh->get_logger(), "AirSim ROS 2 startup failed: %s", error.what());
+        rclcpp::shutdown();
+        return 1;
+    }
 
     return 0;
 }

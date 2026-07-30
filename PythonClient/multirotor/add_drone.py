@@ -21,8 +21,8 @@ client.takeoffAsync(10.0, vehicle_name)
 
 requests = [airsim.ImageRequest("0", airsim.ImageType.DepthVis),  #depth visualization image
             airsim.ImageRequest("1", airsim.ImageType.DepthPerspective, True), #depth in perspective projection
-            airsim.ImageRequest("1", airsim.ImageType.Scene), #scene vision image in png format
-            airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)]  #scene vision image in uncompressed RGBA array
+            airsim.ImageRequest("1", airsim.ImageType.Scene), #scene vision image in JPEG format
+            airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)]  #scene vision image in uncompressed RGB array
 
 responses = client.simGetImages(requests, vehicle_name=vehicle_name)
 print('Retrieved images: %d' % len(responses))
@@ -41,6 +41,9 @@ for idx, response in enumerate(responses):
     if response.pixels_as_float:
         print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_float), pprint.pformat(response.camera_position)))
         airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
-    else:
+    elif response.compress:
         print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_uint8), pprint.pformat(response.camera_position)))
-        airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+        airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
+    else:
+        image_rgb = np.frombuffer(response.image_data_uint8, dtype=np.uint8).reshape(response.height, response.width, 3)
+        airsim.write_png(os.path.normpath(filename + '.png'), image_rgb)

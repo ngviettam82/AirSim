@@ -9,6 +9,8 @@ import os
 import time
 import math
 import tempfile
+import cv2
+import numpy as np
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -41,7 +43,7 @@ for x in range(3): # do few times
     responses = client.simGetImages([
         airsim.ImageRequest("0", airsim.ImageType.DepthVis),
         airsim.ImageRequest("1", airsim.ImageType.DepthPerspective, True),
-        airsim.ImageRequest("2", airsim.ImageType.Segmentation),
+        airsim.ImageRequest("2", airsim.ImageType.Segmentation, False, False),
         airsim.ImageRequest("3", airsim.ImageType.Scene),
         airsim.ImageRequest("4", airsim.ImageType.DisparityNormalized),
         airsim.ImageRequest("4", airsim.ImageType.SurfaceNormals)])
@@ -51,9 +53,13 @@ for x in range(3): # do few times
         if response.pixels_as_float:
             print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_float), pprint.pformat(response.camera_position)))
             airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
+        elif response.compress:
+            print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_uint8), pprint.pformat(response.camera_position)))
+            airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
         else:
             print("Type %d, size %d, pos %s" % (response.image_type, len(response.image_data_uint8), pprint.pformat(response.camera_position)))
-            airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+            image_rgb = np.frombuffer(response.image_data_uint8, dtype=np.uint8).reshape(response.height, response.width, 3)
+            cv2.imwrite(os.path.normpath(filename + '.png'), cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
 
     pose = client.simGetVehiclePose()
     pp.pprint(pose)

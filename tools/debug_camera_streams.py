@@ -138,14 +138,14 @@ def ensure_bgr(frame: np.ndarray) -> np.ndarray:
     raise ValueError(f"unsupported frame shape {frame.shape}")
 
 
-def decode_png_payload(payload: Any) -> np.ndarray:
+def decode_compressed_payload(payload: Any) -> np.ndarray:
     raw = payload_to_bytes(payload)
     if not raw:
         raise ValueError("empty image payload")
     arr = np.frombuffer(raw, dtype=np.uint8)
     frame = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
     if frame is None:
-        raise ValueError(f"OpenCV could not decode PNG payload of {len(raw)} bytes")
+        raise ValueError(f"OpenCV could not decode compressed JPEG payload of {len(raw)} bytes")
     return ensure_bgr(frame)
 
 
@@ -177,7 +177,7 @@ def image_response_to_bgr(response: Any, float_preview_max: float, invert_float_
     payload = payload_to_bytes(response.image_data_uint8)
     arr = np.frombuffer(payload, dtype=np.uint8)
     if response.compress:
-        return decode_png_payload(payload)
+        return decode_compressed_payload(payload)
     if arr.size == pixels * 4:
         rgba = arr.reshape((height, width, 4))
         return cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
@@ -271,7 +271,7 @@ def simget_worker(args: argparse.Namespace, output: LatestFrame, stop_event: thr
         try:
             if args.api_method == "simGetImage":
                 payload = client.simGetImage(args.camera, image_type, args.vehicle, args.annotation_name)
-                frame = decode_png_payload(payload)
+                frame = decode_compressed_payload(payload)
             else:
                 response = client.simGetImages([request], vehicle_name=args.vehicle)[0]
                 frame = image_response_to_bgr(response, args.float_preview_max, args.invert_float_preview)
@@ -455,7 +455,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--image-type", default="Scene", type=str, help="Image type name or integer.")
     parser.add_argument("--annotation-name", default="", help="Annotation layer name for ImageType Annotation.")
     parser.add_argument("--api-method", choices=("simGetImage", "simGetImages"), default="simGetImage")
-    parser.add_argument("--compress", action="store_true", help="Use compressed PNG for simGetImages.")
+    parser.add_argument("--compress", action="store_true", help="Use compressed JPEG for simGetImages.")
     parser.add_argument("--pixels-as-float", action="store_true", help="Force float response mode for simGetImages.")
     parser.add_argument("--float-as-bytes", action="store_true", help="Request packed float32 bytes for depth simGetImages.")
     parser.add_argument("--float-preview-max", type=float, default=40.0, help="Float value mapped to white. Use 0 for p99 autoscale.")

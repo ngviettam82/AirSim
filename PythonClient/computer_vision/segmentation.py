@@ -44,7 +44,7 @@ print("Done: %r" % (found))
 #get segmentation image in various formats
 responses = client.simGetImages([
     airsim.ImageRequest("0", airsim.ImageType.Segmentation, True), #depth in perspective projection
-    airsim.ImageRequest("0", airsim.ImageType.Segmentation, False, False)])  #scene vision image in uncompressed RGBA array
+    airsim.ImageRequest("0", airsim.ImageType.Segmentation, False, False)])  #scene vision image in uncompressed RGB array
 print('Retrieved images: %d', len(responses))
 
 #save segmentation images in various formats
@@ -54,9 +54,9 @@ for idx, response in enumerate(responses):
     if response.pixels_as_float:
         print("Type %d, size %d" % (response.image_type, len(response.image_data_float)))
         #airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
-    elif response.compress: #png format
+    elif response.compress: # JPEG format
         print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
-        #airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+        #airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
     else: #uncompressed array - numpy demo
         print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
         img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) #get numpy array

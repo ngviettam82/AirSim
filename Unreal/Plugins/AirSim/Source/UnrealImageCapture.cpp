@@ -75,6 +75,27 @@ namespace
         return result;
     }
 
+    template <typename ElementType>
+    std::vector<ElementType> copyTArray(const TArray<ElementType>& source)
+    {
+        // TArray::GetData() is null for an empty array. Constructing a
+        // std::vector range from that null pointer (even with a zero count)
+        // is undefined behavior in the C++ standard library. Image responses
+        // normally have exactly one populated payload array, so avoid that
+        // conversion for the other, empty payload.
+        const int32 count = source.Num();
+        if (count <= 0)
+            return {};
+
+        return std::vector<ElementType>(source.GetData(), source.GetData() + count);
+    }
+
+    template <typename ElementType>
+    bool hasValidTArrayStorage(const TArray<ElementType>& source)
+    {
+        return source.Num() == 0 || source.GetData() != nullptr;
+    }
+
     bool MarkLabelCubeCaptureForWarmup(const RenderRequest::RenderParams* params)
     {
         if (params == nullptr ||
@@ -399,7 +420,29 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
             response.camera_orientation = camera_pose.orientation;
         }
     };
-    RenderRequest render_request{ gameViewport, std::move(query_camera_pose_cb), std::move(prepare_capture) };
+    auto prepare_capture_and_snapshot_calibration =
+        [prepare_capture = std::move(prepare_capture), &render_params]() mutable {
+            if (prepare_capture)
+                prepare_capture();
+
+            // This runs on the game thread after the recorder has latched the
+            // rendered state and immediately before CaptureScene.  Snapshot
+            // only the pinhole inputs that can truthfully accompany a ROS
+            // CameraInfo message; orthographic and equirectangular captures
+            // intentionally remain uncalibrated.
+            for (const std::shared_ptr<RenderRequest::RenderParams>& params : render_params) {
+                if (!params || params->isEquirectangular() || params->render_component == nullptr)
+                    continue;
+
+                params->camera_info_is_perspective =
+                    params->render_component->ProjectionType == ECameraProjectionMode::Perspective;
+                if (params->camera_info_is_perspective) {
+                    params->camera_horizontal_fov_degrees = params->render_component->FOVAngle;
+                }
+            }
+        };
+    RenderRequest render_request{ gameViewport, std::move(query_camera_pose_cb),
+                                  std::move(prepare_capture_and_snapshot_calibration) };
 
     render_request.getScreenshot(render_params.data(), render_results, render_params.size(), use_safe_method, cancellation);
 
@@ -408,11 +451,42 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         ImageResponse& response = responses.at(i);
 
         response.camera_name = request.camera_name;
+        response.recording_jpeg = request.recording_jpeg;
+        response.recording_jpeg_quality = request.recording_jpeg_quality;
         response.request_time_stamp = render_results[i]->request_time_stamp;
         response.time_stamp = render_results[i]->time_stamp;
         response.render_frame_number = render_results[i]->render_frame_number;
-        response.image_data_uint8 = std::vector<uint8_t>(render_results[i]->image_data_uint8.GetData(), render_results[i]->image_data_uint8.GetData() + render_results[i]->image_data_uint8.Num());
-        response.image_data_float = std::vector<float>(render_results[i]->image_data_float.GetData(), render_results[i]->image_data_float.GetData() + render_results[i]->image_data_float.Num());
+        response.has_render_frame_timestamp = render_results[i]->has_render_frame_timestamp;
+        if (!render_results[i]->message.empty())
+            response.message = render_results[i]->message;
+        const int32 uint8_count = render_results[i]->image_data_uint8.Num();
+        const int32 float_count = render_results[i]->image_data_float.Num();
+        const bool valid_payload = uint8_count >= 0 && float_count >= 0 &&
+            hasValidTArrayStorage(render_results[i]->image_data_uint8) &&
+            hasValidTArrayStorage(render_results[i]->image_data_float) &&
+            ImageResponse::hasValidPayloadLayout(
+                render_results[i]->width,
+                render_results[i]->height,
+                request.pixels_as_float,
+                request.compress,
+                static_cast<size_t>(uint8_count),
+                static_cast<size_t>(float_count));
+        if (!valid_payload) {
+            UE_LOG(LogTemp, Error,
+                   TEXT("Rejecting malformed image capture payload for %s: %dx%d, %d byte values, %d float values"),
+                   UTF8_TO_TCHAR(request.camera_name.c_str()), render_results[i]->width,
+                   render_results[i]->height, uint8_count, float_count);
+            response.message = "Image capture returned a malformed payload";
+            response.width = 0;
+            response.height = 0;
+            response.pixels_as_float = request.pixels_as_float;
+            response.compress = request.compress;
+            response.image_type = request.image_type;
+            response.annotation_name = request.annotation_name;
+            continue;
+        }
+        response.image_data_uint8 = copyTArray(render_results[i]->image_data_uint8);
+        response.image_data_float = copyTArray(render_results[i]->image_data_float);
         if (use_safe_method) {
             // Currently, we don't have a way to synthronize image capturing and camera pose when safe method is used,
             msr::airlib::Pose pose;
@@ -428,6 +502,8 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         response.width = render_results[i]->width;
         response.height = render_results[i]->height;
         response.image_type = request.image_type;
+		response.camera_info_is_perspective = render_params[i]->camera_info_is_perspective;
+		response.camera_horizontal_fov_degrees = render_params[i]->camera_horizontal_fov_degrees;
 		response.annotation_name = request.annotation_name;
     }
 }
@@ -465,7 +541,7 @@ void UnrealImageCapture::addScreenCaptureHandler(UWorld* world)
 
                 TArray<uint8_t> last_compressed_png;
                 FImageUtils::CompressImageArray(SizeX, SizeY, RefBitmap, last_compressed_png);
-                last_compressed_png_ = std::vector<uint8_t>(last_compressed_png.GetData(), last_compressed_png.GetData() + last_compressed_png.Num());
+                last_compressed_png_ = copyTArray(last_compressed_png);
             });
 
         is_installed = true;

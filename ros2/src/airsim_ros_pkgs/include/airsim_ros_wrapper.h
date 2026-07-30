@@ -77,6 +77,7 @@ STRICT_MODE_OFF //todo what does this do?
 #include <tf2/convert.h>
 #include <unordered_map>
 #include <memory>
+#include <mutex>
 
 struct PointXYZRGBI
 {
@@ -416,6 +417,7 @@ private:
     // todo for multiple drones with multiple sensors, this won't scale. make it a part of VehicleROS?
 
     std::mutex control_mutex_;
+    std::mutex image_response_mutex_;
 
     // gimbal control
     bool has_gimbal_cmd_;

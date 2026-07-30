@@ -205,7 +205,8 @@ public:
     static void setUnrealClockSpeed(const AActor* context, float clock_speed);
 	static float getUnrealClockSpeed(const AActor* context);
     static IImageWrapperModule* getImageWrapperModule();
-    static void CompressImageArray(int32 width, int32 height, const TArray<FColor>& src, TArray<uint8>& dest);
+    // Encodes the rendered FColor buffer as a JPEG for ImageRequest::compress.
+    static bool CompressImageArrayToJpeg(int32 width, int32 height, const TArray<FColor>& src, TArray<uint8>& dest);
     static std::vector<msr::airlib::MeshPositionVertexBuffersResponse> GetStaticMeshComponents();
 
 private:
@@ -308,7 +309,7 @@ private:
         }
     }
 
-    static bool CompressUsingImageWrapper(const TArray<uint8>& uncompressed, const int32 width, const int32 height, TArray<uint8>& compressed);
+    static bool CompressRgbaToJpeg(const TArray<uint8>& rgba, const int32 width, const int32 height, TArray<uint8>& jpeg);
 
 private:
     static bool log_messages_hidden_;

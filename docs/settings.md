@@ -77,6 +77,7 @@ Note this does not include most sensor types.
     "ImageSyncToleranceMs": 5.0,
     "Folder": "",
     "Enabled": false,
+    "Output": "Default",
     "Cameras": [
         { "CameraName": "0", "ImageType": 0, "PixelsAsFloat": false,  "VehicleName": "", "Compress": true }
     ]
@@ -309,20 +310,31 @@ In case of multiple vehicles, different vehicles can be specified as follows-
 ```
 
 ## Recording
-The recording feature allows you to record ground-truth pose, optional **configured sensors**, and captured images at specified intervals. You can start recording by pressing red Record button on lower right or the R key. The data is stored in the `Documents\AirSim` folder (or the folder specified using `Folder`), in a time stamped subfolder for each recording session, as a tab-separated file.
+The recording feature allows you to record ground-truth pose, optional **configured sensors**, and captured images at specified intervals. You can start recording by pressing red Record button on lower right or the R key. The data is stored in the `Documents\AirSim` folder (or the folder specified using `Folder`), in a time stamped subfolder for each recording session.
 
 * `RecordInterval`: minimal interval in seconds between independently scheduled **camera** captures (default `0.05`).
 * `SensorRecordInterval`: minimal interval in seconds between **sensor/pose** rows (default `0.005`). Camera capture and image file writing run separately and do not block this sampler.
 * `ImageSyncToleranceMs`: maximum absolute image-to-snapshot delta marked as synchronized (default `5.0`). Images outside the tolerance are still saved with `ImageSyncWithinTolerance=0` and an `_over` filename suffix.
 * `RecordOnMove`: specifies that do not record frame if there was vehicle's position or orientation hasn't changed.
-* `Folder`: Parent folder where timestamped subfolder with recordings are created. Absolute path of the directory must be specified. If not used, then `Documents/AirSim` folder will be used. E.g. `"Folder": "/home/<user>/Documents"`
+* `Folder`: Existing parent folder where timestamped subfolders with recordings are created. Absolute path of the directory must be specified. If not used, then `Documents/AirSim` folder will be used. E.g. `"Folder": "/home/<user>/Documents"`
 * `Enabled`: Whether Recording should start from the beginning itself, setting to `true` will start recording automatically when the simulation starts. By default, it's set to `false`
-* `Cameras`: this element controls which cameras are used to capture images. By default scene image from camera 0 is recorded as compressed png format. This setting is json array so you can specify multiple cameras to capture images, each with potentially different [image types](image_apis.md#available-imagetype-values).
-    * When `PixelsAsFloat` is true, image is saved as [pfm](pfm.md) file instead of png file.
+* `Output`: selects one output method, case-insensitively. `"Default"` is the default and writes `airsim_rec.txt` plus an `images/` directory. `"Rosbag"` writes only a direct ROS 2-compatible MCAP file; it never creates `airsim_rec.txt` or `images/`, because camera payloads are embedded in the MCAP file. The two methods are mutually exclusive.
+* `Rosbag`: MCAP options for `"Output": "Rosbag"`. Use `Output` to select Rosbag recording.
+    * `FileName`: optional file name inside the session folder (default `airsim_rec.mcap` when omitted). Path components are discarded so recording cannot write outside its session folder. An explicitly empty value is rejected as a settings error.
+    * `MaxImuBufferSamples`: bounded native history per IMU selected in `Recording.Sensors` (default `4096` when omitted; valid range `1`–`65536`). At 333 Hz the default is about 12 seconds of source-ring backlog. Invalid values are rejected as settings errors. If the recorder cannot drain that ring in time, the oldest samples are dropped and a `/recording/imu_drops` metadata message is emitted.
+    * The MCAP file is an offline data-gathering output, not a live ROS transport. Run `airsim_node` separately when a ROS 2 process needs live image/state/IMU topics; it can run concurrently with recording. Direct camera, `CameraInfo`, IMU, GPS, altimeter, and magnetometer channels declare ROS 2 `SensorDataQoS` (keep-last depth 5, best-effort, volatile). IMU has a native source history; the other three are latest-value samples at `SensorRecordInterval` and are de-duplicated by native timestamp.
+    * The direct MCAP writer is chronological, unchunked, and unindexed. ROS 2 sequential playback is correct, but `ros2 bag info` warns and seeking or topic-filtered reads must scan the file. Rewrite a closed bag with an MCAP tool that adds chunks and indexes if those operations matter.
+    * This writes only direct Unreal/AirSim `/airsim_node/...` topics. It does not write PX4 uXRCE-DDS `/fmu/...` messages, even for a `PX4Multirotor`; record those from a separate WSL PX4-aware process and keep the MCAP files separate.
+* `Cameras`: this element controls which cameras are used to capture images. By default, scene image from camera 0 is recorded as compressed JPEG. This setting is a JSON array, so you can specify multiple cameras to capture images, each with potentially different [image types](image_apis.md#available-imagetype-values).
+    * `Compress` selects the transport format for non-float images: `true` means JPEG and `false` means raw RGB.
+    * `ImageFormat` optionally makes the recording payload explicit: `"raw"` or `"jpeg"` (case-insensitive). It takes precedence over `Compress`.
+    * `JpegQuality` applies to JPEG recording (`ImageFormat: "jpeg"` or `Compress: true`); it is an integer from `40` through `100` and defaults to `85`. JPEG is encoded from the captured raw RGB frame on the recorder worker. Default output writes a `.jpg`; Rosbag output writes a ROS 2 `sensor_msgs/msg/CompressedImage` with `format="jpeg"`. It is lossy, so use raw RGB for segmentation, labels, normals, and other pixel-exact 8-bit data; use `PixelsAsFloat: true` for metric depth.
+    * When `PixelsAsFloat` is true, image is saved as a [pfm](pfm.md) file instead of an 8-bit image file.
+    * Recording accepts renderable `ImageType` values from `0` through `11` only. `ImageType: -1` configures the camera's main component (such as gimbal behavior), not a recordable image stream.
     * `VehicleName` option allows you to specify separate cameras for individual vehicles. If the `Cameras` element isn't present, `Scene` image from the default camera of each vehicle will be recorded.
     * If you don't want to record any images and just the vehicle's physics/sensor data, then specify the `Cameras` element but leave it empty, like this: `"Cameras": []`
     * add the field `Annotation`, a string allowing you to specify the annotation layer to use for the camera. This is only if using the Annotation camera type for `ImageType`.
-* `Sensors`: optional array selecting vehicle sensors by name (case-insensitive; defaults are lowercase `imu`, `gps`, `barometer`, `magnetometer`). Uses **real sensor outputs** (noise, latency, update rate as configured). Supported: IMU, GPS, Barometer, Magnetometer, Distance. Example:
+* `Sensors`: explicit array selecting vehicle sensors by name (case-insensitive; conventional default names are lowercase `imu`, `gps`, `barometer`, `magnetometer`). Uses **real sensor outputs** (noise, latency, update rate as configured). Supported by Default output: IMU, GPS, Barometer, Magnetometer, Distance. With Rosbag output, select only IMU, GPS, Barometer, and Magnetometer on a multirotor vehicle; other vehicle types and Distance are rejected because this writer has no direct ROS message path for them. A missing or empty list records no per-sensor Default rows or direct MCAP sensor topics. Each listed sensor must exist and be enabled. A selected IMU receives every retained native update; selected GPS, Barometer, and Magnetometer produce their direct MCAP topics. Example:
 
 ```json
 "Sensors": [
@@ -333,14 +345,29 @@ The recording feature allows you to record ground-truth pose, optional **configu
 ]
 ```
 
-Recording does not pause physics. Sensor rows are sampled independently. For an image row, the game thread briefly snapshots pose/sensors and latches the vehicle's rendered state immediately before `CaptureScene`; rendering, readback, and file I/O then continue asynchronously from sensor sampling. The TSV stores request/render timestamps and the signed synchronization delta. See [Recording data](modify_recording_data.md).
+Recording never calls the simulator pause API or changes `ClockSpeed`. In World mode, a sensor or image snapshot briefly holds the physics-update mutex for a consistent state, which can serialize one concurrent update; scene capture, readback, compression, and file I/O occur after that mutex is released. Direct-bag images are written only when the render path supplies a valid rendered-frame timestamp; the writer never substitutes the physics snapshot or request time. A valid perspective image is paired with `CameraInfo` at the same stamp and frame ID, with unknown distortion rather than invented coefficients. The TSV stores request/render timestamps and the signed synchronization delta. See [Recording data](modify_recording_data.md).
+
+## ROS 2 sensor output
+
+`Ros2.Sensors` is the explicit whitelist for the live `airsim_node` wrapper. It controls only the individual sensor topic families (`imu`, `gps`, `altimeter`, `magnetometer`, `distance`, `lidar`, `gpulidar`, and `echo`), including their static TF and polling timers. It does not control cameras (configured through `Vehicles.<vehicle>.Cameras`), command subscriptions/services, odometry, environment, or other vehicle-state/ground-truth topics.
+
+An omitted or empty `Ros2.Sensors` array publishes no individual sensor topics. Every listed sensor must be an enabled sensor on the named vehicle; `SensorName` matching is case-insensitive and `VehicleName` matches the configured vehicle name. For example:
+
+```json
+"Ros2": {
+  "Sensors": [
+    { "VehicleName": "drone1", "SensorName": "imu" },
+    { "VehicleName": "drone1", "SensorName": "gps" }
+  ]
+}
+```
 
 For example, the `Cameras` element below records scene & segmentation images for `Car1` & scene for `Car2`-
 
 ```json
 "Cameras": [
     { "CameraName": "0", "ImageType": 0, "PixelsAsFloat": false, "VehicleName": "Car1", "Compress": true },
-    { "CameraName": "0", "ImageType": 5, "PixelsAsFloat": false, "VehicleName": "Car1", "Compress": true },
+    { "CameraName": "0", "ImageType": 5, "PixelsAsFloat": false, "VehicleName": "Car1", "ImageFormat": "raw" },
     { "CameraName": "0", "ImageType": 0, "PixelsAsFloat": false, "VehicleName": "Car2", "Compress": true }
 ]
 ```

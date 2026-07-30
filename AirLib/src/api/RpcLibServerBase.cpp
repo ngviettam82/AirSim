@@ -22,6 +22,7 @@ STRICT_MODE_OFF
 #undef FLOAT
 #undef check
 #include "rpc/server.h"
+#include "rpc/this_handler.h"
 //TODO: HACK: UE4 defines macro with stupid names like "check" that conflicts with msgpack library
 #ifndef check
 #define check(expr) (static_cast<void>((expr)))
@@ -30,6 +31,7 @@ STRICT_MODE_OFF
 
 #include "api/RpcLibAdaptorsBase.hpp"
 #include <functional>
+#include <sstream>
 #include <thread>
 
 STRICT_MODE_ON
@@ -161,8 +163,60 @@ namespace airlib
         });
 
         pimpl_->server.bind("simGetImages", [&](const std::vector<RpcLibAdaptorsBase::ImageRequest>& request_adapter, const std::string& vehicle_name) -> vector<RpcLibAdaptorsBase::ImageResponse> {
-            const auto& response = getWorldSimApi()->getImages(RpcLibAdaptorsBase::ImageRequest::to(request_adapter), vehicle_name);
-            return RpcLibAdaptorsBase::ImageResponse::from(response);
+            const auto requests = RpcLibAdaptorsBase::ImageRequest::to(request_adapter);
+            const auto responses = getWorldSimApi()->getImages(requests, vehicle_name);
+
+            // The image capture path promises one response for every request.
+            // Check that container boundary before iterating or adapting it:
+            // a corrupted response-vector header otherwise makes the loop
+            // dereference arbitrary memory or allocate an unbounded payload.
+            if (responses.size() != requests.size()) {
+                std::ostringstream error;
+                error << "simGetImages returned " << responses.size()
+                      << " responses for " << requests.size() << " requests";
+                rpc::this_handler().respond_error(error.str());
+                return {};
+            }
+
+            for (size_t index = 0; index < responses.size(); ++index) {
+                const auto& response = responses[index];
+                const auto& request = requests[index];
+                const bool request_matches_response =
+                    response.image_type == request.image_type &&
+                    response.pixels_as_float == request.pixels_as_float &&
+                    response.compress == request.compress;
+                // Existing capture failures are represented as an empty
+                // per-image response with a diagnostic message. Some of
+                // those paths construct a default ImageResponse rather than
+                // copying the failed request's image options. Preserve that
+                // client-visible error contract, while retaining strict
+                // request/response matching for every populated response.
+                const bool empty_capture_error =
+                    !response.message.empty() &&
+                    response.width == 0 && response.height == 0 &&
+                    response.image_data_uint8.empty() &&
+                    response.image_data_float.empty();
+                const bool valid_payload =
+                    ImageCaptureBase::ImageResponse::hasValidPayloadLayout(
+                        response.width,
+                        response.height,
+                        response.pixels_as_float,
+                        response.compress,
+                        response.image_data_uint8.size(),
+                        response.image_data_float.size());
+                if ((!empty_capture_error && !request_matches_response) || !valid_payload) {
+                    std::ostringstream error;
+                    error << "simGetImages rejected malformed response " << index
+                          << " for camera '" << request.camera_name << "'"
+                          << " (" << response.width << "x" << response.height
+                          << ", byte values=" << response.image_data_uint8.size()
+                          << ", float values=" << response.image_data_float.size() << ")";
+                    rpc::this_handler().respond_error(error.str());
+                    return {};
+                }
+            }
+
+            return RpcLibAdaptorsBase::ImageResponse::from(responses);
         });
 
         pimpl_->server.bind("simGetImage", [&](const std::string& camera_name, ImageCaptureBase::ImageType type, const std::string& vehicle_name, const std::string& annotation_name) -> vector<uint8_t> {

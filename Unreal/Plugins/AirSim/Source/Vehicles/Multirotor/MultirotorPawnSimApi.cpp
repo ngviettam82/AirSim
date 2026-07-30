@@ -177,6 +177,14 @@ msr::airlib::RecordingCapture MultirotorPawnSimApi::createRecordingCapture(
                     break;
                 }
                 sample.mag_field_body = out.magnetic_field_body;
+                if (out.magnetic_field_covariance.size() == sample.mag_field_covariance.size()) {
+                    for (size_t covariance_index = 0;
+                         covariance_index < sample.mag_field_covariance.size(); ++covariance_index) {
+                        sample.mag_field_covariance[covariance_index] =
+                            out.magnetic_field_covariance[covariance_index];
+                    }
+                    sample.mag_field_covariance_known = true;
+                }
                 break;
             }
             case SensorType::Distance: {

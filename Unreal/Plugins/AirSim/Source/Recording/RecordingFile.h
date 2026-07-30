@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include <string>
 #include <vector>
-#include "AirBlueprintLib.h"
 #include "physics/Kinematics.hpp"
 #include "HAL/FileManager.h"
 #include "api/VehicleSimApiBase.hpp"
@@ -20,10 +19,11 @@ public:
                       const msr::airlib::RecordingCapture& capture) const;
 
     void appendColumnHeader(const std::string& header_columns);
-    void startRecording(const msr::airlib::RecordingCapture& header_template,
+    bool startRecording(const msr::airlib::RecordingCapture& header_template,
                         const std::string& folder = "");
     void stopRecording(bool ignore_if_stopped);
     bool isRecording() const;
+    const std::string& sessionPath() const;
 
 private:
     void createFile(const std::string& file_path, const std::string& header_columns);
@@ -33,6 +33,7 @@ private:
 
 private:
     std::string record_filename = "airsim_rec";
+    std::string session_path_;
     std::string image_path_;
     bool is_recording_ = false;
     IFileHandle* log_file_handle_ = nullptr;

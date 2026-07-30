@@ -94,7 +94,7 @@ for idx in range(3):
         airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)], "Car1")  #scene vision image in uncompressed RGB array
     print('Car1: Retrieved images: %d' % (len(responses1)))
     responses2 = client.simGetImages([
-        airsim.ImageRequest("0", airsim.ImageType.Segmentation),  #depth visualization image
+        airsim.ImageRequest("0", airsim.ImageType.Segmentation, False, False),  # lossless segmentation RGB
         airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)], "Car2")  #scene vision image in uncompressed RGB array
     print('Car2: Retrieved images: %d' % (len(responses2)))
 
@@ -104,14 +104,14 @@ for idx in range(3):
         if response.pixels_as_float:
             print("Type %d, size %d" % (response.image_type, len(response.image_data_float)))
             airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
-        elif response.compress: #png format
+        elif response.compress: # JPEG format
             print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
-            airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+            airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
         else: #uncompressed array
             print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
             img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) # get numpy array
             img_rgb = img1d.reshape(response.height, response.width, 3) # reshape array to 3 channel image array H X W X 3
-            cv2.imwrite(os.path.normpath(filename + '.png'), img_rgb) # write to png
+            cv2.imwrite(os.path.normpath(filename + '.png'), cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)) # write lossless RGB to png
 
 #restore to original state
 client.reset()

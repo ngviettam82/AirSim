@@ -155,8 +155,8 @@ private:
 
             auto process_time = clock->nowNanos();
 
-            std::string left_file_name = Utils::stringf("left_%06d.png", result.sample);
-            std::string right_file_name = Utils::stringf("right_%06d.png", result.sample);
+            std::string left_file_name = Utils::stringf("left_%06d.jpg", result.sample);
+            std::string right_file_name = Utils::stringf("right_%06d.jpg", result.sample);
             std::string disparity_file_name = Utils::stringf("disparity_%06d.pfm", result.sample);
             saveImageToFile(result.response.at(0).image_data_uint8,
                             FileSystem::combine(result.storage_dir_, right_file_name));

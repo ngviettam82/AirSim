@@ -4,8 +4,6 @@
 #include "Engine/TextureRenderTargetCube.h"
 #include "DynamicRHI.h"
 #include "Async/TaskGraphInterfaces.h"
-#include "ImageUtils.h"
-
 #include "AirBlueprintLib.h"
 #include "Async/Async.h"
 #include "common/ClockFactory.hpp"
@@ -601,14 +599,17 @@ void RenderRequest::getScreenshot(
             results[i]->bmp_float.Reset();
         results[i]->width = 0;
         results[i]->height = 0;
+        results[i]->message.clear();
         results[i]->request_time_stamp = 0;
         results[i]->time_stamp = 0;
         results[i]->render_frame_number = 0;
+        results[i]->has_render_frame_timestamp = false;
     }
 
     request_time_stamp_ = 0;
     render_time_stamp_ = 0;
     render_frame_number_ = 0;
+    has_render_frame_timestamp_ = false;
 
     //make sure we are not on the rendering thread
     CheckNotBlockedOnRenderThread();
@@ -710,6 +711,7 @@ void RenderRequest::getScreenshot(
                 // capture CameraPose for this frame
                 render_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
                 render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
+                has_render_frame_timestamp_ = true;
                 query_camera_pose_cb_();
 
                 // The completion is called immeidately after GameThread sends the
@@ -790,6 +792,7 @@ void RenderRequest::getScreenshot(
 
                 active_request->render_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
                 active_request->render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
+                active_request->has_render_frame_timestamp_ = true;
                 active_request->query_camera_pose_cb_();
                 state->RenderCommandQueued = true;
                 ENQUEUE_RENDER_COMMAND(SceneDrawCompletionCancellable)
@@ -863,10 +866,17 @@ void RenderRequest::getScreenshot(
                 : 0;
             if (!params[i]->pixels_as_float) {
                 if (pixel_count > 0 && results[i]->bmp.Num() == pixel_count) {
-                    results[i]->image_data_uint8.SetNumUninitialized(pixel_count * 3, false);
-                    if (params[i]->compress)
-                        UAirBlueprintLib::CompressImageArray(results[i]->width, results[i]->height, results[i]->bmp, results[i]->image_data_uint8);
+                    if (params[i]->compress) {
+                        if (!UAirBlueprintLib::CompressImageArrayToJpeg(
+                                results[i]->width, results[i]->height, results[i]->bmp,
+                                results[i]->image_data_uint8)) {
+                            results[i]->width = 0;
+                            results[i]->height = 0;
+                            results[i]->message = "JPEG image encoding failed";
+                        }
+                    }
                     else {
+                        results[i]->image_data_uint8.SetNumUninitialized(pixel_count * 3, false);
                         uint8* ptr = results[i]->image_data_uint8.GetData();
                         for (const auto& item : results[i]->bmp) {
                             *ptr++ = item.R;
@@ -934,6 +944,7 @@ void RenderRequest::ExecuteTask(bool signal_completion)
             results_[i]->request_time_stamp = request_time_stamp;
             results_[i]->time_stamp = render_time_stamp;
             results_[i]->render_frame_number = render_frame_number_;
+            results_[i]->has_render_frame_timestamp = has_render_frame_timestamp_;
             if (params_[i]->isEquirectangular() && params_[i]->render_target_cube != nullptr && params_[i]->render_component_cube != nullptr) {
                 FIntPoint cube_size;
                 setupEquirectangularRenderResource(params_[i]->render_target_cube, cube_size);

@@ -86,6 +86,25 @@ namespace airlib
             unused(schema_tokens);
             return RecordingCapture();
         }
+
+        // Native IMU history is enabled only for the explicit IMU names selected
+        // for direct ROS bag recording. Implementations must keep this bounded
+        // and must not block physics on recorder disk I/O.
+        virtual size_t startRecordingImuHistory(size_t max_samples,
+                                                const std::vector<std::string>& sensor_names)
+        {
+            unused(max_samples);
+            unused(sensor_names);
+            return 0;
+        }
+        virtual std::vector<RecordingImuBatch> drainRecordingImuHistory()
+        {
+            return {};
+        }
+        virtual std::vector<RecordingImuBatch> stopRecordingImuHistory()
+        {
+            return {};
+        }
         virtual void toggleTrace() = 0;
         virtual void setTraceLine(const std::vector<float>& color_rgba, float thickness) = 0;
 

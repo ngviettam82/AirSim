@@ -590,10 +590,6 @@ namespace airlib_rpclib
             ImageResponse(const msr::airlib::ImageCaptureBase::ImageResponse& s)
             {
                 pixels_as_float = s.pixels_as_float;
-
-                image_data_uint8 = s.image_data_uint8;
-                image_data_float = s.image_data_float;
-
                 camera_name = s.camera_name;
                 camera_position = Vector3r(s.camera_position);
                 camera_orientation = Quaternionr(s.camera_orientation);
@@ -604,6 +600,27 @@ namespace airlib_rpclib
                 height = s.height;
                 image_type = s.image_type;
 				annotation_name = s.annotation_name;
+
+                // Do not copy a malformed vector header into the RPC result:
+                // an invalid size otherwise becomes an unbounded allocation
+                // on the server thread. Return an ordinary failed image
+                // response so existing clients receive a per-image error
+                // instead of bringing down the RPC server.
+                if (!msr::airlib::ImageCaptureBase::ImageResponse::hasValidPayloadLayout(
+                        width, height, pixels_as_float, compress,
+                        s.image_data_uint8.size(), s.image_data_float.size())) {
+                    image_data_uint8.clear();
+                    image_data_float.clear();
+                    width = 0;
+                    height = 0;
+                    message = message.empty()
+                        ? "Image response rejected: malformed payload"
+                        : message + "; Image response rejected: malformed payload";
+                    return;
+                }
+
+                image_data_uint8 = s.image_data_uint8;
+                image_data_float = s.image_data_float;
             }
 
             msr::airlib::ImageCaptureBase::ImageResponse to() const

@@ -1,5 +1,7 @@
 #include "PawnSimApi.h"
+#include "sensors/imu/ImuBase.hpp"
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include "Engine/World.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -143,15 +145,30 @@ void PawnSimApi::createCamerasFromSettings()
     for (const auto& camera_setting_pair : getVehicleSetting()->cameras) {
         const auto& setting = camera_setting_pair.second;
 
-        //get pose
-        FVector position = transform.fromLocalNed(setting.position) - transform.fromLocalNed(Vector3r::Zero());
-        FTransform camera_transform(FRotator(setting.rotation.pitch, setting.rotation.yaw, setting.rotation.roll),
+        // CameraSetting uses NaN to mean "leave the component default alone".
+        // A settings-only camera is newly spawned, so its component default is
+        // the identity relative pose rather than a valid NED value.
+        const Vector3r position_ned(
+            std::isnan(setting.position.x()) ? 0.0f : setting.position.x(),
+            std::isnan(setting.position.y()) ? 0.0f : setting.position.y(),
+            std::isnan(setting.position.z()) ? 0.0f : setting.position.z());
+        const FRotator rotation(
+            std::isnan(setting.rotation.pitch) ? 0.0f : setting.rotation.pitch,
+            std::isnan(setting.rotation.yaw) ? 0.0f : setting.rotation.yaw,
+            std::isnan(setting.rotation.roll) ? 0.0f : setting.rotation.roll);
+        FVector position = transform.fromLocalNed(position_ned) - transform.fromLocalNed(Vector3r::Zero());
+        FTransform camera_transform(rotation,
                                     position,
                                     FVector(1., 1., 1.));
 
         //spawn and attach camera to pawn
 
         APIPCamera* camera = params_.pawn->GetWorld()->SpawnActor<APIPCamera>(params_.pip_camera_class, camera_transform, camera_spawn_params);
+        if (!IsValid(camera)) {
+            UE_LOG(LogTemp, Error, TEXT("Failed to spawn camera from settings: %s"),
+                   UTF8_TO_TCHAR(camera_setting_pair.first.c_str()));
+            continue;
+        }
         if (!setting.external){
             camera->AttachToComponent(bodyMesh, FAttachmentTransformRules::KeepRelativeTransform);
         }
@@ -884,4 +901,90 @@ std::string PawnSimApi::getRecordFileLine(bool is_header_line) const
 msr::airlib::VehicleApiBase* PawnSimApi::getVehicleApiBase() const
 {
     return nullptr;
+}
+
+size_t PawnSimApi::startRecordingImuHistory(size_t max_samples,
+                                            const std::vector<std::string>& sensor_names)
+{
+    if (sensor_names.empty())
+        return 0;
+
+    auto* vehicle_api = getVehicleApiBase();
+    if (vehicle_api == nullptr)
+        return 0;
+
+    size_t enabled = 0;
+    try {
+        const auto& sensors = vehicle_api->getSensors();
+        const unsigned int count = sensors.size(msr::airlib::SensorBase::SensorType::Imu);
+        for (unsigned int i = 0; i < count; ++i) {
+            const auto* sensor = sensors.getByType(msr::airlib::SensorBase::SensorType::Imu, i);
+            if (sensor == nullptr ||
+                std::none_of(sensor_names.begin(), sensor_names.end(),
+                             [sensor](const std::string& selected_name) {
+                                 return msr::airlib::RecordingCapture::namesEqualIgnoreCase(
+                                     sensor->getName(), selected_name);
+                             })) {
+                continue;
+            }
+            // The SensorCollection entry is selected by SensorType::Imu, and
+            // AirSim's sensor factory registers only ImuBase-derived objects
+            // under that type.  Unreal builds with RTTI disabled, so match the
+            // existing VehicleApiBase sensor-access pattern with static_cast.
+            const auto* imu = static_cast<const msr::airlib::ImuBase*>(sensor);
+            if (imu == nullptr)
+                continue;
+            imu->enableRecordingHistory(max_samples);
+            ++enabled;
+        }
+    }
+    catch (const std::exception&) {
+        return enabled;
+    }
+    return enabled;
+}
+
+namespace
+{
+    std::vector<msr::airlib::RecordingImuBatch> collectRecordingImuHistory(
+        const msr::airlib::VehicleApiBase* vehicle_api,
+        const std::string& vehicle_name,
+        bool stop)
+    {
+        std::vector<msr::airlib::RecordingImuBatch> batches;
+        if (vehicle_api == nullptr)
+            return batches;
+
+        try {
+            const auto& sensors = vehicle_api->getSensors();
+            const unsigned int count = sensors.size(msr::airlib::SensorBase::SensorType::Imu);
+            for (unsigned int i = 0; i < count; ++i) {
+                const auto* sensor = sensors.getByType(msr::airlib::SensorBase::SensorType::Imu, i);
+                const auto* imu = static_cast<const msr::airlib::ImuBase*>(sensor);
+                if (imu == nullptr || !imu->isRecordingHistoryEnabled())
+                    continue;
+
+                auto batch = stop ? imu->disableAndDrainRecordingHistory()
+                                  : imu->drainRecordingHistory();
+                if (!batch.samples.empty() || batch.dropped_samples != 0) {
+                    batch.vehicle_name = vehicle_name;
+                    batches.emplace_back(std::move(batch));
+                }
+            }
+        }
+        catch (const std::exception&) {
+            return batches;
+        }
+        return batches;
+    }
+}
+
+std::vector<msr::airlib::RecordingImuBatch> PawnSimApi::drainRecordingImuHistory()
+{
+    return collectRecordingImuHistory(getVehicleApiBase(), getVehicleName(), false);
+}
+
+std::vector<msr::airlib::RecordingImuBatch> PawnSimApi::stopRecordingImuHistory()
+{
+    return collectRecordingImuHistory(getVehicleApiBase(), getVehicleName(), true);
 }

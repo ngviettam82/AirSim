@@ -62,7 +62,7 @@ for idx in range(3):
     responses = client.simGetImages([
         airsim.ImageRequest("0", airsim.ImageType.DepthVis),  #depth visualization image
         airsim.ImageRequest("1", airsim.ImageType.DepthPerspective, True), #depth in perspective projection
-        airsim.ImageRequest("1", airsim.ImageType.Scene), #scene vision image in png format
+        airsim.ImageRequest("1", airsim.ImageType.Scene), #scene vision image in JPEG format
         airsim.ImageRequest("1", airsim.ImageType.Scene, False, False)])  #scene vision image in uncompressed RGB array
     print('Retrieved images: %d' % len(responses))
 
@@ -72,9 +72,9 @@ for idx in range(3):
         if response.pixels_as_float:
             print("Type %d, size %d" % (response.image_type, len(response.image_data_float)))
             airsim.write_pfm(os.path.normpath(filename + '.pfm'), airsim.get_pfm_array(response))
-        elif response.compress: #png format
+        elif response.compress: # JPEG format
             print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
-            airsim.write_file(os.path.normpath(filename + '.png'), response.image_data_uint8)
+            airsim.write_file(os.path.normpath(filename + '.jpg'), response.image_data_uint8)
         else: #uncompressed array
             print("Type %d, size %d" % (response.image_type, len(response.image_data_uint8)))
             img1d = np.fromstring(response.image_data_uint8, dtype=np.uint8) # get numpy array

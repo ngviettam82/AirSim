@@ -31,6 +31,7 @@
         "ImageSyncToleranceMs": 5.0,
         "Folder": "",
         "Enabled": false,
+        "Output": "Default",
         "Cameras": [
             {
                 "CameraName": "0",
@@ -39,6 +40,12 @@
                 "VehicleName": "",
                 "Compress": true
             }
+        ]
+    },
+    "Ros2": {
+        "Sensors": [
+            { "VehicleName": "airsimvehicle", "SensorName": "imu" },
+            { "VehicleName": "airsimvehicle", "SensorName": "gps" }
         ]
     },
     "OriginGeopoint": {

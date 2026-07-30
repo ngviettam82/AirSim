@@ -339,6 +339,7 @@ class ImageRequest(MsgpackMixin):
     camera_name = '0'
     image_type = ImageType.Scene
     pixels_as_float = False
+    # For non-float images, true requests JPEG and false requests raw RGB.
     compress = False
     annotation_name = ""
     float_as_bytes = False

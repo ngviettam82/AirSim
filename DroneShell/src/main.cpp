@@ -1318,7 +1318,7 @@ See RecordPose for information about log file format")
                     break;
                 }
 
-                std::string imageName = Utils::stringf("%s_%s%d.png", baseName.c_str(), typeName, image_index_++);
+                std::string imageName = Utils::stringf("%s_%s%d.jpg", baseName.c_str(), typeName, image_index_++);
                 std::string file_path_name = FileSystem::combine(path, imageName);
 
                 std::ofstream file;

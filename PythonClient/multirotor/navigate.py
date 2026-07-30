@@ -28,7 +28,7 @@ driving = 0
 help = False
 
 while True:
-    # this will return png width= 256, height= 144
+    # this returns a JPEG image, width=256, height=144
     result = client.simGetImage("0", airsim.ImageType.DepthVis)
     if (result == "\0"):
         if (not help):
@@ -36,8 +36,8 @@ while True:
             print("Please press '1' in the AirSim view to enable the Depth camera view")
     else:    
         rawImage = np.fromstring(result, np.int8)
-        png = cv2.imdecode(rawImage, cv2.IMREAD_UNCHANGED)
-        gray = cv2.cvtColor(png, cv2.COLOR_BGR2GRAY)
+        image = cv2.imdecode(rawImage, cv2.IMREAD_UNCHANGED)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         # slice the image so we only check what we are headed into (and not what is down on the ground below us).
 
@@ -90,8 +90,8 @@ while True:
         client.moveByVelocityZAsync(vx, vy,-6, 1, airsim.DrivetrainType.ForwardOnly, airsim.YawMode(False, 0)).join()
 
         x = int(driving * 50)
-        cv2.rectangle(png, (x,0), (x+50,50), (0,255,0), 2)
-        cv2.imshow("Top", png)
+        cv2.rectangle(image, (x,0), (x+50,50), (0,255,0), 2)
+        cv2.imshow("Top", image)
 
     key = cv2.waitKey(1) & 0xFF;
     if (key == 27 or key == ord('q') or key == ord('x')):
