@@ -4,6 +4,7 @@
 #include "Recording/RosbagWriter.h"
 
 #include "CoreMinimal.h"
+#include "HAL/PlatformFile.h"
 #include "HAL/PlatformFileManager.h"
 #include "Misc/Paths.h"
 
@@ -927,7 +928,8 @@ private:
                               bool camera_info_written) const
     {
         const bool has_render_time = response.has_render_frame_timestamp &&
-            response.time_stamp != 0 && capture.frame_time_stamp != 0;
+            response.capture_generation != 0 && response.time_stamp != 0 &&
+            capture.frame_time_stamp != 0;
         const int64_t delay_ns = has_render_time
             ? static_cast<int64_t>(response.time_stamp) - static_cast<int64_t>(capture.frame_time_stamp)
             : 0;
@@ -941,10 +943,11 @@ private:
              << ",\"association_mode\":\"" << escapeJson(capture.association_mode) << "\""
              << ",\"frame_time_stamp\":" << capture.frame_time_stamp
              << ",\"image_header_time_stamp\":" << image_header_time_stamp
-             << ",\"image_timestamp_source\":\"rendered_frame\""
-             << ",\"render_frame_timestamp_valid\":" <<
-                    (response.has_render_frame_timestamp ? "true" : "false")
+             << ",\"image_timestamp_source\":\"explicit_capture_transaction\""
+             << ",\"capture_provenance_valid\":" <<
+                    (response.has_render_frame_timestamp && response.capture_generation != 0 ? "true" : "false")
              << ",\"render_frame_number\":" << response.render_frame_number
+             << ",\"capture_generation\":" << response.capture_generation
              << ",\"image_request_time_stamp\":" << response.request_time_stamp
              << ",\"image_time_stamp\":" << response.time_stamp
              << ",\"image_delay_ns\":" << delay_ns
@@ -1187,14 +1190,15 @@ private:
                 continue;
 
             // Never label image bytes with the earlier physics latch or with
-            // recorder/write time.  A rendered-frame stamp is the only time
-            // that is bound to this RenderResult's pixels.  If the render path
-            // cannot provide it, omit the image rather than writing a bag
-            // message whose Header is false.
+            // recorder/write time. The game-thread capture-state timestamp is
+            // valid only when the explicit CaptureScene/readback transaction
+            // proves it belongs to these pixels. If that proof is unavailable,
+            // omit the image rather than writing a false Header.
             const msr::airlib::TTimePoint image_header_time_stamp = response.time_stamp;
-            if (!response.has_render_frame_timestamp || image_header_time_stamp == 0) {
+            if (!response.has_render_frame_timestamp || response.capture_generation == 0 ||
+                image_header_time_stamp == 0) {
                 UE_LOG(LogTemp, Warning,
-                       TEXT("Skipping ROS bag image from %s because its rendered-frame timestamp is unavailable"),
+                       TEXT("Skipping ROS bag image from %s because capture provenance is unavailable"),
                        UTF8_TO_TCHAR(response.camera_name.c_str()));
                 continue;
             }

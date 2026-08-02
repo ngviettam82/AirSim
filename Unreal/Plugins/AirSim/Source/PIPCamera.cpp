@@ -14,6 +14,7 @@
 #include "Annotation/ObjectAnnotator.h"
 #include <string>
 #include <exception>
+#include <stdexcept>
 #include "AirBlueprintLib.h"
 
 namespace
@@ -191,6 +192,13 @@ namespace
             start_rotator.Pitch + FMath::FindDeltaAngleDegrees(start_rotator.Pitch, target_rotator.Pitch) * clamped_alpha,
             start_rotator.Yaw + FMath::FindDeltaAngleDegrees(start_rotator.Yaw, target_rotator.Yaw) * clamped_alpha,
             start_rotator.Roll + FMath::FindDeltaAngleDegrees(start_rotator.Roll, target_rotator.Roll) * clamped_alpha));
+    }
+
+    bool IsSupportedDistortionParameter(const std::string& parameter_name)
+    {
+        return parameter_name == "K1" || parameter_name == "K2" ||
+               parameter_name == "K3" || parameter_name == "P1" ||
+               parameter_name == "P2";
     }
 }
 
@@ -939,6 +947,25 @@ void APIPCamera::setCameraPose(const msr::airlib::Pose& relative_pose)
     }
 }
 
+void APIPCamera::setCameraOrientation(const msr::airlib::Quaternionr& relative_orientation)
+{
+    const msr::airlib::real_T norm_squared =
+        relative_orientation.w() * relative_orientation.w() +
+        relative_orientation.x() * relative_orientation.x() +
+        relative_orientation.y() * relative_orientation.y() +
+        relative_orientation.z() * relative_orientation.z();
+    if (!std::isfinite(norm_squared) || norm_squared <= 1.0e-12f) {
+        throw std::invalid_argument("Camera orientation must be a finite, non-zero quaternion");
+    }
+
+    const msr::airlib::Pose orientation_pose(
+        msr::airlib::Vector3r::Zero(), relative_orientation.normalized());
+    const FRotator relative_rotator = ned_transform_->fromRelativeNed(orientation_pose)
+                                          .GetRotation()
+                                          .Rotator();
+    setHostedGimbalOrientation(relative_rotator);
+}
+
 bool APIPCamera::canControlHostedGimbal() const
 {
     return hosted_gimbal_mount_initialized_ && !sensor_params_.external;
@@ -1073,10 +1100,16 @@ msr::airlib::CameraInfo APIPCamera::getCameraInfo() const
 
 std::vector<float> APIPCamera::getDistortionParams() const
 {
+    if (!IsValid(distortion_param_instance_) || !distortion_param_instance_->IsCollectionValid()) {
+        throw std::runtime_error("Camera distortion parameters are unavailable");
+    }
+
     std::vector<float> param_values(5, 0.0);
 
     auto getParamValue = [this](const auto& name, float& val) {
-        distortion_param_instance_->GetScalarParameterValue(FName(name), val);
+        if (!distortion_param_instance_->GetScalarParameterValue(FName(name), val)) {
+            throw std::runtime_error("Camera distortion parameter is missing");
+        }
     };
 
     getParamValue(TEXT("K1"), param_values[0]);
@@ -1090,7 +1123,18 @@ std::vector<float> APIPCamera::getDistortionParams() const
 
 void APIPCamera::setDistortionParam(const std::string& param_name, float value)
 {
-    distortion_param_instance_->SetScalarParameterValue(FName(param_name.c_str()), value);
+    if (!IsSupportedDistortionParameter(param_name)) {
+        throw std::invalid_argument("Unknown camera distortion parameter '" + param_name + "'");
+    }
+    if (!std::isfinite(value)) {
+        throw std::invalid_argument("Camera distortion parameter value must be finite");
+    }
+    if (!IsValid(distortion_param_instance_) || !distortion_param_instance_->IsCollectionValid()) {
+        throw std::runtime_error("Camera distortion parameters are unavailable");
+    }
+    if (!distortion_param_instance_->SetScalarParameterValue(FName(param_name.c_str()), value)) {
+        throw std::runtime_error("Camera distortion parameter '" + param_name + "' is missing");
+    }
 }
 
 bool APIPCamera::hasBlendable(USceneCaptureComponent2D* capture, UObject* blendable) const

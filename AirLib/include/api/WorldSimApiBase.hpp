@@ -150,6 +150,12 @@ namespace airlib
         virtual void setDetectionFilterRadius(ImageCaptureBase::ImageType image_type, float radius_cm, const CameraDetails& camera_details, const std::string& annotation_name) = 0;
         virtual void clearDetectionMeshNames(ImageCaptureBase::ImageType image_type, const CameraDetails& camera_details, const std::string& annotation_name) = 0;
         virtual std::vector<DetectionInfo> getDetections(ImageCaptureBase::ImageType image_type, const CameraDetails& camera_details, const std::string& annotation_name) = 0;
+
+        // Keep new virtual methods append-only so mixed incremental plugin builds
+        // do not reinterpret existing WorldSimApiBase vtable slots.
+        virtual void setCameraOrientation(const msr::airlib::Quaternionr& orientation, const CameraDetails& camera_details) = 0;
+        virtual std::vector<uint64_t> getHilSensorTimeHistory(uint32_t max_samples,
+                                                               const std::string& vehicle_name) const = 0;
     };
 }
 } //namespace

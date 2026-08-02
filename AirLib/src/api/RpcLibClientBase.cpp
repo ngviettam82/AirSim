@@ -672,6 +672,18 @@ __pragma(warning(disable : 4239))
             pimpl_->client.call("simSetCameraPose", camera_name, RpcLibAdaptorsBase::Pose(pose), vehicle_name);
         }
 
+        void RpcLibClientBase::simSetCameraOrientation(const std::string& camera_name, const Quaternionr& orientation, const std::string& vehicle_name)
+        {
+            pimpl_->client.call("simSetCameraOrientation", camera_name, RpcLibAdaptorsBase::Quaternionr(orientation), vehicle_name);
+        }
+
+        std::vector<uint64_t> RpcLibClientBase::simGetHilSensorTimeHistory(uint32_t max_samples,
+                                                                            const std::string& vehicle_name) const
+        {
+            return pimpl_->client.call("simGetHilSensorTimeHistory", max_samples, vehicle_name)
+                .as<std::vector<uint64_t>>();
+        }
+
         void RpcLibClientBase::simSetCameraFov(const std::string& camera_name, float fov_degrees, const std::string& vehicle_name)
         {
             pimpl_->client.call("simSetCameraFov", camera_name, fov_degrees, vehicle_name);

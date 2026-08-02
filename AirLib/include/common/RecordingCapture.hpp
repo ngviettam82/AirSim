@@ -79,10 +79,10 @@ namespace airlib
         std::string vehicle_name;
         uint64_t sequence_id = 0; // session-local monotonic (restarts each session)
         uint64_t physics_step_id = 0; // ClockFactory step at snapshot
-        uint64_t render_frame_number = 0; // UE frame containing the image (0 for sensor-only rows)
+        uint64_t render_frame_number = 0; // UE game-frame snapshot for the image (0 for sensor-only rows)
         TTimePoint frame_time_stamp = 0; // sim-clock ns at pose/sensor snapshot
         std::vector<TTimePoint> image_request_time_stamps;
-        std::vector<TTimePoint> image_time_stamps; // native rendered-frame times
+        std::vector<TTimePoint> image_time_stamps; // frame-proven capture-state times
         std::vector<int64_t> image_delays_ns; // ImageTimeStamp - FrameTimeStamp
         std::vector<bool> image_sync_within_tolerance;
         int64_t image_sync_tolerance_ns = 5000000;

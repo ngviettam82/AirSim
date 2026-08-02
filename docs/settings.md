@@ -345,7 +345,7 @@ The recording feature allows you to record ground-truth pose, optional **configu
 ]
 ```
 
-Recording never calls the simulator pause API or changes `ClockSpeed`. In World mode, a sensor or image snapshot briefly holds the physics-update mutex for a consistent state, which can serialize one concurrent update; scene capture, readback, compression, and file I/O occur after that mutex is released. Direct-bag images are written only when the render path supplies a valid rendered-frame timestamp; the writer never substitutes the physics snapshot or request time. A valid perspective image is paired with `CameraInfo` at the same stamp and frame ID, with unknown distortion rather than invented coefficients. The TSV stores request/render timestamps and the signed synchronization delta. See [Recording data](modify_recording_data.md).
+Recording never calls the simulator pause API or changes `ClockSpeed`. In World mode, a sensor or image snapshot briefly holds the physics-update mutex for a consistent state, which can serialize one concurrent update; scene capture, readback, compression, and file I/O occur after that mutex is released. Direct-bag images are written only when an explicit capture/readback transaction proves their game-thread capture-state timestamp; the writer never substitutes the physics snapshot, request time, readback completion, or writer time. A valid perspective image is paired with `CameraInfo` at the same stamp and frame ID, with unknown distortion rather than invented coefficients. The TSV stores request/capture timestamps and the signed synchronization delta. See [Recording data](modify_recording_data.md).
 
 ## ROS 2 sensor output
 
@@ -361,6 +361,15 @@ An omitted or empty `Ros2.Sensors` array publishes no individual sensor topics. 
   ]
 }
 ```
+
+`Ros2.ControlMode` selects the live ROS 2 flight-command owner:
+
+| Value | Behavior |
+|---|---|
+| `"AirSim"` (default) | Keeps the existing direct `vel_cmd_*`, takeoff, land, group, and all-vehicle ROS interfaces. `enable_api_control:=true` enables AirSim API control and arms configured vehicles at wrapper startup. |
+| `"PX4"` | Requires `SimMode: "Multirotor"` and requires every configured vehicle to use `VehicleType: "PX4Multirotor"`. The wrapper continues to publish cameras, vehicle state, and `Ros2.Sensors`, but does not create direct multirotor command interfaces, arm through AirSim, or expose the global AirSim reset service. It rejects `enable_api_control:=true`. |
+
+Values are case-insensitive; any other value is a settings error. PX4 mode is intended for the native PX4 ROS 2 live path described in [ROS 2 PX4 live mode](ros_cplusplus.md#px4-owned-live-control). It is not a switch that creates PX4 DDS topics by itself: PX4 SITL, a Micro XRCE-DDS Agent, and a `px4_msgs` overlay generated from the exact PX4 source revision still provide the `/fmu/...` graph. Exact camera/PX4 timestamp synchronization additionally requires the PX4 runtime parameter `UXRCE_DDS_SYNCT=0`, saved and applied by a full PX4 SITL restart; this is an external PX4 setting, not an AirSim JSON setting. The PX4 bridge then proves the live clock path with exact sent `HIL_SENSOR.time_usec` and `SensorCombined.timestamp` matches before it emits pairs. For low-latency live cameras use `Vehicles.<name>.LockStep: false`; AirSim does not wait for an actuator response before advancing physics, and the runtime proof remains the synchronization requirement.
 
 For example, the `Cameras` element below records scene & segmentation images for `Car1` & scene for `Car2`-
 
@@ -421,7 +430,7 @@ To disable the rendering of certain objects on specific cameras or all, use the 
 Unreal Engine 5 introduces Lumen lighting. Because these cameras use scene capture components, enabling Lumen can be costly for performance. Settings have been added specifically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
 The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lighting in the scene.
 
-`ForceUpdate` can be enabled to force a camera (only works for scene) to update the render target every frame. This is costly on performance but can solve issues with exposure settings not applying, for example.
+`ForceUpdate` can be enabled to force a camera (only works for scene) to update the render target every frame. This is costly on performance but can solve issues with exposure settings not applying, for example. Leave it disabled for high-rate image APIs, live ROS 2, CameraHost, or MCAP recording: those paths issue an explicit, timestamped capture and `ForceUpdate` can render the same target a second time in the UE frame. It does not improve their timestamp correctness.
 
 Below you can find a list of all available settings and their purpose.
 They are settings that are directly transferred to the post-processing settings of cameras of which more documentation can be found [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/post-process-effects-in-unreal-engine).
@@ -439,7 +448,7 @@ They are settings that are directly transferred to the post-processing settings 
 * **ProjectionMode**: The camera's projection mode ("Perspective", "Orthographic", or "Equirectangular"). (Default: "Perspective"). Equirectangular applies to the configured `ImageType`; it is not a separate image type.
 * **OrthoWidth**: The width of the orthographic view frustum.
 * **MaxDepthMeters**: Optional positive clamp for returned `DepthPlanar` and `DepthPerspective` float pixels, for both normal and equirectangular projections.
-* **ForceUpdate**: Force a camera to update the render target every frame. Costly on performance! Only works for scene camera type. (Default: false)
+* **ForceUpdate**: Force a camera to update the render target every frame. Costly on performance! For high-rate image APIs, live ROS 2, CameraHost, or MCAP recording, leave it disabled because it can add an automatic capture alongside the explicit timestamped capture. Only works for scene camera type. (Default: false)
 
 See [Native Camera Host](camera_host.md) for the root-level `CameraHost` settings, per-camera URLs, dashboard, and raw frame format.
 
@@ -641,7 +650,7 @@ The defaults for PX4 is to enable hardware-in-loop setup. There are various othe
 "Vehicles": {
     "PX4": {
       "VehicleType": "PX4Multirotor",
-      "Lockstep": true,
+      "LockStep": true,
       "ControlIp": "127.0.0.1",
       "ControlPortLocal": 14540,
       "ControlPortRemote": 14580,

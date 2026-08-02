@@ -169,9 +169,31 @@ namespace airlib
 
         struct Ros2Setting
         {
+            enum class ControlMode
+            {
+                // The existing wrapper owns vehicle commands through the AirSim RPC API.
+                AirSim,
+                // PX4 owns vehicle commands. The wrapper remains a sensor/camera publisher.
+                PX4
+            };
+
+            // AirSim is deliberately the compatibility default. PX4 must be selected
+            // explicitly so a PX4 vehicle never has two ROS command owners.
+            ControlMode control_mode = ControlMode::AirSim;
+
             // Explicit per-vehicle sensor whitelist for the ROS 2 wrapper.
             // An omitted or empty list creates no per-sensor ROS 2 topics.
             std::map<std::string, std::vector<std::string>> sensors;
+
+            bool isPx4ControlMode() const
+            {
+                return control_mode == ControlMode::PX4;
+            }
+
+            const char* controlModeName() const
+            {
+                return isPx4ControlMode() ? "PX4" : "AirSim";
+            }
 
             bool isSensorSelected(const std::string& vehicle_name,
                                   const std::string& sensor_name) const
@@ -1315,6 +1337,37 @@ namespace airlib
             if (!settings_json.getChild("Ros2", ros2_json) || !ros2_json.isObject()) {
                 throw std::invalid_argument("Ros2 must be a JSON object.");
             }
+
+            if (ros2_json.hasKey("ControlMode")) {
+                const std::string control_mode = Utils::toLower(
+                    ros2_json.getString("ControlMode", ""));
+                if (control_mode == "airsim") {
+                    ros2_setting.control_mode = Ros2Setting::ControlMode::AirSim;
+                }
+                else if (control_mode == "px4") {
+                    ros2_setting.control_mode = Ros2Setting::ControlMode::PX4;
+                }
+                else {
+                    throw std::invalid_argument(
+                        "Ros2.ControlMode must be either 'AirSim' or 'PX4'.");
+                }
+            }
+
+            if (ros2_setting.isPx4ControlMode()) {
+                if (simmode_name != kSimModeTypeMultirotor) {
+                    throw std::invalid_argument(
+                        "Ros2.ControlMode 'PX4' requires SimMode 'Multirotor'.");
+                }
+                for (const auto& vehicle : vehicles) {
+                    if (vehicle.second->vehicle_type != kVehicleTypePX4) {
+                        throw std::invalid_argument(
+                            "Ros2.ControlMode 'PX4' requires every configured vehicle to use "
+                            "VehicleType 'PX4Multirotor'; vehicle '" + vehicle.first +
+                            "' uses '" + vehicle.second->vehicle_type + "'.");
+                    }
+                }
+            }
+
             if (!ros2_json.hasKey("Sensors"))
                 return;
 

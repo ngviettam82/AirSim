@@ -572,7 +572,16 @@ namespace airlib_rpclib
             std::string camera_name;
             Vector3r camera_position;
             Quaternionr camera_orientation;
-            msr::airlib::TTimePoint time_stamp;
+            // Keep explicit capture/readback provenance across RPC. ROS must
+            // reject a request, readback-completion, or transport fallback
+            // because only the capture transaction identifies these pixels.
+            msr::airlib::TTimePoint request_time_stamp = 0;
+            msr::airlib::TTimePoint time_stamp = 0;
+            uint64_t render_frame_number = 0;
+            uint64_t capture_generation = 0;
+            bool has_render_frame_timestamp = false;
+            bool camera_info_is_perspective = false;
+            float camera_horizontal_fov_degrees = 0.0f;
             std::string message;
             bool pixels_as_float;
             bool compress;
@@ -581,7 +590,11 @@ namespace airlib_rpclib
             std::string annotation_name;
 
             MSGPACK_DEFINE_MAP(image_data_uint8, image_data_float, camera_position, camera_name,
-                               camera_orientation, time_stamp, message, pixels_as_float, compress, width, height, image_type, annotation_name);
+                                camera_orientation, request_time_stamp, time_stamp,
+                                render_frame_number, capture_generation,
+                                has_render_frame_timestamp, camera_info_is_perspective,
+                                camera_horizontal_fov_degrees, message,
+                                pixels_as_float, compress, width, height, image_type, annotation_name);
 
             ImageResponse()
             {
@@ -593,7 +606,13 @@ namespace airlib_rpclib
                 camera_name = s.camera_name;
                 camera_position = Vector3r(s.camera_position);
                 camera_orientation = Quaternionr(s.camera_orientation);
+                request_time_stamp = s.request_time_stamp;
                 time_stamp = s.time_stamp;
+                render_frame_number = s.render_frame_number;
+                capture_generation = s.capture_generation;
+                has_render_frame_timestamp = s.has_render_frame_timestamp;
+                camera_info_is_perspective = s.camera_info_is_perspective;
+                camera_horizontal_fov_degrees = s.camera_horizontal_fov_degrees;
                 message = s.message;
                 compress = s.compress;
                 width = s.width;
@@ -635,7 +654,13 @@ namespace airlib_rpclib
                 d.camera_name = camera_name;
                 d.camera_position = camera_position.to();
                 d.camera_orientation = camera_orientation.to();
+                d.request_time_stamp = request_time_stamp;
                 d.time_stamp = time_stamp;
+                d.render_frame_number = render_frame_number;
+                d.capture_generation = capture_generation;
+                d.has_render_frame_timestamp = has_render_frame_timestamp;
+                d.camera_info_is_perspective = camera_info_is_perspective;
+                d.camera_horizontal_fov_degrees = camera_horizontal_fov_degrees;
                 d.message = message;
                 d.compress = compress;
                 d.width = width;

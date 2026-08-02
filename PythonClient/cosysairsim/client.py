@@ -1713,6 +1713,16 @@ class VehicleClient:
         """
         return self.client.call('getSettingsString')
 
+    def simGetHilSensorTimeHistory(self, max_samples, vehicle_name=''):
+        """Return recently sent MAVLink ``HIL_SENSOR.time_usec`` values.
+
+        Values are ordered from oldest to newest and identify messages accepted
+        by AirSim's local MAVLink transport. They are source-clock evidence for
+        PX4 synchronization diagnostics, not ROS receipt timestamps. The
+        server accepts 1 through 2048 samples for PX4 HIL vehicles.
+        """
+        return self.client.call('simGetHilSensorTimeHistory', max_samples, vehicle_name)
+
     def simSetExtForce(self, ext_force):
         """
         Set arbitrary external forces, in World frame, NED direction. Can be used

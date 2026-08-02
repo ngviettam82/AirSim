@@ -4,14 +4,25 @@
 #include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
+#include <unordered_set>
 
 using namespace std::placeholders;
 
 namespace
 {
     constexpr double kGaussToTesla = 1.0e-4;
+    constexpr double kDefaultImagePeriodSec = 0.05;
+    constexpr double kDefaultControlPeriodSec = 0.01;
+    constexpr double kDefaultSensorPeriodSec = 0.01;
+    constexpr float kTakeoffTimeoutSec = 20.0f;
+    constexpr float kLandTimeoutSec = 60.0f;
+    constexpr float kAsyncWaitSlackSec = 5.0f;
+    constexpr size_t kMaxSceneTagRegexLength = 1024;
+    constexpr size_t kMaxSceneTagResults = 100000;
 
     int8_t rosNavSatStatus(const msr::airlib::GpsBase::Output& gps_data)
     {
@@ -25,6 +36,85 @@ namespace
     {
         return msr::airlib::normalizeRos2TopicToken(vehicle_name, "vehicle") + "/" +
                msr::airlib::normalizeRos2TopicToken(sensor_name, "sensor");
+    }
+
+    double getPositivePeriod(const std::shared_ptr<rclcpp::Node>& node,
+                             const char* parameter_name,
+                             double default_value)
+    {
+        double value = default_value;
+        node->get_parameter_or(parameter_name, value, value);
+        if (!std::isfinite(value) || value <= 0.0) {
+            throw std::invalid_argument(
+                std::string(parameter_name) + " must be a finite value greater than zero");
+        }
+        return value;
+    }
+
+    void validatePointCloudLayout(size_t value_count, size_t values_per_point,
+                                  const char* sensor_type)
+    {
+        if (value_count % values_per_point != 0) {
+            throw std::runtime_error(
+                std::string("AirSim returned a malformed ") + sensor_type + " point cloud");
+        }
+    }
+
+    bool hasJpegSignature(const std::vector<uint8_t>& data)
+    {
+        return data.size() >= 4 &&
+               data.front() == 0xff && data[1] == 0xd8 &&
+               data[data.size() - 2] == 0xff && data.back() == 0xd9;
+    }
+
+    bool updateCameraInfoForCapturedImage(
+        sensor_msgs::msg::CameraInfo& camera_info,
+        const msr::airlib::ImageCaptureBase::ImageResponse& image_response)
+    {
+        // Width, height, and intrinsics must describe the same explicit
+        // CaptureScene transaction as the image, rather than only the
+        // settings that happened to be present when this wrapper started.
+        camera_info.width = static_cast<uint32_t>(image_response.width);
+        camera_info.height = static_cast<uint32_t>(image_response.height);
+        camera_info.r = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
+
+        if (!image_response.camera_info_is_perspective) {
+            // ROS defines K[0] == 0 as an uncalibrated camera. Do not attach
+            // pinhole intrinsics to orthographic or equirectangular pixels.
+            camera_info.k.fill(0.0);
+            camera_info.p.fill(0.0);
+            camera_info.d.clear();
+            return true;
+        }
+
+        const double horizontal_fov_degrees =
+            static_cast<double>(image_response.camera_horizontal_fov_degrees);
+        if (!std::isfinite(horizontal_fov_degrees) || horizontal_fov_degrees <= 0.0 ||
+            horizontal_fov_degrees >= 180.0) {
+            return false;
+        }
+
+        const double focal_length_pixels =
+            (static_cast<double>(image_response.width) / 2.0) /
+            std::tan(math_common::deg2rad(horizontal_fov_degrees / 2.0));
+        if (!std::isfinite(focal_length_pixels) || focal_length_pixels <= 0.0) {
+            return false;
+        }
+
+        const double center_x = static_cast<double>(image_response.width) / 2.0;
+        const double center_y = static_cast<double>(image_response.height) / 2.0;
+        camera_info.k = {
+            focal_length_pixels, 0.0, center_x,
+            0.0, focal_length_pixels, center_y,
+            0.0, 0.0, 1.0,
+        };
+        camera_info.p = {
+            focal_length_pixels, 0.0, center_x, 0.0,
+            0.0, focal_length_pixels, center_y, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+        };
+        camera_info.d = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+        return true;
     }
 }
 
@@ -52,30 +142,45 @@ const std::unordered_map<int, std::string> AirsimROSWrapper::image_type_int_to_s
     { 11, "Annotation" },
 };
 
-AirsimROSWrapper::AirsimROSWrapper(const std::shared_ptr<rclcpp::Node> nh, const std::shared_ptr<rclcpp::Node> nh_img, const std::shared_ptr<rclcpp::Node> nh_lidar, const std::shared_ptr<rclcpp::Node> nh_gpulidar, const std::shared_ptr<rclcpp::Node> nh_echo, const std::string& host_ip, const std::shared_ptr<rclcpp::CallbackGroup> callbackGroup, bool enable_api_control, bool enable_object_transforms_list, uint16_t host_port)
+AirsimROSWrapper::AirsimROSWrapper(const std::shared_ptr<rclcpp::Node> nh, const std::shared_ptr<rclcpp::Node> nh_img, const std::shared_ptr<rclcpp::Node> nh_lidar, const std::shared_ptr<rclcpp::Node> nh_gpulidar, const std::shared_ptr<rclcpp::Node> nh_echo, const std::string& host_ip, bool enable_api_control, bool enable_object_transforms_list, uint16_t host_port, float rpc_timeout_sec)
     : is_used_lidar_timer_cb_queue_(false)
     , is_used_img_timer_cb_queue_(false)
     , is_used_gpulidar_timer_cb_queue_(false)
     , is_used_echo_timer_cb_queue_(false)
-    , airsim_settings_parser_(host_ip, host_port)
+    , airsim_settings_parser_(host_ip, host_port, rpc_timeout_sec)
     , host_ip_(host_ip)
     , host_port_(host_port)
+    , rpc_timeout_sec_(rpc_timeout_sec)
     , enable_api_control_(enable_api_control)
     , enable_object_transforms_list_(enable_object_transforms_list)
     , airsim_client_(nullptr)
-    , airsim_client_images_(host_ip, host_port)
-    , airsim_client_lidar_(host_ip, host_port)
-    , airsim_client_gpulidar_(host_ip, host_port)
-    , airsim_client_echo_(host_ip, host_port)
+    , airsim_client_images_(host_ip, host_port, rpc_timeout_sec)
+    , airsim_client_lidar_(host_ip, host_port, rpc_timeout_sec)
+    , airsim_client_gpulidar_(host_ip, host_port, rpc_timeout_sec)
+    , airsim_client_echo_(host_ip, host_port, rpc_timeout_sec)
     , nh_(nh)
     , nh_img_(nh_img)
     , nh_lidar_(nh_lidar)
     , nh_gpulidar_(nh_gpulidar)
     , nh_echo_(nh_echo)
-    , cb_(callbackGroup)
     , publish_clock_(false)
 {
+    if (!airsim_settings_parser_.success()) {
+        throw std::runtime_error("AirSim returned an empty settings document");
+    }
+
     ros_clock_.clock = rclcpp::Time(0);
+
+    // Each polling path owns a distinct RpcLib client. Mutually-exclusive
+    // groups prevent a slow request from re-entering the same client while
+    // still allowing state, image, lidar, GPU lidar, echo, and service work to
+    // run in parallel. State and command subscriptions remain in the node's
+    // default mutually-exclusive group.
+    image_callback_group_ = nh_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    lidar_callback_group_ = nh_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    gpulidar_callback_group_ = nh_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    echo_callback_group_ = nh_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    service_callback_group_ = nh_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     if (AirSimSettings::singleton().simmode_name == AirSimSettings::kSimModeTypeMultirotor) {
         airsim_mode_ = AIRSIM_MODE::DRONE;
@@ -88,6 +193,22 @@ AirsimROSWrapper::AirsimROSWrapper(const std::shared_ptr<rclcpp::Node> nh, const
         airsim_mode_ = AIRSIM_MODE::COMPUTERVISION;
         RCLCPP_INFO(nh_->get_logger(), "Setting ROS wrapper to COMPUTERVISION mode");
     }
+
+    ros2_control_mode_ = AirSimSettings::singleton().ros2_setting.control_mode;
+    if (is_px4_control_mode()) {
+        if (airsim_mode_ != AIRSIM_MODE::DRONE) {
+            throw std::invalid_argument(
+                "Ros2.ControlMode 'PX4' requires SimMode 'Multirotor'.");
+        }
+        if (enable_api_control_) {
+            throw std::invalid_argument(
+                "Ros2.ControlMode 'PX4' cannot be used with enable_api_control:=true. "
+                "PX4 must remain the only flight-command owner.");
+        }
+    }
+    RCLCPP_INFO(nh_->get_logger(), "ROS 2 control mode: %s",
+                AirSimSettings::singleton().ros2_setting.controlModeName());
+
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(nh_);
     static_tf_pub_ = std::make_shared<tf2_ros::StaticTransformBroadcaster>(nh_);
 
@@ -96,63 +217,148 @@ AirsimROSWrapper::AirsimROSWrapper(const std::shared_ptr<rclcpp::Node> nh, const
     RCLCPP_INFO(nh_->get_logger(), "AirsimROSWrapper Initialized!");
 }
 
+bool AirsimROSWrapper::is_px4_control_mode() const
+{
+    return ros2_control_mode_ == Ros2ControlMode::PX4;
+}
+
+bool AirsimROSWrapper::has_direct_multirotor_control() const
+{
+    return airsim_mode_ == AIRSIM_MODE::DRONE && !is_px4_control_mode();
+}
+
+void AirsimROSWrapper::log_rpc_error(const char* operation, rpc::rpc_error& error) const
+{
+    std::string message = error.what();
+    try {
+        message = error.get_error().as<std::string>();
+    }
+    catch (...) {
+    }
+
+    RCLCPP_ERROR_THROTTLE(
+        nh_->get_logger(), *nh_->get_clock(), 5000,
+        "%s failed: %s", operation, message.c_str());
+}
+
+void AirsimROSWrapper::log_callback_error(const char* operation, const std::exception& error) const
+{
+    RCLCPP_ERROR_THROTTLE(
+        nh_->get_logger(), *nh_->get_clock(), 5000,
+        "%s failed: %s", operation, error.what());
+}
+
+void AirsimROSWrapper::log_unknown_callback_error(const char* operation) const
+{
+    RCLCPP_ERROR_THROTTLE(
+        nh_->get_logger(), *nh_->get_clock(), 5000,
+        "%s failed with an unknown exception", operation);
+}
+
+bool AirsimROSWrapper::validate_vehicle_group(const std::vector<std::string>& vehicle_names,
+                                              const char* operation) const
+{
+    if (vehicle_names.empty()) {
+        RCLCPP_WARN(nh_->get_logger(), "%s rejected an empty vehicle list", operation);
+        return false;
+    }
+    if (vehicle_names.size() > vehicle_name_ptr_map_.size()) {
+        RCLCPP_WARN(nh_->get_logger(), "%s rejected more names than configured vehicles", operation);
+        return false;
+    }
+
+    std::unordered_set<std::string> unique_names;
+    unique_names.reserve(vehicle_names.size());
+    for (const auto& vehicle_name : vehicle_names) {
+        if (vehicle_name_ptr_map_.find(vehicle_name) == vehicle_name_ptr_map_.end()) {
+            RCLCPP_WARN(nh_->get_logger(), "%s rejected unknown vehicle '%s'",
+                        operation, vehicle_name.c_str());
+            return false;
+        }
+        if (!unique_names.insert(vehicle_name).second) {
+            RCLCPP_WARN(nh_->get_logger(), "%s rejected duplicate vehicle '%s'",
+                        operation, vehicle_name.c_str());
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void AirsimROSWrapper::initialize_airsim()
 {
     // todo do not reset if already in air?
-    try {
+    if (airsim_mode_ == AIRSIM_MODE::DRONE) {
+        airsim_client_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(
+            new msr::airlib::MultirotorRpcLibClient(host_ip_, host_port_, rpc_timeout_sec_));
+        airsim_client_services_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(
+            new msr::airlib::MultirotorRpcLibClient(host_ip_, host_port_, rpc_timeout_sec_));
+    }
+    else if (airsim_mode_ == AIRSIM_MODE::CAR) {
+        airsim_client_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(
+            new msr::airlib::CarRpcLibClient(host_ip_, host_port_, rpc_timeout_sec_));
+        airsim_client_services_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(
+            new msr::airlib::CarRpcLibClient(host_ip_, host_port_, rpc_timeout_sec_));
+    }
+    else {
+        airsim_client_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(
+            new msr::airlib::ComputerVisionRpcLibClient(host_ip_, host_port_, rpc_timeout_sec_));
+        airsim_client_services_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(
+            new msr::airlib::ComputerVisionRpcLibClient(host_ip_, host_port_, rpc_timeout_sec_));
+    }
 
-        if (airsim_mode_ == AIRSIM_MODE::DRONE) {
-            airsim_client_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(new msr::airlib::MultirotorRpcLibClient(host_ip_, host_port_));
+    const auto require_connection = [](msr::airlib::RpcLibClientBase& client, const char* client_name) {
+        if (!client.ping()) {
+            throw std::runtime_error(std::string(client_name) + " did not respond to ping");
         }
-        else if(airsim_mode_ == AIRSIM_MODE::CAR) {
-            airsim_client_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(new msr::airlib::CarRpcLibClient(host_ip_, host_port_));
-        }else{
-            airsim_client_ = std::unique_ptr<msr::airlib::RpcLibClientBase>(new msr::airlib::ComputerVisionRpcLibClient(host_ip_, host_port_));
-        }
-        airsim_client_->confirmConnection();
-        airsim_client_images_.confirmConnection();
-        airsim_client_lidar_.confirmConnection();
-        airsim_client_gpulidar_.confirmConnection();
-        airsim_client_echo_.confirmConnection();
+    };
+    require_connection(*airsim_client_, "AirSim state RPC client");
+    require_connection(*airsim_client_services_, "AirSim service RPC client");
+    require_connection(airsim_client_images_, "AirSim image RPC client");
+    require_connection(airsim_client_lidar_, "AirSim lidar RPC client");
+    require_connection(airsim_client_gpulidar_, "AirSim GPU lidar RPC client");
+    require_connection(airsim_client_echo_, "AirSim echo RPC client");
 
-        if(enable_api_control_){
-            for (const auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {            
-                airsim_client_->enableApiControl(true, vehicle_name_ptr_pair.first); // todo expose as rosservice?
-                airsim_client_->armDisarm(true, vehicle_name_ptr_pair.first); // todo exposes as rosservice?
-            }
-        }
-
-        origin_geo_point_ = get_origin_geo_point();
-        // todo there's only one global origin geopoint for environment. but airsim API accept a parameter vehicle_name? inside carsimpawnapi.cpp, there's a geopoint being assigned in the constructor. by?
-        origin_geo_point_msg_ = get_gps_msg_from_airsim_geo_point(origin_geo_point_);
-        
-        auto vehicle_name_ptr_pair = vehicle_name_ptr_map_.begin();
-        auto& vehicle_ros = vehicle_name_ptr_pair->second;
-        airsim_interfaces::msg::InstanceSegmentationList instance_segmentation_list_msg = get_instance_segmentation_list_msg_from_airsim();      
-        instance_segmentation_list_msg.header.stamp = vehicle_ros->stamp_;
-        instance_segmentation_list_msg.header.frame_id = world_frame_id_;
-        vehicle_ros->instance_segmentation_pub_->publish(instance_segmentation_list_msg);
-
-        if(enable_object_transforms_list_){
-            airsim_interfaces::msg::ObjectTransformsList object_transforms_list_msg = get_object_transforms_list_msg_from_airsim(vehicle_ros->stamp_);      
-            vehicle_ros->object_transforms_pub_->publish(object_transforms_list_msg);
+    if (enable_api_control_ && !is_px4_control_mode()) {
+        for (const auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
+            airsim_client_->enableApiControl(true, vehicle_name_ptr_pair.first); // todo expose as rosservice?
+            airsim_client_->armDisarm(true, vehicle_name_ptr_pair.first); // todo exposes as rosservice?
         }
     }
-    catch (rpc::rpc_error& e) {
-        std::string msg = e.get_error().as<std::string>();
-        RCLCPP_ERROR(nh_->get_logger(), "Exception raised by the API, something went wrong.\n%s", msg.c_str());
-        rclcpp::shutdown();
+
+    if (vehicle_name_ptr_map_.empty()) {
+        throw std::runtime_error("AirSim settings did not create any ROS-visible vehicles");
+    }
+
+    origin_geo_point_ = get_origin_geo_point();
+    // todo there's only one global origin geopoint for environment. but airsim API accept a parameter vehicle_name? inside carsimpawnapi.cpp, there's a geopoint being assigned in the constructor. by?
+    origin_geo_point_msg_ = get_gps_msg_from_airsim_geo_point(origin_geo_point_);
+
+    auto vehicle_name_ptr_pair = vehicle_name_ptr_map_.begin();
+    auto& vehicle_ros = vehicle_name_ptr_pair->second;
+    airsim_interfaces::msg::InstanceSegmentationList instance_segmentation_list_msg = get_instance_segmentation_list_msg_from_airsim(*airsim_client_);
+    instance_segmentation_list_msg.header.stamp = vehicle_ros->stamp_;
+    instance_segmentation_list_msg.header.frame_id = world_frame_id_;
+    vehicle_ros->instance_segmentation_pub_->publish(instance_segmentation_list_msg);
+
+    if (enable_object_transforms_list_) {
+        airsim_interfaces::msg::ObjectTransformsList object_transforms_list_msg = get_object_transforms_list_msg_from_airsim(*airsim_client_, vehicle_ros->stamp_);
+        vehicle_ros->object_transforms_pub_->publish(object_transforms_list_msg);
     }
 }
 
 void AirsimROSWrapper::initialize_ros()
 {
 
-    // ros params
-    double update_airsim_control_every_n_sec;
-    nh_->get_parameter("is_vulkan", is_vulkan_);
-    nh_->get_parameter("update_airsim_control_every_n_sec", update_airsim_control_every_n_sec);
-    nh_->get_parameter("publish_clock", publish_clock_);
+    // The launch file provides these parameters, but direct executable use is
+    // also supported. Never pass an uninitialized period to a ROS timer.
+    const double update_airsim_control_every_n_sec = getPositivePeriod(
+        nh_, "update_airsim_control_every_n_sec", kDefaultControlPeriodSec);
+    bool publish_clock = false;
+    nh_->get_parameter_or("publish_clock", publish_clock, publish_clock);
+    nh_->get_parameter_or("image_response_compress", image_response_compress_,
+                          image_response_compress_);
+    publish_clock_ = publish_clock;
     nh_->get_parameter_or("world_frame_id", world_frame_id_, world_frame_id_);
     nh_->get_parameter_or("odom_frame_id", odom_frame_id_, odom_frame_id_);
     vel_cmd_duration_ = 0.05; // todo rosparam
@@ -161,8 +367,15 @@ void AirsimROSWrapper::initialize_ros()
     // nh_->get_parameter("max_horz_vel", max_horz_vel_)
 
     nh_->declare_parameter("vehicle_name", rclcpp::ParameterValue(""));
+
+    const auto control_mode_qos = rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable();
+    control_mode_pub_ = nh_->create_publisher<std_msgs::msg::String>("~/control_mode", control_mode_qos);
+    std_msgs::msg::String control_mode_msg;
+    control_mode_msg.data = AirSimSettings::singleton().ros2_setting.controlModeName();
+    control_mode_pub_->publish(control_mode_msg);
+
     create_ros_pubs_from_settings_json();
-    airsim_control_update_timer_ = nh_->create_wall_timer(std::chrono::duration<double>(update_airsim_control_every_n_sec), std::bind(&AirsimROSWrapper::drone_state_timer_cb, this), cb_);
+    airsim_control_update_timer_ = nh_->create_wall_timer(std::chrono::duration<double>(update_airsim_control_every_n_sec), std::bind(&AirsimROSWrapper::drone_state_timer_cb, this));
 }
 
 void AirsimROSWrapper::create_ros_pubs_from_settings_json()
@@ -174,6 +387,8 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
 
     airsim_img_request_vehicle_name_pair_vec_.clear();
     image_pub_vec_.clear();
+    compressed_image_pub_vec_.clear();
+    image_response_compress_vec_.clear();
     cam_info_pub_vec_.clear();
     camera_info_msg_vec_.clear();
     vehicle_name_ptr_map_.clear();
@@ -205,6 +420,7 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
 
         vehicle_ros->odom_frame_id_ = curr_vehicle_name + "/" + odom_frame_id_;
         vehicle_ros->vehicle_name_ = curr_vehicle_name;
+        vehicle_ros->initial_global_ned_position_ = vehicle_setting->position;
 
         append_static_vehicle_tf(vehicle_ros.get(), *vehicle_setting);
 
@@ -215,39 +431,51 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
 
         vehicle_ros->global_gps_pub_ = nh_->create_publisher<sensor_msgs::msg::NavSatFix>(topic_prefix + "/global_gps", 10);
 
+        if (is_px4_control_mode()) {
+            auto hil_clock_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable();
+            vehicle_ros->hil_sensor_clock_pub_ =
+                nh_->create_publisher<airsim_interfaces::msg::Px4HilSensorClock>(
+                    topic_prefix + "/px4/hil_sensor_clock", hil_clock_qos);
+            vehicle_ros->hil_sensor_clock_msg_.airsim_vehicle_name = curr_vehicle_name;
+        }
+
         auto qos_settings = rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable();
 
         vehicle_ros->instance_segmentation_pub_ = nh_->create_publisher<airsim_interfaces::msg::InstanceSegmentationList>("~/instance_segmentation_labels", qos_settings);
 
-        std::function<bool(std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Request>, std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Response>)> fcn_ins_seg_refresh_srvr = std::bind(&AirsimROSWrapper::instance_segmentation_refresh_cb, this, _1, _2);
-        vehicle_ros->instance_segmentation_refresh_srvr_ = nh_->create_service<airsim_interfaces::srv::RefreshInstanceSegmentation>(topic_prefix + "/instance_segmentation_refresh", fcn_ins_seg_refresh_srvr);
+        std::function<void(std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Request>, std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Response>)> fcn_ins_seg_refresh_srvr = std::bind(&AirsimROSWrapper::instance_segmentation_refresh_cb, this, _1, _2, curr_vehicle_name);
+        vehicle_ros->instance_segmentation_refresh_srvr_ = nh_->create_service<airsim_interfaces::srv::RefreshInstanceSegmentation>(topic_prefix + "/instance_segmentation_refresh", fcn_ins_seg_refresh_srvr, rmw_qos_profile_services_default, service_callback_group_);
 
         if(enable_object_transforms_list_){
             vehicle_ros->object_transforms_pub_ = nh_->create_publisher<airsim_interfaces::msg::ObjectTransformsList>("~/object_transforms", qos_settings);
 
-            std::function<bool(std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Request>, std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Response>)> fcn_obj_trans_refresh_srvr = std::bind(&AirsimROSWrapper::object_transforms_refresh_cb, this, _1, _2);
-            vehicle_ros->object_transforms_refresh_srvr_ = nh_->create_service<airsim_interfaces::srv::RefreshObjectTransforms>(topic_prefix + "/object_transforms_refresh", fcn_obj_trans_refresh_srvr);
+            std::function<void(std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Request>, std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Response>)> fcn_obj_trans_refresh_srvr = std::bind(&AirsimROSWrapper::object_transforms_refresh_cb, this, _1, _2, curr_vehicle_name);
+            vehicle_ros->object_transforms_refresh_srvr_ = nh_->create_service<airsim_interfaces::srv::RefreshObjectTransforms>(topic_prefix + "/object_transforms_refresh", fcn_obj_trans_refresh_srvr, rmw_qos_profile_services_default, service_callback_group_);
         }
 
         if (airsim_mode_ == AIRSIM_MODE::DRONE) {
-            auto drone = static_cast<MultiRotorROS*>(vehicle_ros.get());
+            // PX4 mode still uses multirotor state and camera publishers; it
+            // only removes the competing AirSim command interfaces.
+            if (has_direct_multirotor_control()) {
+                auto drone = static_cast<MultiRotorROS*>(vehicle_ros.get());
 
-            // bind to a single callback. todo optimal subs queue length
-            // bind multiple topics to a single callback, but keep track of which vehicle name it was by passing curr_vehicle_name as the 2nd argument
+                // bind to a single callback. todo optimal subs queue length
+                // bind multiple topics to a single callback, but keep track of which vehicle name it was by passing curr_vehicle_name as the 2nd argument
 
-            std::function<void(const airsim_interfaces::msg::VelCmd::SharedPtr)> fcn_vel_cmd_body_frame_sub = std::bind(&AirsimROSWrapper::vel_cmd_body_frame_cb, this, _1, vehicle_ros->vehicle_name_);
-            drone->vel_cmd_body_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmd>(topic_prefix + "/vel_cmd_body_frame", 1, fcn_vel_cmd_body_frame_sub); // todo ros::TransportHints().tcpNoDelay();
+                std::function<void(const airsim_interfaces::msg::VelCmd::SharedPtr)> fcn_vel_cmd_body_frame_sub = std::bind(&AirsimROSWrapper::vel_cmd_body_frame_cb, this, _1, vehicle_ros->vehicle_name_);
+                drone->vel_cmd_body_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmd>(topic_prefix + "/vel_cmd_body_frame", 1, fcn_vel_cmd_body_frame_sub); // todo ros::TransportHints().tcpNoDelay();
 
-            std::function<void(const airsim_interfaces::msg::VelCmd::SharedPtr)> fcn_vel_cmd_world_frame_sub = std::bind(&AirsimROSWrapper::vel_cmd_world_frame_cb, this, _1, vehicle_ros->vehicle_name_);
-            drone->vel_cmd_world_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmd>(topic_prefix + "/vel_cmd_world_frame", 1, fcn_vel_cmd_world_frame_sub);
+                std::function<void(const airsim_interfaces::msg::VelCmd::SharedPtr)> fcn_vel_cmd_world_frame_sub = std::bind(&AirsimROSWrapper::vel_cmd_world_frame_cb, this, _1, vehicle_ros->vehicle_name_);
+                drone->vel_cmd_world_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmd>(topic_prefix + "/vel_cmd_world_frame", 1, fcn_vel_cmd_world_frame_sub);
 
-            std::function<bool(std::shared_ptr<airsim_interfaces::srv::Takeoff::Request>, std::shared_ptr<airsim_interfaces::srv::Takeoff::Response>)> fcn_takeoff_srvr = std::bind(&AirsimROSWrapper::takeoff_srv_cb, this, _1, _2, vehicle_ros->vehicle_name_);
-            drone->takeoff_srvr_ = nh_->create_service<airsim_interfaces::srv::Takeoff>(topic_prefix + "/takeoff", fcn_takeoff_srvr);
+                std::function<void(std::shared_ptr<airsim_interfaces::srv::Takeoff::Request>, std::shared_ptr<airsim_interfaces::srv::Takeoff::Response>)> fcn_takeoff_srvr = std::bind(&AirsimROSWrapper::takeoff_srv_cb, this, _1, _2, vehicle_ros->vehicle_name_);
+                drone->takeoff_srvr_ = nh_->create_service<airsim_interfaces::srv::Takeoff>(topic_prefix + "/takeoff", fcn_takeoff_srvr, rmw_qos_profile_services_default, service_callback_group_);
 
-            std::function<bool(std::shared_ptr<airsim_interfaces::srv::Land::Request>, std::shared_ptr<airsim_interfaces::srv::Land::Response>)> fcn_land_srvr = std::bind(&AirsimROSWrapper::land_srv_cb, this, _1, _2, vehicle_ros->vehicle_name_);
-            drone->land_srvr_ = nh_->create_service<airsim_interfaces::srv::Land>(topic_prefix + "/land", fcn_land_srvr);
+                std::function<void(std::shared_ptr<airsim_interfaces::srv::Land::Request>, std::shared_ptr<airsim_interfaces::srv::Land::Response>)> fcn_land_srvr = std::bind(&AirsimROSWrapper::land_srv_cb, this, _1, _2, vehicle_ros->vehicle_name_);
+                drone->land_srvr_ = nh_->create_service<airsim_interfaces::srv::Land>(topic_prefix + "/land", fcn_land_srvr, rmw_qos_profile_services_default, service_callback_group_);
 
-            // vehicle_ros.reset_srvr = nh_->create_service(curr_vehicle_name + "/reset",&AirsimROSWrapper::reset_srv_cb, this);
+                // vehicle_ros.reset_srvr = nh_->create_service(curr_vehicle_name + "/reset",&AirsimROSWrapper::reset_srv_cb, this);
+            }
         }
         else if(airsim_mode_ == AIRSIM_MODE::CAR) {
             auto car = static_cast<CarROS*>(vehicle_ros.get());
@@ -269,10 +497,39 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
             const std::string camera_optical_frame_id = curr_vehicle_name + "/" + ros_camera_name + "_optical";
 
             set_nans_to_zeros_in_pose(*vehicle_setting, camera_setting);
-            append_static_camera_tf(vehicle_ros.get(), curr_camera_name, camera_setting);
             // camera_setting.gimbal
             std::vector<ImageRequest> current_image_request_vec;
             current_image_request_vec.clear();
+            const auto add_image_stream = [this, &image_transporter, &current_image_request_vec,
+                                           &camera_setting, &curr_camera_name,
+                                           &camera_optical_frame_id](
+                                              const ImageRequest& image_request,
+                                              const std::string& camera_topic_prefix,
+                                              const CaptureSetting& capture_setting) {
+                const std::string image_topic = camera_topic_prefix + "/image";
+                const std::string camera_info_topic = camera_topic_prefix + "/camera_info";
+                const bool publish_direct_jpeg =
+                    !image_request.pixels_as_float && image_request.compress;
+
+                current_image_request_vec.push_back(image_request);
+                if (publish_direct_jpeg) {
+                    image_pub_vec_.emplace_back(std::nullopt);
+                    compressed_image_pub_vec_.push_back(
+                        nh_->create_publisher<sensor_msgs::msg::CompressedImage>(
+                            image_topic + "/compressed", rclcpp::QoS(1)));
+                }
+                else {
+                    image_pub_vec_.emplace_back(
+                        image_transporter.advertise(image_topic, 1));
+                    compressed_image_pub_vec_.push_back(nullptr);
+                }
+                image_response_compress_vec_.push_back(publish_direct_jpeg);
+                cam_info_pub_vec_.push_back(
+                    nh_->create_publisher<sensor_msgs::msg::CameraInfo>(camera_info_topic, 10));
+                auto camera_info = generate_cam_info(curr_camera_name, camera_setting, capture_setting);
+                camera_info.header.frame_id = camera_optical_frame_id;
+                camera_info_msg_vec_.push_back(std::move(camera_info));
+            };
 
             // iterate over capture_setting std::map<int, CaptureSetting> capture_settings
             for (const auto& curr_capture_elem : camera_setting.capture_settings) {
@@ -295,35 +552,42 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
                 ImageType curr_image_type = msr::airlib::Utils::toEnum<ImageType>(capture_setting.image_type);
                 if(curr_image_type == ImageType::Annotation) {
                     for( const auto& curr_annotation_element :  AirSimSettings::singleton().annotator_settings){
-                        current_image_request_vec.push_back(ImageRequest(curr_camera_name, curr_image_type, false, false, curr_annotation_element.name));
                         const std::string camera_topic_prefix = topic_prefix + "/" + ros_camera_name + "_" + image_type_name->second + "_" + curr_annotation_element.name;
-                        const std::string image_topic = camera_topic_prefix + "/image";
-                        const std::string camera_info_topic = camera_topic_prefix + "/camera_info";
-                        image_pub_vec_.push_back(image_transporter.advertise(image_topic, 1));
-                        cam_info_pub_vec_.push_back(nh_->create_publisher<sensor_msgs::msg::CameraInfo>(camera_info_topic, 10));
-                        auto camera_info = generate_cam_info(curr_camera_name, camera_setting, capture_setting);
-                        camera_info.header.frame_id = camera_optical_frame_id;
-                        camera_info_msg_vec_.push_back(std::move(camera_info));
+                        add_image_stream(
+                            ImageRequest(curr_camera_name, curr_image_type, false,
+                                         image_response_compress_, curr_annotation_element.name),
+                            camera_topic_prefix, capture_setting);
                     }
                 }else{
                     if (curr_image_type == ImageType::DepthPlanar || curr_image_type == ImageType::DepthPerspective || curr_image_type == ImageType::DepthVis || curr_image_type == ImageType::DisparityNormalized) {
-                        current_image_request_vec.push_back(ImageRequest(curr_camera_name, curr_image_type, true));
+                        add_image_stream(
+                            ImageRequest(curr_camera_name, curr_image_type, true, false),
+                            topic_prefix + "/" + ros_camera_name + "_" + image_type_name->second,
+                            capture_setting);
                     }
                     else {
-                        current_image_request_vec.push_back(ImageRequest(curr_camera_name, curr_image_type, false, false));
+                        add_image_stream(
+                            ImageRequest(curr_camera_name, curr_image_type, false,
+                                         image_response_compress_),
+                            topic_prefix + "/" + ros_camera_name + "_" + image_type_name->second,
+                            capture_setting);
                     }
-                    const std::string camera_topic_prefix = topic_prefix + "/" + ros_camera_name + "_" + image_type_name->second;
-                    const std::string image_topic = camera_topic_prefix + "/image";
-                    const std::string camera_info_topic = camera_topic_prefix + "/camera_info";
-                    image_pub_vec_.push_back(image_transporter.advertise(image_topic, 1));
-                    cam_info_pub_vec_.push_back(nh_->create_publisher<sensor_msgs::msg::CameraInfo>(camera_info_topic, 10));
-                    auto camera_info = generate_cam_info(curr_camera_name, camera_setting, capture_setting);
-                    camera_info.header.frame_id = camera_optical_frame_id;
-                    camera_info_msg_vec_.push_back(std::move(camera_info));
                 }
             }
-            // push back pair (vector of image captures, current vehicle name)
-            airsim_img_request_vehicle_name_pair_vec_.push_back(std::make_pair(current_image_request_vec, curr_vehicle_name));
+            if (current_image_request_vec.empty()) {
+                // A camera that has no renderable image stream cannot provide
+                // an image-time transform, so retain the conventional static
+                // transform for its non-image uses.
+                append_static_camera_tf(vehicle_ros.get(), curr_camera_name, camera_setting);
+            }
+            else {
+                vehicle_ros->image_time_camera_names_.insert(curr_camera_name);
+                // Only renderable streams belong to the image timer. In
+                // particular, ImageType -1 configures a camera component but
+                // must not produce empty simGetImages RPC polls.
+                airsim_img_request_vehicle_name_pair_vec_.push_back(
+                    std::make_pair(current_image_request_vec, curr_vehicle_name));
+            }
         }
 
         // iterate over sensors
@@ -437,9 +701,9 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
     }   
 
     // add takeoff and land all services if more than 2 drones
-    if (vehicle_name_ptr_map_.size() > 1 && airsim_mode_ == AIRSIM_MODE::DRONE) {
-        takeoff_all_srvr_ = nh_->create_service<airsim_interfaces::srv::Takeoff>("~/all_robots/takeoff", std::bind(&AirsimROSWrapper::takeoff_all_srv_cb, this, _1, _2));
-        land_all_srvr_ = nh_->create_service<airsim_interfaces::srv::Land>("~/all_robots/land", std::bind(&AirsimROSWrapper::land_all_srv_cb, this, _1, _2));
+    if (vehicle_name_ptr_map_.size() > 1 && has_direct_multirotor_control()) {
+        takeoff_all_srvr_ = nh_->create_service<airsim_interfaces::srv::Takeoff>("~/all_robots/takeoff", std::bind(&AirsimROSWrapper::takeoff_all_srv_cb, this, _1, _2), rmw_qos_profile_services_default, service_callback_group_);
+        land_all_srvr_ = nh_->create_service<airsim_interfaces::srv::Land>("~/all_robots/land", std::bind(&AirsimROSWrapper::land_all_srv_cb, this, _1, _2), rmw_qos_profile_services_default, service_callback_group_);
 
         vel_cmd_all_body_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmd>("~/all_robots/vel_cmd_body_frame", 1, std::bind(&AirsimROSWrapper::vel_cmd_all_body_frame_cb, this, _1));
         vel_cmd_all_world_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmd>("~/all_robots/vel_cmd_world_frame", 1, std::bind(&AirsimROSWrapper::vel_cmd_all_world_frame_cb, this, _1));
@@ -447,14 +711,18 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
         vel_cmd_group_body_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmdGroup>("~/group_of_robots/vel_cmd_body_frame", 1, std::bind(&AirsimROSWrapper::vel_cmd_group_body_frame_cb, this, _1));
         vel_cmd_group_world_frame_sub_ = nh_->create_subscription<airsim_interfaces::msg::VelCmdGroup>("~/group_of_robots/vel_cmd_world_frame", 1, std::bind(&AirsimROSWrapper::vel_cmd_group_world_frame_cb, this, _1));
 
-        takeoff_group_srvr_ = nh_->create_service<airsim_interfaces::srv::TakeoffGroup>("~/group_of_robots/takeoff", std::bind(&AirsimROSWrapper::takeoff_group_srv_cb, this, _1, _2));
-        land_group_srvr_ = nh_->create_service<airsim_interfaces::srv::LandGroup>("~/group_of_robots/land", std::bind(&AirsimROSWrapper::land_group_srv_cb, this, _1, _2));
+        takeoff_group_srvr_ = nh_->create_service<airsim_interfaces::srv::TakeoffGroup>("~/group_of_robots/takeoff", std::bind(&AirsimROSWrapper::takeoff_group_srv_cb, this, _1, _2), rmw_qos_profile_services_default, service_callback_group_);
+        land_group_srvr_ = nh_->create_service<airsim_interfaces::srv::LandGroup>("~/group_of_robots/land", std::bind(&AirsimROSWrapper::land_group_srv_cb, this, _1, _2), rmw_qos_profile_services_default, service_callback_group_);
     }
 
-    // todo add per vehicle reset in AirLib API
-    reset_srvr_ = nh_->create_service<airsim_interfaces::srv::Reset>("~/reset", std::bind(&AirsimROSWrapper::reset_srv_cb, this, _1, _2));
+    // A global AirSim reset bypasses PX4 command ownership and estimator reset
+    // handling. PX4-mode deployments must reset through the flight stack or by
+    // restarting the complete simulation/PX4 pipeline.
+    if (!is_px4_control_mode()) {
+        reset_srvr_ = nh_->create_service<airsim_interfaces::srv::Reset>("~/reset", std::bind(&AirsimROSWrapper::reset_srv_cb, this, _1, _2), rmw_qos_profile_services_default, service_callback_group_);
+    }
 
-    list_scene_object_tags_srvr_ = nh_->create_service<airsim_interfaces::srv::ListSceneObjectTags>("~/list_scene_object_tags", std::bind(&AirsimROSWrapper::list_scene_object_tags_srv_cb, this, _1, _2));
+    list_scene_object_tags_srvr_ = nh_->create_service<airsim_interfaces::srv::ListSceneObjectTags>("~/list_scene_object_tags", std::bind(&AirsimROSWrapper::list_scene_object_tags_srv_cb, this, _1, _2), rmw_qos_profile_services_default, service_callback_group_);
 
     if (publish_clock_) {
         clock_pub_ = nh_->create_publisher<rosgraph_msgs::msg::Clock>("~/clock", 1);
@@ -462,31 +730,31 @@ void AirsimROSWrapper::create_ros_pubs_from_settings_json()
 
     // if >0 cameras, add one more thread for img_request_timer_cb
     if (!airsim_img_request_vehicle_name_pair_vec_.empty()) {
-        double update_airsim_img_response_every_n_sec;
-        nh_->get_parameter("update_airsim_img_response_every_n_sec", update_airsim_img_response_every_n_sec);
+        const double update_airsim_img_response_every_n_sec = getPositivePeriod(
+            nh_, "update_airsim_img_response_every_n_sec", kDefaultImagePeriodSec);
 
-        airsim_img_response_timer_ = nh_img_->create_wall_timer(std::chrono::duration<double>(update_airsim_img_response_every_n_sec), std::bind(&AirsimROSWrapper::img_response_timer_cb, this), cb_);
+        airsim_img_response_timer_ = nh_img_->create_wall_timer(std::chrono::duration<double>(update_airsim_img_response_every_n_sec), std::bind(&AirsimROSWrapper::img_response_timer_cb, this), image_callback_group_);
         is_used_img_timer_cb_queue_ = true;
     }
 
     // lidar, gpulidar and echo sensors update on their own callbacks/threads at a given rate
     if (lidar_cnt > 0) {
-        double update_lidar_every_n_sec;
-        nh_->get_parameter("update_lidar_every_n_sec", update_lidar_every_n_sec);
-        airsim_lidar_update_timer_ = nh_lidar_->create_wall_timer(std::chrono::duration<double>(update_lidar_every_n_sec), std::bind(&AirsimROSWrapper::lidar_timer_cb, this), cb_);
+        const double update_lidar_every_n_sec = getPositivePeriod(
+            nh_, "update_lidar_every_n_sec", kDefaultSensorPeriodSec);
+        airsim_lidar_update_timer_ = nh_lidar_->create_wall_timer(std::chrono::duration<double>(update_lidar_every_n_sec), std::bind(&AirsimROSWrapper::lidar_timer_cb, this), lidar_callback_group_);
         is_used_lidar_timer_cb_queue_ = true;
     }
     if (gpulidar_cnt > 0) {
-        double update_gpulidar_every_n_sec;
-        nh_->get_parameter("update_gpulidar_every_n_sec", update_gpulidar_every_n_sec);
-        airsim_gpulidar_update_timer_ = nh_gpulidar_->create_wall_timer(std::chrono::duration<double>(update_gpulidar_every_n_sec), std::bind(&AirsimROSWrapper::gpulidar_timer_cb, this), cb_);
+        const double update_gpulidar_every_n_sec = getPositivePeriod(
+            nh_, "update_gpulidar_every_n_sec", kDefaultSensorPeriodSec);
+        airsim_gpulidar_update_timer_ = nh_gpulidar_->create_wall_timer(std::chrono::duration<double>(update_gpulidar_every_n_sec), std::bind(&AirsimROSWrapper::gpulidar_timer_cb, this), gpulidar_callback_group_);
         is_used_gpulidar_timer_cb_queue_ = true;
     }
 
     if (echo_cnt > 0) {
-        double update_echo_every_n_sec;
-        nh_->get_parameter("update_echo_every_n_sec", update_echo_every_n_sec);
-        airsim_echo_update_timer_ = nh_echo_->create_wall_timer(std::chrono::duration<double>(update_echo_every_n_sec), std::bind(&AirsimROSWrapper::echo_timer_cb, this), cb_);
+        const double update_echo_every_n_sec = getPositivePeriod(
+            nh_, "update_echo_every_n_sec", kDefaultSensorPeriodSec);
+        airsim_echo_update_timer_ = nh_echo_->create_wall_timer(std::chrono::duration<double>(update_echo_every_n_sec), std::bind(&AirsimROSWrapper::echo_timer_cb, this), echo_callback_group_);
         is_used_echo_timer_cb_queue_ = true;
     }
 
@@ -511,182 +779,325 @@ const SensorPublisher<T> AirsimROSWrapper::create_sensor_publisher(const std::st
 }
 
 // todo: error check. if state is not landed, return error.
-bool AirsimROSWrapper::takeoff_srv_cb(std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response, const std::string& vehicle_name)
+void AirsimROSWrapper::takeoff_srv_cb(std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response, const std::string& vehicle_name)
 {
-    std::lock_guard<std::mutex> guard(control_mutex_);
-
-    bool success = true;
-    auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_.get());
-    if (request->wait_on_last_task)
-        client->takeoffAsync(20, vehicle_name)->waitOnLastTask(&success); // todo value for timeout_sec?
-    else
-        client->takeoffAsync(20, vehicle_name);
-    response->success = success;
-
-    return true;
-}
-
-bool AirsimROSWrapper::takeoff_group_srv_cb(std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Request> request, std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Response> response)
-{
-    std::lock_guard<std::mutex> guard(control_mutex_);
-
-    bool success = true;
-    auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_.get());
-    for (const auto& vehicle_name : request->vehicle_names) {
+    response->success = false;
+    try {
+        bool success = true;
+        auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_services_.get());
         if (request->wait_on_last_task) {
-            bool task_success = false;
-            client->takeoffAsync(20, vehicle_name)->waitOnLastTask(&task_success); // todo value for timeout_sec?
-            success = success && task_success;
+            client->takeoffAsync(kTakeoffTimeoutSec, vehicle_name)
+                ->waitOnLastTask(&success, kTakeoffTimeoutSec + kAsyncWaitSlackSec);
         }
         else {
-            client->takeoffAsync(20, vehicle_name);
+            client->takeoffAsync(kTakeoffTimeoutSec, vehicle_name);
         }
+        response->success = success;
+        return;
     }
-    response->success = success;
-
-    return true;
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim takeoff service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim takeoff service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim takeoff service");
+    }
 }
 
-bool AirsimROSWrapper::takeoff_all_srv_cb(std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response)
+void AirsimROSWrapper::takeoff_group_srv_cb(std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Request> request, std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Response> response)
 {
-    std::lock_guard<std::mutex> guard(control_mutex_);
+    response->success = false;
+    if (!validate_vehicle_group(request->vehicle_names, "AirSim group takeoff service"))
+        return;
 
-    bool success = true;
-    auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_.get());
-    for (const auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
-        if (request->wait_on_last_task) {
-            bool task_success = false;
-            client->takeoffAsync(20, vehicle_name_ptr_pair.first)->waitOnLastTask(&task_success); // todo value for timeout_sec?
-            success = success && task_success;
+    try {
+        bool success = true;
+        auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_services_.get());
+        for (const auto& vehicle_name : request->vehicle_names) {
+            if (request->wait_on_last_task) {
+                bool task_success = false;
+                client->takeoffAsync(kTakeoffTimeoutSec, vehicle_name)
+                    ->waitOnLastTask(&task_success, kTakeoffTimeoutSec + kAsyncWaitSlackSec);
+                success = success && task_success;
+                if (!task_success)
+                    break;
+            }
+            else {
+                client->takeoffAsync(kTakeoffTimeoutSec, vehicle_name);
+            }
         }
-        else {
-            client->takeoffAsync(20, vehicle_name_ptr_pair.first);
-        }
+        response->success = success;
+        return;
     }
-    response->success = success;
-
-    return true;
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim group takeoff service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim group takeoff service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim group takeoff service");
+    }
 }
 
-bool AirsimROSWrapper::instance_segmentation_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Response> response)
+void AirsimROSWrapper::takeoff_all_srv_cb(std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response)
 {
-    unused(response);
+    response->success = false;
+    try {
+        bool success = true;
+        auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_services_.get());
+        for (const auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
+            if (request->wait_on_last_task) {
+                bool task_success = false;
+                client->takeoffAsync(kTakeoffTimeoutSec, vehicle_name_ptr_pair.first)
+                    ->waitOnLastTask(&task_success, kTakeoffTimeoutSec + kAsyncWaitSlackSec);
+                success = success && task_success;
+                if (!task_success)
+                    break;
+            }
+            else {
+                client->takeoffAsync(kTakeoffTimeoutSec, vehicle_name_ptr_pair.first);
+            }
+        }
+        response->success = success;
+        return;
+    }
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim all-vehicle takeoff service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim all-vehicle takeoff service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim all-vehicle takeoff service");
+    }
+}
+
+void AirsimROSWrapper::instance_segmentation_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Response> response, const std::string& vehicle_name)
+{
     unused(request);
-    std::lock_guard<std::mutex> guard(control_mutex_);
+    response->success = false;
+    try {
+        const auto vehicle_it = vehicle_name_ptr_map_.find(vehicle_name);
+        if (vehicle_it == vehicle_name_ptr_map_.end()) {
+            throw std::invalid_argument("Unknown vehicle '" + vehicle_name + "'");
+        }
 
-    RCLCPP_INFO_STREAM(nh_->get_logger(), "Starting instance segmentation refresh...");
+        rclcpp::Time stamp;
+        {
+            std::lock_guard<std::mutex> state_guard(state_mutex_);
+            stamp = vehicle_it->second->stamp_;
+        }
 
-    auto vehicle_name_ptr_pair = vehicle_name_ptr_map_.begin();
-    auto& vehicle_ros = vehicle_name_ptr_pair->second;
-    airsim_interfaces::msg::InstanceSegmentationList instance_segmentation_list_msg  = get_instance_segmentation_list_msg_from_airsim();      
-    instance_segmentation_list_msg.header.stamp = vehicle_ros->stamp_;
-    instance_segmentation_list_msg.header.frame_id = world_frame_id_;
-    vehicle_ros->instance_segmentation_pub_->publish(instance_segmentation_list_msg);
-
-    RCLCPP_INFO_STREAM(nh_->get_logger(), "Completed instance segmentation refresh!");
-
-    return true;
+        auto message = get_instance_segmentation_list_msg_from_airsim(*airsim_client_services_);
+        message.header.stamp = stamp;
+        message.header.frame_id = world_frame_id_;
+        vehicle_it->second->instance_segmentation_pub_->publish(message);
+        response->success = true;
+        return;
+    }
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim instance-segmentation refresh service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim instance-segmentation refresh service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim instance-segmentation refresh service");
+    }
 }
 
-bool AirsimROSWrapper::object_transforms_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Response> response)
+void AirsimROSWrapper::object_transforms_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Response> response, const std::string& vehicle_name)
 {
-    unused(response);
     unused(request);
-    std::lock_guard<std::mutex> guard(control_mutex_);
+    response->success = false;
+    try {
+        const auto vehicle_it = vehicle_name_ptr_map_.find(vehicle_name);
+        if (vehicle_it == vehicle_name_ptr_map_.end()) {
+            throw std::invalid_argument("Unknown vehicle '" + vehicle_name + "'");
+        }
 
-    RCLCPP_INFO_STREAM(nh_->get_logger(), "Starting object transforms refresh...");
+        rclcpp::Time stamp;
+        {
+            std::lock_guard<std::mutex> state_guard(state_mutex_);
+            stamp = vehicle_it->second->stamp_;
+        }
 
-    auto vehicle_name_ptr_pair = vehicle_name_ptr_map_.begin();
-    auto& vehicle_ros = vehicle_name_ptr_pair->second;
-    airsim_interfaces::msg::ObjectTransformsList object_transforms_list_msg  = get_object_transforms_list_msg_from_airsim(vehicle_ros->stamp_);      
-    vehicle_ros->object_transforms_pub_->publish(object_transforms_list_msg);
-
-    RCLCPP_INFO_STREAM(nh_->get_logger(), "Completed object transforms refresh!");
-
-    return true;
+        auto message = get_object_transforms_list_msg_from_airsim(
+            *airsim_client_services_, stamp);
+        vehicle_it->second->object_transforms_pub_->publish(message);
+        response->success = true;
+        return;
+    }
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim object-transform refresh service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim object-transform refresh service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim object-transform refresh service");
+    }
 }
 
-bool AirsimROSWrapper::land_srv_cb(std::shared_ptr<airsim_interfaces::srv::Land::Request> request, std::shared_ptr<airsim_interfaces::srv::Land::Response> response, const std::string& vehicle_name)
+void AirsimROSWrapper::land_srv_cb(std::shared_ptr<airsim_interfaces::srv::Land::Request> request, std::shared_ptr<airsim_interfaces::srv::Land::Response> response, const std::string& vehicle_name)
 {
-    std::lock_guard<std::mutex> guard(control_mutex_);
-
-    bool success = true;
-    auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_.get());
-    if (request->wait_on_last_task)
-        client->landAsync(60, vehicle_name)->waitOnLastTask(&success);
-    else
-        client->landAsync(60, vehicle_name);
-    response->success = success;
-
-    return true;
-}
-
-bool AirsimROSWrapper::land_group_srv_cb(std::shared_ptr<airsim_interfaces::srv::LandGroup::Request> request, std::shared_ptr<airsim_interfaces::srv::LandGroup::Response> response)
-{
-    std::lock_guard<std::mutex> guard(control_mutex_);
-
-    bool success = true;
-    auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_.get());
-    for (const auto& vehicle_name : request->vehicle_names) {
+    response->success = false;
+    try {
+        bool success = true;
+        auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_services_.get());
         if (request->wait_on_last_task) {
-            bool task_success = false;
-            client->landAsync(60, vehicle_name)->waitOnLastTask(&task_success);
-            success = success && task_success;
+            client->landAsync(kLandTimeoutSec, vehicle_name)
+                ->waitOnLastTask(&success, kLandTimeoutSec + kAsyncWaitSlackSec);
         }
         else {
-            client->landAsync(60, vehicle_name);
+            client->landAsync(kLandTimeoutSec, vehicle_name);
         }
+        response->success = success;
+        return;
     }
-    response->success = success;
-
-    return true;
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim land service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim land service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim land service");
+    }
 }
 
-bool AirsimROSWrapper::land_all_srv_cb(std::shared_ptr<airsim_interfaces::srv::Land::Request> request, std::shared_ptr<airsim_interfaces::srv::Land::Response> response)
+void AirsimROSWrapper::land_group_srv_cb(std::shared_ptr<airsim_interfaces::srv::LandGroup::Request> request, std::shared_ptr<airsim_interfaces::srv::LandGroup::Response> response)
 {
-    std::lock_guard<std::mutex> guard(control_mutex_);
+    response->success = false;
+    if (!validate_vehicle_group(request->vehicle_names, "AirSim group land service"))
+        return;
 
-    bool success = true;
-    auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_.get());
-    for (const auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
-        if (request->wait_on_last_task) {
-            bool task_success = false;
-            client->landAsync(60, vehicle_name_ptr_pair.first)->waitOnLastTask(&task_success);
-            success = success && task_success;
+    try {
+        bool success = true;
+        auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_services_.get());
+        for (const auto& vehicle_name : request->vehicle_names) {
+            if (request->wait_on_last_task) {
+                bool task_success = false;
+                client->landAsync(kLandTimeoutSec, vehicle_name)
+                    ->waitOnLastTask(&task_success, kLandTimeoutSec + kAsyncWaitSlackSec);
+                success = success && task_success;
+                if (!task_success)
+                    break;
+            }
+            else {
+                client->landAsync(kLandTimeoutSec, vehicle_name);
+            }
         }
-        else {
-            client->landAsync(60, vehicle_name_ptr_pair.first);
-        }
+        response->success = success;
+        return;
     }
-    response->success = success;
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim group land service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim group land service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim group land service");
+    }
+}
 
-    return true;
+void AirsimROSWrapper::land_all_srv_cb(std::shared_ptr<airsim_interfaces::srv::Land::Request> request, std::shared_ptr<airsim_interfaces::srv::Land::Response> response)
+{
+    response->success = false;
+    try {
+        bool success = true;
+        auto* client = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_services_.get());
+        for (const auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
+            if (request->wait_on_last_task) {
+                bool task_success = false;
+                client->landAsync(kLandTimeoutSec, vehicle_name_ptr_pair.first)
+                    ->waitOnLastTask(&task_success, kLandTimeoutSec + kAsyncWaitSlackSec);
+                success = success && task_success;
+                if (!task_success)
+                    break;
+            }
+            else {
+                client->landAsync(kLandTimeoutSec, vehicle_name_ptr_pair.first);
+            }
+        }
+        response->success = success;
+        return;
+    }
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim all-vehicle land service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim all-vehicle land service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim all-vehicle land service");
+    }
 }
 
 // todo add reset by vehicle_name API to airlib
 // todo not async remove wait_on_last_task
-bool AirsimROSWrapper::reset_srv_cb(std::shared_ptr<airsim_interfaces::srv::Reset::Request> request, std::shared_ptr<airsim_interfaces::srv::Reset::Response> response)
+void AirsimROSWrapper::reset_srv_cb(std::shared_ptr<airsim_interfaces::srv::Reset::Request> request, std::shared_ptr<airsim_interfaces::srv::Reset::Response> response)
 {
     unused(request);
-    unused(response);
-    std::lock_guard<std::mutex> guard(control_mutex_);
-
-    airsim_client_->reset();
-    return true; //todo
+    response->success = false;
+    if (is_px4_control_mode()) {
+        RCLCPP_ERROR(nh_->get_logger(), "AirSim reset is disabled while PX4 owns vehicle control");
+        return;
+    }
+    try {
+        airsim_client_services_->reset();
+        response->success = true;
+        return;
+    }
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim reset service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim reset service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim reset service");
+    }
 }
 
-bool AirsimROSWrapper::list_scene_object_tags_srv_cb(const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Request> request, const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Response> response)
+void AirsimROSWrapper::list_scene_object_tags_srv_cb(const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Request> request, const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Response> response)
 {
-    std::lock_guard<std::mutex> guard(control_mutex_);
-    std::string regex_name = request->regex_name.empty() ? ".*": request->regex_name;
-    std::vector<std::pair<std::string, std::string>> first_tag = airsim_client_->simListSceneObjectsTags(regex_name);
+    response->objects.clear();
+    response->tags.clear();
+    try {
+        const std::string regex_name = request->regex_name.empty() ? ".*" : request->regex_name;
+        if (regex_name.size() > kMaxSceneTagRegexLength) {
+            throw std::invalid_argument("Scene-object tag regex exceeds 1024 bytes");
+        }
 
-    for(const auto& pair: first_tag)
-    {
-        response->objects.push_back(pair.first);
-        response->tags.push_back(pair.second);
+        const auto scene_tags = airsim_client_services_->simListSceneObjectsTags(regex_name);
+        if (scene_tags.size() > kMaxSceneTagResults) {
+            throw std::runtime_error("Scene-object tag query exceeded the 100000-result limit");
+        }
+
+        response->objects.reserve(scene_tags.size());
+        response->tags.reserve(scene_tags.size());
+        for (const auto& pair : scene_tags) {
+            response->objects.push_back(pair.first);
+            response->tags.push_back(pair.second);
+        }
+        return;
     }
-    return true;
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim scene-object tag service", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim scene-object tag service", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim scene-object tag service");
+    }
+    response->objects.clear();
+    response->tags.clear();
 }
 
 tf2::Quaternion AirsimROSWrapper::get_tf2_quat(const msr::airlib::Quaternionr& airlib_quat) const
@@ -727,6 +1138,9 @@ msr::airlib::Pose AirsimROSWrapper::get_airlib_pose(const float& x, const float&
 
 void AirsimROSWrapper::vel_cmd_body_frame_cb(const airsim_interfaces::msg::VelCmd::SharedPtr msg, const std::string& vehicle_name)
 {
+    if (!has_direct_multirotor_control())
+        return;
+
     std::lock_guard<std::mutex> guard(control_mutex_);
 
     auto drone = static_cast<MultiRotorROS*>(vehicle_name_ptr_map_[vehicle_name].get());
@@ -736,10 +1150,15 @@ void AirsimROSWrapper::vel_cmd_body_frame_cb(const airsim_interfaces::msg::VelCm
 
 void AirsimROSWrapper::vel_cmd_group_body_frame_cb(const airsim_interfaces::msg::VelCmdGroup::SharedPtr msg)
 {
+    if (!has_direct_multirotor_control())
+        return;
+    if (!validate_vehicle_group(msg->vehicle_names, "AirSim group body-frame velocity command"))
+        return;
+
     std::lock_guard<std::mutex> guard(control_mutex_);
 
     for (const auto& vehicle_name : msg->vehicle_names) {
-        auto drone = static_cast<MultiRotorROS*>(vehicle_name_ptr_map_[vehicle_name].get());
+        auto drone = static_cast<MultiRotorROS*>(vehicle_name_ptr_map_.at(vehicle_name).get());
         drone->vel_cmd_ = get_airlib_body_vel_cmd(msg->vel_cmd, drone->curr_drone_state_.kinematics_estimated.pose.orientation);
         drone->has_vel_cmd_ = true;
     }
@@ -747,6 +1166,9 @@ void AirsimROSWrapper::vel_cmd_group_body_frame_cb(const airsim_interfaces::msg:
 
 void AirsimROSWrapper::vel_cmd_all_body_frame_cb(const airsim_interfaces::msg::VelCmd::SharedPtr msg)
 {
+    if (!has_direct_multirotor_control())
+        return;
+
     std::lock_guard<std::mutex> guard(control_mutex_);
 
     // todo expose wait_on_last_task or nah?
@@ -759,6 +1181,9 @@ void AirsimROSWrapper::vel_cmd_all_body_frame_cb(const airsim_interfaces::msg::V
 
 void AirsimROSWrapper::vel_cmd_world_frame_cb(const airsim_interfaces::msg::VelCmd::SharedPtr msg, const std::string& vehicle_name)
 {
+    if (!has_direct_multirotor_control())
+        return;
+
     std::lock_guard<std::mutex> guard(control_mutex_);
 
     auto drone = static_cast<MultiRotorROS*>(vehicle_name_ptr_map_[vehicle_name].get());
@@ -769,10 +1194,15 @@ void AirsimROSWrapper::vel_cmd_world_frame_cb(const airsim_interfaces::msg::VelC
 // this is kinda unnecessary but maybe it makes life easier for the end user.
 void AirsimROSWrapper::vel_cmd_group_world_frame_cb(const airsim_interfaces::msg::VelCmdGroup::SharedPtr msg)
 {
+    if (!has_direct_multirotor_control())
+        return;
+    if (!validate_vehicle_group(msg->vehicle_names, "AirSim group world-frame velocity command"))
+        return;
+
     std::lock_guard<std::mutex> guard(control_mutex_);
 
     for (const auto& vehicle_name : msg->vehicle_names) {
-        auto drone = static_cast<MultiRotorROS*>(vehicle_name_ptr_map_[vehicle_name].get());
+        auto drone = static_cast<MultiRotorROS*>(vehicle_name_ptr_map_.at(vehicle_name).get());
         drone->vel_cmd_ = get_airlib_world_vel_cmd(msg->vel_cmd);
         drone->has_vel_cmd_ = true;
     }
@@ -780,6 +1210,9 @@ void AirsimROSWrapper::vel_cmd_group_world_frame_cb(const airsim_interfaces::msg
 
 void AirsimROSWrapper::vel_cmd_all_world_frame_cb(const airsim_interfaces::msg::VelCmd::SharedPtr msg)
 {
+    if (!has_direct_multirotor_control())
+        return;
+
     std::lock_guard<std::mutex> guard(control_mutex_);
 
     // todo expose wait_on_last_task or nah?
@@ -922,8 +1355,9 @@ sensor_msgs::msg::PointCloud2 AirsimROSWrapper::get_lidar_msg_from_airsim(const 
     sensor_msgs::msg::PointCloud2 lidar_msg;
     lidar_msg.header.stamp = rclcpp::Time(lidar_data.time_stamp);
     lidar_msg.header.frame_id = vehicle_name + "/" + sensor_name;
+    validatePointCloudLayout(lidar_data.point_cloud.size(), 3, "lidar");
 
-    if (lidar_data.point_cloud.size() > 3) {
+    if (lidar_data.point_cloud.size() >= 3) {
         lidar_msg.height = 1;
         lidar_msg.width = lidar_data.point_cloud.size() / 3;
 
@@ -965,7 +1399,8 @@ airsim_interfaces::msg::StringArray AirsimROSWrapper::get_lidar_labels_msg_from_
     lidar_labels_msg.header.stamp = rclcpp::Time(lidar_data.time_stamp);
     lidar_labels_msg.header.frame_id = vehicle_name + "/" + sensor_name;
 
-    if (lidar_data.point_cloud.size() > 3) {
+    validatePointCloudLayout(lidar_data.point_cloud.size(), 3, "lidar");
+    if (lidar_data.point_cloud.size() >= 3) {
         lidar_labels_msg.data = std::move(lidar_data.groundtruth);           
     }
     else {
@@ -981,7 +1416,8 @@ sensor_msgs::msg::PointCloud2 AirsimROSWrapper::get_gpulidar_msg_from_airsim(con
     gpulidar_msg.header.stamp = rclcpp::Time(gpulidar_data.time_stamp);
     gpulidar_msg.header.frame_id = vehicle_name + "/" + sensor_name;
 
-    if (gpulidar_data.point_cloud.size() > 5) {    
+    validatePointCloudLayout(gpulidar_data.point_cloud.size(), 5, "GPU lidar");
+    if (gpulidar_data.point_cloud.size() >= 5) {
         
         std::vector<float> data_std = gpulidar_data.point_cloud;
         fixPointCloud(data_std, 5, {1});
@@ -1035,7 +1471,8 @@ sensor_msgs::msg::PointCloud2 AirsimROSWrapper::get_active_echo_msg_from_airsim(
     echo_msg.header.stamp = rclcpp::Time(echo_data.time_stamp);
     echo_msg.header.frame_id = vehicle_name + "/" + sensor_name;
 
-    if (echo_data.point_cloud.size() > 6) {
+    validatePointCloudLayout(echo_data.point_cloud.size(), 6, "active echo");
+    if (echo_data.point_cloud.size() >= 6) {
         echo_msg.height = 1;
         echo_msg.width = echo_data.point_cloud.size() / 6;
 
@@ -1080,7 +1517,8 @@ airsim_interfaces::msg::StringArray AirsimROSWrapper::get_active_echo_labels_msg
     echo_active_labels_msg.header.stamp = rclcpp::Time(echo_data.time_stamp);
     echo_active_labels_msg.header.frame_id = vehicle_name + "/" + sensor_name;
 
-    if (echo_data.point_cloud.size() > 6) {
+    validatePointCloudLayout(echo_data.point_cloud.size(), 6, "active echo");
+    if (echo_data.point_cloud.size() >= 6) {
         echo_active_labels_msg.data = std::move(echo_data.groundtruth);           
     }
     else {
@@ -1096,7 +1534,8 @@ sensor_msgs::msg::PointCloud2 AirsimROSWrapper::get_passive_echo_msg_from_airsim
     echo_msg.header.stamp = rclcpp::Time(echo_data.time_stamp);
     echo_msg.header.frame_id = vehicle_name + "/" + sensor_name;
 
-    if (echo_data.passive_beacons_point_cloud.size() > 9) {
+    validatePointCloudLayout(echo_data.passive_beacons_point_cloud.size(), 9, "passive echo");
+    if (echo_data.passive_beacons_point_cloud.size() >= 9) {
         echo_msg.height = 1;
         echo_msg.width = echo_data.passive_beacons_point_cloud.size() / 9;
 
@@ -1144,7 +1583,8 @@ airsim_interfaces::msg::StringArray AirsimROSWrapper::get_passive_echo_labels_ms
     echo_passive_labels_msg.header.stamp = rclcpp::Time(echo_data.time_stamp);
     echo_passive_labels_msg.header.frame_id = vehicle_name + "/" + sensor_name;
 
-    if (echo_data.point_cloud.size() > 9) {
+    validatePointCloudLayout(echo_data.passive_beacons_point_cloud.size(), 9, "passive echo");
+    if (echo_data.passive_beacons_point_cloud.size() >= 9) {
         echo_passive_labels_msg.data = std::move(echo_data.passive_beacons_groundtruth);           
     }
     else {
@@ -1225,37 +1665,61 @@ sensor_msgs::msg::Range AirsimROSWrapper::get_range_from_airsim(const msr::airli
 }
 
 
-airsim_interfaces::msg::InstanceSegmentationList AirsimROSWrapper::get_instance_segmentation_list_msg_from_airsim() const{
+airsim_interfaces::msg::InstanceSegmentationList AirsimROSWrapper::get_instance_segmentation_list_msg_from_airsim(msr::airlib::RpcLibClientBase& client) const
+{
     airsim_interfaces::msg::InstanceSegmentationList instance_segmentation_list_msg;
-    std::vector<std::string> object_name_list = airsim_client_->simListInstanceSegmentationObjects();
-    std::vector<msr::airlib::Vector3r> color_map = airsim_client_->simGetInstanceSegmentationColorMap();
-    int object_index = 0;
-    std::vector<std::string>::iterator it = object_name_list.begin();
-    for(; it < object_name_list.end(); it++, object_index++ )
-    {
+    const auto object_name_list = client.simListInstanceSegmentationObjects();
+
+    // The colour map is the complete, indexed segmentation palette, not a
+    // parallel list of scene objects.  In an empty scene it contains millions
+    // of valid palette entries while the object list is empty.  Avoid both the
+    // invalid positional mapping and a large needless RPC response.
+    if (object_name_list.empty()) {
+        return instance_segmentation_list_msg;
+    }
+
+    const auto color_map = client.simGetInstanceSegmentationColorMap();
+    instance_segmentation_list_msg.labels.reserve(object_name_list.size());
+    size_t missing_or_invalid_labels = 0;
+    for (const auto& object_name : object_name_list) {
+        const int color_index = client.simGetSegmentationObjectID(object_name);
+        if (color_index < 0 || static_cast<size_t>(color_index) >= color_map.size()) {
+            ++missing_or_invalid_labels;
+            continue;
+        }
+
         airsim_interfaces::msg::InstanceSegmentationLabel instance_segmentation_label_msg;
-        instance_segmentation_label_msg.name = *it;
-        instance_segmentation_label_msg.r = color_map[object_index].x();
-        instance_segmentation_label_msg.g = color_map[object_index].y();
-        instance_segmentation_label_msg.b = color_map[object_index].z();
-        instance_segmentation_label_msg.index = object_index;
+        instance_segmentation_label_msg.name = object_name;
+        instance_segmentation_label_msg.r = color_map[color_index].x();
+        instance_segmentation_label_msg.g = color_map[color_index].y();
+        instance_segmentation_label_msg.b = color_map[color_index].z();
+        instance_segmentation_label_msg.index = static_cast<uint32_t>(color_index);
         instance_segmentation_list_msg.labels.push_back(instance_segmentation_label_msg);
+    }
+    if (missing_or_invalid_labels > 0) {
+        RCLCPP_WARN(nh_->get_logger(),
+                    "Skipped %zu instance-segmentation labels with no valid palette index",
+                    missing_or_invalid_labels);
     }
     return instance_segmentation_list_msg;
 }
 
-airsim_interfaces::msg::ObjectTransformsList AirsimROSWrapper::get_object_transforms_list_msg_from_airsim(rclcpp::Time timestamp) const{
+airsim_interfaces::msg::ObjectTransformsList AirsimROSWrapper::get_object_transforms_list_msg_from_airsim(msr::airlib::RpcLibClientBase& client, rclcpp::Time timestamp) const
+{
     airsim_interfaces::msg::ObjectTransformsList object_transforms_list_msg;
-    std::vector<std::string> object_name_list = airsim_client_->simListInstanceSegmentationObjects();
-    std::vector<msr::airlib::Pose> poses = airsim_client_->simListInstanceSegmentationPoses();
-    int object_index = 0;
-    std::vector<std::string>::iterator it = object_name_list.begin();
-    for(; it < object_name_list.end(); it++, object_index++ )
-    {
-        msr::airlib::Pose cur_object_pose = poses[object_index]; 
-        if(!std::isnan(cur_object_pose.position.x())){
+    const auto object_name_list = client.simListInstanceSegmentationObjects();
+    const auto poses = client.simListInstanceSegmentationPoses();
+    if (object_name_list.size() != poses.size()) {
+        throw std::runtime_error(
+            "AirSim returned inconsistent instance-segmentation names and poses");
+    }
+
+    object_transforms_list_msg.objects.reserve(object_name_list.size());
+    for (size_t object_index = 0; object_index < object_name_list.size(); ++object_index) {
+        const msr::airlib::Pose& cur_object_pose = poses[object_index];
+        if (!std::isnan(cur_object_pose.position.x())) {
             geometry_msgs::msg::TransformStamped object_transform_msg;
-            object_transform_msg.child_frame_id = *it;
+            object_transform_msg.child_frame_id = object_name_list[object_index];
             object_transform_msg.transform.translation.x = cur_object_pose.position.x();
             object_transform_msg.transform.translation.y = -cur_object_pose.position.y();
             object_transform_msg.transform.translation.z = -cur_object_pose.position.z();
@@ -1264,7 +1728,7 @@ airsim_interfaces::msg::ObjectTransformsList AirsimROSWrapper::get_object_transf
             object_transform_msg.transform.rotation.z = cur_object_pose.orientation.inverse().z();
             object_transform_msg.transform.rotation.w = cur_object_pose.orientation.inverse().w();
             object_transform_msg.header.stamp = timestamp;
-            object_transforms_list_msg.objects.push_back(object_transform_msg);            
+            object_transforms_list_msg.objects.push_back(object_transform_msg);
         }
     }
     object_transforms_list_msg.header.stamp = timestamp;
@@ -1319,6 +1783,42 @@ void AirsimROSWrapper::publish_odom_tf(const nav_msgs::msg::Odometry& odom_msg)
     odom_tf.transform.translation.z = odom_msg.pose.pose.position.z;
     odom_tf.transform.rotation = odom_msg.pose.pose.orientation;
     tf_broadcaster_->sendTransform(odom_tf);
+}
+
+void AirsimROSWrapper::publish_image_time_camera_tf(const ImageResponse& img_response,
+                                                     const std::string& vehicle_name)
+{
+    const auto vehicle_it = vehicle_name_ptr_map_.find(vehicle_name);
+    if (vehicle_it == vehicle_name_ptr_map_.end() ||
+        vehicle_it->second->image_time_camera_names_.count(img_response.camera_name) == 0) {
+        return;
+    }
+
+    const std::string ros_camera_name =
+        msr::airlib::normalizeRos2TopicToken(img_response.camera_name, "camera");
+    geometry_msgs::msg::TransformStamped camera_body_tf;
+    // APIPCamera::getPose returns a local-NED position relative to the pawn
+    // start location, with axes still aligned to global NED.  Its
+    // orientation is converted directly from the Unreal world orientation.
+    // Publish the captured pose under world rather than vehicle: using the
+    // vehicle transform as the parent would compose its initial yaw a second
+    // time.  This also keeps the transform tied only to the rendered frame,
+    // not to a later vehicle-state poll.
+    const msr::airlib::Vector3r camera_global_position =
+        vehicle_it->second->initial_global_ned_position_ + img_response.camera_position;
+    camera_body_tf.header.frame_id = world_frame_id_;
+    camera_body_tf.header.stamp = rclcpp::Time(img_response.time_stamp);
+    camera_body_tf.child_frame_id = vehicle_name + "/" + ros_camera_name + "_body";
+    camera_body_tf.transform = get_transform_msg_from_airsim(
+        camera_global_position, img_response.camera_orientation);
+    convert_tf_msg_to_ros(camera_body_tf);
+
+    geometry_msgs::msg::TransformStamped camera_optical_tf = camera_body_tf;
+    camera_optical_tf.child_frame_id = vehicle_name + "/" + ros_camera_name + "_optical";
+    camera_optical_tf.transform = get_camera_optical_tf_from_body_tf(camera_body_tf.transform);
+
+    tf_broadcaster_->sendTransform(camera_body_tf);
+    tf_broadcaster_->sendTransform(camera_optical_tf);
 }
 
 airsim_interfaces::msg::GPSYaw AirsimROSWrapper::get_gps_msg_from_airsim_geo_point(const msr::airlib::GeoPoint& geo_point) const
@@ -1412,7 +1912,11 @@ void AirsimROSWrapper::drone_state_timer_cb()
         origin_geo_point_pub_->publish(origin_geo_point_msg_);
 
         // get the basic vehicle pose and environmental state
-        const auto now = update_state();
+        rclcpp::Time now;
+        {
+            std::lock_guard<std::mutex> state_guard(state_mutex_);
+            now = update_state();
+        }
 
         // on init, will publish 0 to /clock as expected for use_sim_time compatibility
         if (!airsim_client_->simIsPaused()) {
@@ -1430,9 +1934,14 @@ void AirsimROSWrapper::drone_state_timer_cb()
         // send any commands out to the vehicles
         update_commands();
     }
-    catch (rpc::rpc_error& e) {
-        std::string msg = e.get_error().as<std::string>();
-        RCLCPP_ERROR(nh_->get_logger(), "Exception raised by the API:\n%s", msg.c_str());
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim state update", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim state update", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim state update");
     }
 }
 
@@ -1468,6 +1977,16 @@ rclcpp::Time AirsimROSWrapper::update_state()
             auto drone = static_cast<MultiRotorROS*>(vehicle_ros.get());
             auto rpc = static_cast<msr::airlib::MultirotorRpcLibClient*>(airsim_client_.get());
             drone->curr_drone_state_ = rpc->getMultirotorState(vehicle_ros->vehicle_name_);
+
+            if (is_px4_control_mode()) {
+                // This is a rolling, source-time history rather than a ROS
+                // timestamp. The synchronizer compares it directly with PX4
+                // SensorCombined timestamps before it trusts their epoch.
+                constexpr uint32_t kHilSensorHistorySamples = 512;
+                vehicle_ros->hil_sensor_clock_msg_.hil_sensor_timestamps_us =
+                    airsim_client_->simGetHilSensorTimeHistory(
+                        kHilSensorHistorySamples, vehicle_ros->vehicle_name_);
+            }
 
             vehicle_time = rclcpp::Time(drone->curr_drone_state_.timestamp);
             if (!got_sim_time) {
@@ -1544,6 +2063,10 @@ void AirsimROSWrapper::publish_vehicle_state()
         // simulation environment truth
         vehicle_ros->env_pub_->publish(vehicle_ros->env_msg_);
 
+        if (vehicle_ros->hil_sensor_clock_pub_ != nullptr) {
+            vehicle_ros->hil_sensor_clock_pub_->publish(vehicle_ros->hil_sensor_clock_msg_);
+        }
+
         if (airsim_mode_ == AIRSIM_MODE::CAR) {
             // dashboard reading from car, RPM, gear, etc
             auto car = static_cast<CarROS*>(vehicle_ros.get());
@@ -1601,7 +2124,7 @@ void AirsimROSWrapper::update_commands()
     for (auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
         auto& vehicle_ros = vehicle_name_ptr_pair.second;
 
-        if (airsim_mode_ == AIRSIM_MODE::DRONE) {
+        if (has_direct_multirotor_control()) {
             auto drone = static_cast<MultiRotorROS*>(vehicle_ros.get());
 
             // send control commands from the last callback to airsim
@@ -1627,7 +2150,7 @@ void AirsimROSWrapper::update_commands()
     // Only camera rotation, no translation movement of camera
     if (has_gimbal_cmd_) {
         std::lock_guard<std::mutex> guard(control_mutex_);
-        airsim_client_->simSetCameraPose(gimbal_cmd_.camera_name, get_airlib_pose(0, 0, 0, gimbal_cmd_.target_quat), gimbal_cmd_.vehicle_name);
+        airsim_client_->simSetCameraOrientation(gimbal_cmd_.camera_name, gimbal_cmd_.target_quat, gimbal_cmd_.vehicle_name);
     }
 
     has_gimbal_cmd_ = false;
@@ -1798,11 +2321,9 @@ void AirsimROSWrapper::append_static_camera_tf(VehicleROS* vehicle_ros, const st
 
 void AirsimROSWrapper::img_response_timer_cb()
 {
-    // The image timer is in a reentrant callback group so sensor/control
-    // callbacks can continue while an image RPC is in flight. RpcLibClientBase
-    // and the image publisher vectors are not safe for concurrent image polls,
-    // however. Drop an overdue poll instead of queuing a stale frame or
-    // entering the same client concurrently.
+    // Drop an overdue poll instead of queuing a stale frame. The dedicated
+    // mutually-exclusive callback group also prevents this timer from
+    // re-entering its RpcLib client.
     std::unique_lock<std::mutex> image_response_lock(image_response_mutex_, std::try_to_lock);
     if (!image_response_lock.owns_lock())
         return;
@@ -1814,14 +2335,28 @@ void AirsimROSWrapper::img_response_timer_cb()
 
             if (img_response.size() == airsim_img_request_vehicle_name_pair.first.size()) {
                 process_and_publish_img_response(img_response, image_response_idx, airsim_img_request_vehicle_name_pair.second);
-                image_response_idx += img_response.size();
             }
+            else {
+                RCLCPP_ERROR(nh_->get_logger(),
+                             "Skipping image response batch for vehicle '%s': expected %zu responses but received %zu",
+                             airsim_img_request_vehicle_name_pair.second.c_str(),
+                             airsim_img_request_vehicle_name_pair.first.size(), img_response.size());
+            }
+            // Publishers are laid out in request order across all vehicles.
+            // Advance even when one RPC batch failed so a later vehicle can
+            // never publish through the preceding vehicle's camera topics.
+            image_response_idx += static_cast<int>(airsim_img_request_vehicle_name_pair.first.size());
         }
     }
 
-    catch (rpc::rpc_error& e) {
-        std::string msg = e.get_error().as<std::string>();
-        RCLCPP_ERROR(nh_->get_logger(), "Exception raised by the API, didn't get image response.\n%s", msg.c_str());
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim image update", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim image update", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim image update");
     }
 }
 
@@ -1844,7 +2379,7 @@ void AirsimROSWrapper::lidar_timer_cb()
                         lidar_data = it->second;
                     }
                     else {
-                        lidar_data = airsim_client_echo_.getLidarData(lidar_labels_publisher.sensor_name, vehicle_name_ptr_pair.first);
+                        lidar_data = airsim_client_lidar_.getLidarData(lidar_labels_publisher.sensor_name, vehicle_name_ptr_pair.first);
                     }
                     airsim_interfaces::msg::StringArray lidar_label_msg = get_lidar_labels_msg_from_airsim(lidar_data, vehicle_name_ptr_pair.first, lidar_labels_publisher.sensor_name);
                     lidar_labels_publisher.publisher->publish(lidar_label_msg);
@@ -1852,9 +2387,14 @@ void AirsimROSWrapper::lidar_timer_cb()
             }
         }
     }
-    catch (rpc::rpc_error& e) {
-        std::string msg = e.get_error().as<std::string>();
-        RCLCPP_ERROR(nh_->get_logger(), "Exception raised by the API, didn't get lidar response.\n%s", msg.c_str());
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim lidar update", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim lidar update", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim lidar update");
     }
 }
 
@@ -1871,9 +2411,14 @@ void AirsimROSWrapper::gpulidar_timer_cb()
             }
         }
     }
-    catch (rpc::rpc_error& e) {
-        std::string msg = e.get_error().as<std::string>();
-        RCLCPP_ERROR(nh_->get_logger(), "Exception raised by the API, didn't get gpulidar response.\n%s", msg.c_str());
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim GPU lidar update", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim GPU lidar update", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim GPU lidar update");
     }
 }
 
@@ -1881,7 +2426,7 @@ void AirsimROSWrapper::echo_timer_cb()
 {
     try {
         for (auto& vehicle_name_ptr_pair : vehicle_name_ptr_map_) {
-            if (!vehicle_name_ptr_pair.second->echo_active_pubs_.empty() && !vehicle_name_ptr_pair.second->echo_passive_pubs_.empty()) {
+            if (!vehicle_name_ptr_pair.second->echo_active_pubs_.empty() || !vehicle_name_ptr_pair.second->echo_passive_pubs_.empty()) {
                 std::unordered_map<std::string, msr::airlib::EchoData> sensor_names_to_echo_data_map;
                 for (auto& active_echo_publisher : vehicle_name_ptr_pair.second->echo_active_pubs_) {                    
                     auto echo_data = airsim_client_echo_.getEchoData(active_echo_publisher.sensor_name, vehicle_name_ptr_pair.first);
@@ -1930,9 +2475,14 @@ void AirsimROSWrapper::echo_timer_cb()
             }
         }
     }
-    catch (rpc::rpc_error& e) {
-        std::string msg = e.get_error().as<std::string>();
-        RCLCPP_ERROR(nh_->get_logger(), "Exception raised by the API, didn't get echo response.\n%s", msg.c_str());
+    catch (rpc::rpc_error& error) {
+        log_rpc_error("AirSim echo update", error);
+    }
+    catch (const std::exception& error) {
+        log_callback_error("AirSim echo update", error);
+    }
+    catch (...) {
+        log_unknown_callback_error("AirSim echo update");
     }
 }
 
@@ -1948,10 +2498,25 @@ std::shared_ptr<sensor_msgs::msg::Image> AirsimROSWrapper::get_img_msg_from_resp
     img_msg_ptr->header.frame_id = frame_id;
     img_msg_ptr->height = img_response.height;
     img_msg_ptr->width = img_response.width;
-    img_msg_ptr->encoding = "bgr8";
-    if (is_vulkan_)
-        img_msg_ptr->encoding = "rgb8";
+    // RenderRequest packs every uncompressed color result as R, G, B. The
+    // render hardware interface therefore cannot change the ROS encoding.
+    img_msg_ptr->encoding = "rgb8";
     img_msg_ptr->is_bigendian = 0;
+    return img_msg_ptr;
+}
+
+std::shared_ptr<sensor_msgs::msg::CompressedImage>
+AirsimROSWrapper::get_compressed_img_msg_from_response(
+    const ImageResponse& img_response, const std::string& frame_id)
+{
+    auto img_msg_ptr = std::make_shared<sensor_msgs::msg::CompressedImage>();
+    img_msg_ptr->header.stamp = rclcpp::Time(img_response.time_stamp);
+    img_msg_ptr->header.frame_id = frame_id;
+    // RenderRequest supplies RGB pixels to Unreal's JPEG encoder. The
+    // standard format string lets image_transport/OpenCV consumers decode
+    // without guessing the source color ordering.
+    img_msg_ptr->format = "rgb8; jpeg compressed rgb8";
+    img_msg_ptr->data = img_response.image_data_uint8;
     return img_msg_ptr;
 }
 
@@ -2005,6 +2570,8 @@ void AirsimROSWrapper::process_and_publish_img_response(const std::vector<ImageR
     size_t img_response_idx_internal = static_cast<size_t>(img_response_idx);
     if (img_response_idx_internal > image_pub_vec_.size() ||
         img_response_vec.size() > image_pub_vec_.size() - img_response_idx_internal ||
+        image_pub_vec_.size() != compressed_image_pub_vec_.size() ||
+        image_pub_vec_.size() != image_response_compress_vec_.size() ||
         image_pub_vec_.size() != cam_info_pub_vec_.size() ||
         image_pub_vec_.size() != camera_info_msg_vec_.size()) {
         RCLCPP_ERROR(nh_->get_logger(),
@@ -2012,9 +2579,28 @@ void AirsimROSWrapper::process_and_publish_img_response(const std::vector<ImageR
         return;
     }
 
+    // A camera can have multiple renderable image types or annotation layers
+    // in one capture batch.  They share the same snapped pose and render
+    // timestamp, so publish that TF sample once without suppressing any image
+    // or CameraInfo message.
+    std::unordered_set<std::string> published_camera_tf_keys;
     for (const auto& curr_img_response : img_response_vec) {
         const std::string ros_camera_name = msr::airlib::normalizeRos2TopicToken(curr_img_response.camera_name, "camera");
         const std::string camera_optical_frame_id = vehicle_name + "/" + ros_camera_name + "_optical";
+
+        // The ROS header is the explicit capture transaction's source-time
+        // contract. Request, readback-completion, and transport fallbacks do
+        // not identify the rendered pixels, so never publish them.
+        if (!curr_img_response.has_render_frame_timestamp ||
+            curr_img_response.capture_generation == 0 ||
+            curr_img_response.time_stamp <= 0) {
+            RCLCPP_WARN_THROTTLE(
+                nh_->get_logger(), *nh_->get_clock(), 5000,
+                "Skipping image response for camera '%s' without exact capture provenance",
+                curr_img_response.camera_name.c_str());
+            ++img_response_idx_internal;
+            continue;
+        }
 
         if (curr_img_response.width <= 0 || curr_img_response.height <= 0 ||
             !ImageResponse::hasValidPayloadLayout(curr_img_response.width,
@@ -2032,26 +2618,84 @@ void AirsimROSWrapper::process_and_publish_img_response(const std::vector<ImageR
             ++img_response_idx_internal;
             continue;
         }
-   
+
+        if (curr_img_response.compress != image_response_compress_vec_[img_response_idx_internal]) {
+            RCLCPP_ERROR(nh_->get_logger(),
+                         "Skipping image response for camera '%s' because the response compression "
+                         "does not match its configured ROS publisher",
+                         curr_img_response.camera_name.c_str());
+            ++img_response_idx_internal;
+            continue;
+        }
+        if (curr_img_response.compress &&
+            !hasJpegSignature(curr_img_response.image_data_uint8)) {
+            RCLCPP_ERROR(nh_->get_logger(),
+                         "Skipping compressed image response for camera '%s' without a valid JPEG signature",
+                         curr_img_response.camera_name.c_str());
+            ++img_response_idx_internal;
+            continue;
+        }
+
+        const std::string camera_tf_key =
+            std::to_string(curr_img_response.camera_name.size()) + ":" +
+            curr_img_response.camera_name + ":" +
+            std::to_string(curr_img_response.time_stamp);
+        if (published_camera_tf_keys.insert(camera_tf_key).second) {
+            publish_image_time_camera_tf(curr_img_response, vehicle_name);
+        }
+
         // todo simGetCameraInfo is wrong + also it's only for image type -1.
         // msr::airlib::CameraInfo camera_info = airsim_client_.simGetCameraInfo(curr_img_response.camera_name);
 
         // update timestamp of saved cam info msgs
 
-        camera_info_msg_vec_[img_response_idx_internal].header.stamp = rclcpp::Time(curr_img_response.time_stamp);
-        cam_info_pub_vec_[img_response_idx_internal]->publish(camera_info_msg_vec_[img_response_idx_internal]);
+        auto& camera_info_msg = camera_info_msg_vec_[img_response_idx_internal];
+        if (!updateCameraInfoForCapturedImage(camera_info_msg, curr_img_response)) {
+            RCLCPP_ERROR(nh_->get_logger(),
+                         "Skipping image response for camera '%s' with invalid capture-time horizontal FOV %.6f",
+                         curr_img_response.camera_name.c_str(),
+                         curr_img_response.camera_horizontal_fov_degrees);
+            ++img_response_idx_internal;
+            continue;
+        }
+        camera_info_msg.header.stamp = rclcpp::Time(curr_img_response.time_stamp);
+        cam_info_pub_vec_[img_response_idx_internal]->publish(camera_info_msg);
 
         // DepthPlanar / DepthPerspective / DepthVis / DisparityNormalized
         if (curr_img_response.pixels_as_float) {
-            image_pub_vec_[img_response_idx_internal].publish(get_depth_img_msg_from_response(curr_img_response,
-                                                                                              curr_ros_time,
-                                                                                              camera_optical_frame_id));
+            if (!image_pub_vec_[img_response_idx_internal].has_value()) {
+                RCLCPP_ERROR(nh_->get_logger(),
+                             "Skipping float image response because its raw publisher is unavailable");
+            }
+            else {
+                image_pub_vec_[img_response_idx_internal]->publish(
+                    get_depth_img_msg_from_response(curr_img_response, curr_ros_time,
+                                                    camera_optical_frame_id));
+            }
+        }
+        else if (curr_img_response.compress) {
+            const auto& compressed_pub = compressed_image_pub_vec_[img_response_idx_internal];
+            if (compressed_pub == nullptr) {
+                RCLCPP_ERROR(nh_->get_logger(),
+                             "Skipping JPEG image response because its compressed publisher is unavailable");
+            }
+            else {
+                const auto compressed_image = get_compressed_img_msg_from_response(
+                    curr_img_response, camera_optical_frame_id);
+                compressed_pub->publish(*compressed_image);
+            }
         }
         // All the others
         else {
-            image_pub_vec_[img_response_idx_internal].publish(get_img_msg_from_response(curr_img_response,
-                                                                                        curr_ros_time,
-                                                                                        camera_optical_frame_id));
+            if (!image_pub_vec_[img_response_idx_internal].has_value()) {
+                RCLCPP_ERROR(nh_->get_logger(),
+                             "Skipping raw image response because its raw publisher is unavailable");
+            }
+            else {
+                image_pub_vec_[img_response_idx_internal]->publish(
+                    get_img_msg_from_response(curr_img_response, curr_ros_time,
+                                              camera_optical_frame_id));
+            }
         }
         img_response_idx_internal++;
     }

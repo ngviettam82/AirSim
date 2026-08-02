@@ -146,7 +146,7 @@ frame = np.frombuffer(response.content, dtype=dtype)
 frame = frame.reshape(height, width) if dtype.itemsize == 4 else frame.reshape(height, width, 3)
 ```
 
-Capture work is lazy: a hosted route renders only while an MJPEG client is connected or a snapshot/raw request is waiting. Requests for active routes belonging to the same vehicle are captured in one AirSim render batch, and multiple clients share the resulting frame. Completed connection threads are reclaimed during operation, and `MaxConnections` bounds simultaneous connection resources.
+Capture work is lazy: a hosted route renders only while an MJPEG client is connected or a snapshot/raw request is waiting. Requests for active routes belonging to the same vehicle are captured in one AirSim render batch, and multiple clients share the resulting frame. Raw-only clients receive the exact RGB or float payload without the preview RGB-to-RGBA conversion or JPEG encoding; that preview work begins only while an MJPEG or JPEG snapshot client is subscribed. Completed connection threads are reclaimed during operation, and `MaxConnections` bounds simultaneous connection resources.
 
 ## Network safety
 

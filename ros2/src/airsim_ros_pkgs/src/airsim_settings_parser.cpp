@@ -1,8 +1,11 @@
 #include "airsim_settings_parser.h"
 
-AirSimSettingsParser::AirSimSettingsParser(const std::string& host_ip, uint16_t host_port)
+#include <stdexcept>
+
+AirSimSettingsParser::AirSimSettingsParser(const std::string& host_ip, uint16_t host_port, float rpc_timeout_sec)
     : host_ip_(host_ip)
     , host_port_(host_port)
+    , rpc_timeout_sec_(rpc_timeout_sec)
 {
     success_ = initializeSettings();
 }
@@ -14,8 +17,10 @@ bool AirSimSettingsParser::success()
 
 bool AirSimSettingsParser::getSettingsText(std::string& settings_text) const
 {
-    msr::airlib::RpcLibClientBase airsim_client(host_ip_, host_port_);
-    airsim_client.confirmConnection();
+    msr::airlib::RpcLibClientBase airsim_client(host_ip_, host_port_, rpc_timeout_sec_);
+    if (!airsim_client.ping()) {
+        throw std::runtime_error("AirSim RPC server did not respond to ping");
+    }
 
     settings_text = airsim_client.getSettingsString();
 

@@ -173,7 +173,10 @@ namespace airlib
         void simSetDistortionParam(const std::string& camera_name, const std::string& param_name, float value, const std::string& vehicle_name = "");
         std::vector<float> simGetDistortionParams(const std::string& camera_name, const std::string& vehicle_name = "");
         void simSetCameraPose(const std::string& camera_name, const Pose& pose, const std::string& vehicle_name = "");
+        void simSetCameraOrientation(const std::string& camera_name, const Quaternionr& orientation, const std::string& vehicle_name = "");
         void simSetCameraFov(const std::string& camera_name, float fov_degrees, const std::string& vehicle_name = "");
+        std::vector<uint64_t> simGetHilSensorTimeHistory(uint32_t max_samples,
+                                                         const std::string& vehicle_name = "") const;
 
         bool simCreateVoxelGrid(const Vector3r& position, const int& x_size, const int& y_size, const int& z_size, const float& res, const std::string& output_file);
         msr::airlib::Kinematics::State simGetGroundTruthKinematics(const std::string& vehicle_name = "") const;

@@ -108,6 +108,8 @@ public:
     virtual std::vector<std::string> listVehicles() const override;
 
     virtual std::string getSettingsString() const override;
+    virtual std::vector<uint64_t> getHilSensorTimeHistory(uint32_t max_samples,
+                                                           const std::string& vehicle_name) const override;
 
     virtual bool testLineOfSightBetweenPoints(const msr::airlib::GeoPoint& point1, const msr::airlib::GeoPoint& point2) const override;
     virtual std::vector<msr::airlib::GeoPoint> getWorldExtents() const override;
@@ -115,6 +117,7 @@ public:
     // Camera APIs
     virtual msr::airlib::CameraInfo getCameraInfo(const CameraDetails& camera_details) const override;
     virtual void setCameraPose(const msr::airlib::Pose& pose, const CameraDetails& camera_details) override;
+    virtual void setCameraOrientation(const msr::airlib::Quaternionr& orientation, const CameraDetails& camera_details) override;
     virtual void setCameraFoV(float fov_degrees, const CameraDetails& camera_details) override;
     virtual void setDistortionParam(const std::string& param_name, float value, const CameraDetails& camera_details) override;
     virtual std::vector<float> getDistortionParams(const CameraDetails& camera_details) const override;
@@ -147,6 +150,11 @@ public:
     virtual std::vector<msr::airlib::DetectionInfo> getDetections(ImageCaptureBase::ImageType image_type, const CameraDetails& camera_details, const std::string& annotation_name) override;
 
 private:
+    PawnSimApi* getVehicleSimApiChecked(const std::string& vehicle_name) const;
+    msr::airlib::VehicleApiBase* getVehicleApiChecked(const std::string& vehicle_name) const;
+    APIPCamera* getCameraChecked(const CameraDetails& camera_details) const;
+    const UnrealImageCapture* getImageCaptureChecked(const std::string& vehicle_name) const;
+
     AActor* createNewStaticMeshActor(const FActorSpawnParameters& spawn_params, const FTransform& actor_transform, const Vector3r& scale, UStaticMesh* static_mesh);
     AActor* createNewBPActor(const FActorSpawnParameters& spawn_params, const FTransform& actor_transform, const Vector3r& scale, UBlueprint* blueprint);
     void spawnPlayer();

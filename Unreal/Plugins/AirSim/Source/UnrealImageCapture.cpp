@@ -240,15 +240,17 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
 
     if (cancellation && cancellation->load())
         return;
+    if (requests.empty())
+        return;
 
+    const size_t response_offset = responses.size();
     bool visibilityChanged = false;
-    UGameViewportClient* gameViewport = nullptr;
     std::exception_ptr preparation_exception;
     // Camera lookup, component activation, and render-target access all touch
     // UObjects. Keep that preparation on the game thread; only the completed
     // CPU image buffers cross back to the caller's worker thread.
     UAirBlueprintLib::RunCommandOnGameThread(
-        [this, &requests, &responses, &render_params, &visibilityChanged, &gameViewport, &preparation_exception, cancellation, activate_camera_types]() {
+        [this, &requests, &responses, &render_params, &visibilityChanged, &preparation_exception, cancellation, activate_camera_types]() {
             try {
                 if (cancellation && cancellation->load())
                     return;
@@ -258,10 +260,6 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
                     camera->GetAnnotationNameExist(requests[i].annotation_name);
                 if (activate_camera_types && has_annotation) {
                     visibilityChanged = const_cast<UnrealImageCapture*>(this)->updateCameraVisibility(camera, requests[i]) || visibilityChanged;
-                }
-
-                if (gameViewport == nullptr) {
-                    gameViewport = camera->GetWorld()->GetGameViewport();
                 }
 
                 responses.emplace_back();
@@ -346,15 +344,21 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
 
     if (preparation_exception)
         std::rethrow_exception(preparation_exception);
+    // Cancellation can race the worker's entry into the game-thread
+    // preparation closure. That closure deliberately returns without touching
+    // UObjects once cancellation is observed, so do not index the unfilled
+    // response/parameter vectors below.
+    if (cancellation && cancellation->load())
+        return;
+    if (responses.size() != response_offset + requests.size() ||
+        render_params.size() != requests.size()) {
+        throw std::runtime_error("Image capture preparation returned an incomplete request set");
+    }
 
     if (use_safe_method && visibilityChanged) {
         // We don't do game/render thread synchronization for safe method.
         // We just blindly sleep for 200ms (the old way)
         std::this_thread::sleep_for(std::chrono::duration<double>(0.2));
-    }
-
-    if (nullptr == gameViewport) {
-        return;
     }
 
     {
@@ -381,7 +385,7 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
             bool warmup_complete = false;
             for (int32 warmup_index = 0; warmup_index < 2; ++warmup_index) {
                 std::vector<std::shared_ptr<RenderRequest::RenderResult>> warmup_results;
-                RenderRequest warmup_request{ gameViewport, []() {} };
+                RenderRequest warmup_request{ []() {} };
                 warmup_request.getScreenshot(
                     label_cube_warmup_params.data(),
                     warmup_results,
@@ -409,12 +413,12 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         }
     }
 
-    auto query_camera_pose_cb = [this, &requests, &responses]() {
+    auto query_camera_pose_cb = [this, &requests, &responses, response_offset]() {
         size_t count = requests.size();
         for (size_t i = 0; i < count; i++) {
             const ImageRequest& request = requests.at(i);
             APIPCamera* camera = cameras_->at(request.camera_name);
-            ImageResponse& response = responses.at(i);
+            ImageResponse& response = responses.at(response_offset + i);
             auto camera_pose = camera->getPose();
             response.camera_position = camera_pose.position;
             response.camera_orientation = camera_pose.orientation;
@@ -441,14 +445,18 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
                 }
             }
         };
-    RenderRequest render_request{ gameViewport, std::move(query_camera_pose_cb),
+    RenderRequest render_request{ std::move(query_camera_pose_cb),
                                   std::move(prepare_capture_and_snapshot_calibration) };
 
     render_request.getScreenshot(render_params.data(), render_results, render_params.size(), use_safe_method, cancellation);
 
+    if (render_results.size() != requests.size()) {
+        throw std::runtime_error("Image capture readback returned an incomplete result set");
+    }
+
     for (unsigned int i = 0; i < requests.size(); ++i) {
         const ImageRequest& request = requests.at(i);
-        ImageResponse& response = responses.at(i);
+        ImageResponse& response = responses.at(response_offset + i);
 
         response.camera_name = request.camera_name;
         response.recording_jpeg = request.recording_jpeg;
@@ -456,6 +464,7 @@ void UnrealImageCapture::getSceneCaptureImage(const std::vector<msr::airlib::Ima
         response.request_time_stamp = render_results[i]->request_time_stamp;
         response.time_stamp = render_results[i]->time_stamp;
         response.render_frame_number = render_results[i]->render_frame_number;
+        response.capture_generation = render_results[i]->capture_generation;
         response.has_render_frame_timestamp = render_results[i]->has_render_frame_timestamp;
         if (!render_results[i]->message.empty())
             response.message = render_results[i]->message;

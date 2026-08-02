@@ -84,6 +84,7 @@ public:
     void addAnnotationCamera(FString name, FObjectAnnotator::AnnotatorType type, float max_view_distance = -1.0f, bool use_source_stencil_backend = false);
     void setupCameraFromSettings(const APIPCamera::CameraSetting& camera_setting, const NedTransform& ned_transform);
     void setCameraPose(const msr::airlib::Pose& relative_pose);
+    void setCameraOrientation(const msr::airlib::Quaternionr& relative_orientation);
     bool canControlHostedGimbal() const;
     void setHostedGimbalOrientation(const FRotator& relative_rotator, float duration_seconds = 0.0f);
     void resetHostedGimbalOrientation(float duration_seconds = 0.0f);

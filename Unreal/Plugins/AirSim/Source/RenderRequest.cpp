@@ -6,6 +6,8 @@
 #include "Async/TaskGraphInterfaces.h"
 #include "AirBlueprintLib.h"
 #include "Async/Async.h"
+#include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "common/ClockFactory.hpp"
 #include <chrono>
 #include <condition_variable>
@@ -17,6 +19,11 @@ extern CORE_API uint32 GFrameNumber;
 namespace
 {
     using ImageType = msr::airlib::ImageCaptureBase::ImageType;
+
+    // Each explicit scene-capture transaction gets a generation distinct from
+    // every other capture in this process.  The generation is kept alongside
+    // the source-time snapshot until the matching readback completes.
+    std::atomic<uint64_t> GRenderCaptureGeneration{ 0 };
 
     struct FCubeFaceBasis
     {
@@ -81,37 +88,7 @@ namespace
                image_type == ImageType::Lighting;
     }
 
-    void CaptureSceneForRequest(const RenderRequest::RenderParams* params)
-    {
-        if (params == nullptr) {
-            return;
-        }
-
-        const bool capture_immediately =
-            params->image_type == ImageType::Segmentation ||
-            params->image_type == ImageType::Infrared;
-
-        if (params->isEquirectangular() &&
-            params->render_target_cube != nullptr &&
-            params->render_component_cube != nullptr) {
-            if (capture_immediately) {
-                params->render_component_cube->CaptureScene();
-            }
-            else {
-                params->render_component_cube->CaptureSceneDeferred();
-            }
-        }
-        else if (params->render_target != nullptr && params->render_component != nullptr) {
-            if (capture_immediately) {
-                params->render_component->CaptureScene();
-            }
-            else {
-                params->render_component->CaptureSceneDeferred();
-            }
-        }
-    }
-
-    bool UsesSameCaptureTarget(
+    bool HasSameRenderTarget(
         const RenderRequest::RenderParams* lhs,
         const RenderRequest::RenderParams* rhs)
     {
@@ -120,30 +97,185 @@ namespace
         }
 
         if (lhs->isEquirectangular()) {
-            return lhs->render_component_cube == rhs->render_component_cube &&
+            return lhs->render_target_cube != nullptr &&
                    lhs->render_target_cube == rhs->render_target_cube;
         }
 
-        return lhs->render_component == rhs->render_component &&
+        return lhs->render_target != nullptr &&
                lhs->render_target == rhs->render_target;
+    }
+
+    bool UsesSameCaptureTarget(
+        const RenderRequest::RenderParams* lhs,
+        const RenderRequest::RenderParams* rhs)
+    {
+        if (!HasSameRenderTarget(lhs, rhs)) {
+            return false;
+        }
+
+        if (lhs->isEquirectangular()) {
+            return lhs->render_component_cube == rhs->render_component_cube;
+        }
+
+        return lhs->render_component == rhs->render_component;
+    }
+
+    bool IsCaptureCulledByDetailMode(const USceneCaptureComponent* capture)
+    {
+        if (capture == nullptr || capture->GetWorld() == nullptr) {
+            return true;
+        }
+
+        const IConsoleVariable* cvar =
+            IConsoleManager::Get().FindConsoleVariable(TEXT("r.SceneCapture.CullByDetailMode"));
+        return cvar != nullptr &&
+               cvar->GetInt() != 0 &&
+               static_cast<int32>(capture->DetailMode) > capture->GetWorld()->GetDetailMode();
+    }
+
+    bool ValidateExplicitCapture(
+        const RenderRequest::RenderParams* params,
+        std::string& error)
+    {
+        if (params == nullptr) {
+            error = "Image capture request is missing render parameters";
+            return false;
+        }
+
+        if (params->isEquirectangular() &&
+            params->render_target_cube != nullptr &&
+            params->render_component_cube != nullptr) {
+            if (params->render_component_cube->TextureTarget != params->render_target_cube) {
+                error = "Cube capture render target changed before the capture transaction";
+                return false;
+            }
+            if (params->render_component_cube->GetWorld() == nullptr ||
+                params->render_component_cube->GetWorld()->Scene == nullptr ||
+                !params->render_component_cube->IsVisible() ||
+                IsCaptureCulledByDetailMode(params->render_component_cube)) {
+                error = "Cube capture component is not ready to render";
+                return false;
+            }
+            return true;
+        }
+
+        if (params->render_target != nullptr && params->render_component != nullptr) {
+            if (params->render_component->TextureTarget != params->render_target) {
+                error = "Capture render target changed before the capture transaction";
+                return false;
+            }
+            if (params->render_component->bRenderInMainRenderer) {
+                error = "Capture configured for the main renderer cannot provide an immediate frame-proven readback";
+                return false;
+            }
+            if (params->render_component->GetWorld() == nullptr ||
+                params->render_component->GetWorld()->Scene == nullptr ||
+                !params->render_component->IsVisible() ||
+                IsCaptureCulledByDetailMode(params->render_component)) {
+                error = "Capture component is not ready to render";
+                return false;
+            }
+            return true;
+        }
+
+        error = "Image capture request has no active render target";
+        return false;
+    }
+
+    void CaptureSceneForRequest(const RenderRequest::RenderParams* params)
+    {
+        check(params != nullptr);
+
+        // CaptureScene enqueues a render command immediately.  The AirSim
+        // readback command is enqueued in the same non-yielding game-thread
+        // transaction immediately afterward, so it observes this generation
+        // rather than a deferred or automatic capture of the same target.
+        if (params->isEquirectangular()) {
+            params->render_component_cube->CaptureScene();
+        }
+        else {
+            params->render_component->CaptureScene();
+        }
+    }
+
+    void RejectConflictingCaptureTargets(
+        std::shared_ptr<RenderRequest::RenderParams> params[],
+        unsigned int request_count)
+    {
+        constexpr const char* conflict_error =
+            "Distinct scene captures share one render target in the same capture transaction";
+        for (unsigned int index = 0; index < request_count; ++index) {
+            for (unsigned int other_index = index + 1; other_index < request_count; ++other_index) {
+                RenderRequest::RenderParams* lhs = params[index].get();
+                RenderRequest::RenderParams* rhs = params[other_index].get();
+                if (!HasSameRenderTarget(lhs, rhs) || UsesSameCaptureTarget(lhs, rhs)) {
+                    continue;
+                }
+
+                lhs->capture_transaction_rejected = true;
+                lhs->capture_error = conflict_error;
+                rhs->capture_transaction_rejected = true;
+                rhs->capture_error = conflict_error;
+            }
+        }
     }
 
     void CaptureScenesForRequests(
         std::shared_ptr<RenderRequest::RenderParams> params[],
-        unsigned int request_count)
+        unsigned int request_count,
+        msr::airlib::TTimePoint capture_time_stamp,
+        uint64_t capture_frame_number)
     {
         for (unsigned int index = 0; index < request_count; ++index) {
+            RenderRequest::RenderParams* current = params[index].get();
+            if (current == nullptr) {
+                continue;
+            }
+            current->capture_time_stamp = 0;
+            current->capture_frame_number = 0;
+            current->capture_generation = 0;
+            current->has_capture_provenance = false;
+            current->capture_transaction_rejected = false;
+            current->capture_error.clear();
+        }
+
+        RejectConflictingCaptureTargets(params, request_count);
+
+        for (unsigned int index = 0; index < request_count; ++index) {
+            RenderRequest::RenderParams* current = params[index].get();
+            if (current == nullptr || current->capture_transaction_rejected) {
+                continue;
+            }
+
             bool already_captured = false;
             for (unsigned int previous_index = 0; previous_index < index; ++previous_index) {
-                if (UsesSameCaptureTarget(params[index].get(), params[previous_index].get())) {
+                RenderRequest::RenderParams* previous = params[previous_index].get();
+                if (UsesSameCaptureTarget(current, previous)) {
+                    current->capture_time_stamp = previous->capture_time_stamp;
+                    current->capture_frame_number = previous->capture_frame_number;
+                    current->capture_generation = previous->capture_generation;
+                    current->has_capture_provenance = previous->has_capture_provenance;
+                    current->capture_error = previous->capture_error;
                     already_captured = true;
                     break;
                 }
             }
 
-            if (!already_captured) {
-                CaptureSceneForRequest(params[index].get());
+            if (already_captured) {
+                continue;
             }
+
+            std::string capture_error;
+            if (!ValidateExplicitCapture(current, capture_error)) {
+                current->capture_error = std::move(capture_error);
+                continue;
+            }
+
+            current->capture_time_stamp = capture_time_stamp;
+            current->capture_frame_number = capture_frame_number;
+            current->capture_generation = GRenderCaptureGeneration.fetch_add(1, std::memory_order_relaxed) + 1;
+            current->has_capture_provenance = true;
+            CaptureSceneForRequest(current);
         }
     }
 
@@ -554,11 +686,10 @@ namespace
     }
 }
 
-RenderRequest::RenderRequest(UGameViewportClient* game_viewport,
-                             std::function<void()>&& query_camera_pose_cb,
+RenderRequest::RenderRequest(std::function<void()>&& query_camera_pose_cb,
                              std::function<void()>&& prepare_capture_cb)
     : params_(nullptr), results_(nullptr), req_size_(0), wait_signal_(new msr::airlib::WorkerThreadSignal),
-      game_viewport_(game_viewport), query_camera_pose_cb_(std::move(query_camera_pose_cb)),
+      query_camera_pose_cb_(std::move(query_camera_pose_cb)),
       prepare_capture_cb_(std::move(prepare_capture_cb))
 {
 }
@@ -577,8 +708,30 @@ struct RenderRequest::FCancellableRequestState
     std::atomic<bool> Complete{ false };
     std::atomic<bool> CleanupQueued{ false };
     bool RenderCommandQueued = false;
-    bool ViewportModified = false;
 };
+
+void RenderRequest::beginCaptureTransaction()
+{
+    check(IsInGameThread());
+
+    if (prepare_capture_cb_) {
+        prepare_capture_cb_();
+    }
+
+    // This is the logical capture instant: all simulation/camera state has
+    // been applied on the game thread, and the explicit CaptureScene commands
+    // below snapshot that state into the render-command stream. It is not a
+    // request, OnEndDraw, GPU-completion, compression, or transport timestamp.
+    request_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
+    render_time_stamp_ = request_time_stamp_;
+    render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
+    if (query_camera_pose_cb_) {
+        query_camera_pose_cb_();
+    }
+
+    CaptureScenesForRequests(
+        params_, req_size_, render_time_stamp_, render_frame_number_);
+}
 
 // Read pixels from render target using render thread, then package the result
 // on the thread that calls this method.
@@ -603,13 +756,13 @@ void RenderRequest::getScreenshot(
         results[i]->request_time_stamp = 0;
         results[i]->time_stamp = 0;
         results[i]->render_frame_number = 0;
+        results[i]->capture_generation = 0;
         results[i]->has_render_frame_timestamp = false;
     }
 
     request_time_stamp_ = 0;
     render_time_stamp_ = 0;
     render_frame_number_ = 0;
-    has_render_frame_timestamp_ = false;
 
     //make sure we are not on the rendering thread
     CheckNotBlockedOnRenderThread();
@@ -691,47 +844,23 @@ void RenderRequest::getScreenshot(
         }
     }
     else if (cancellation == nullptr) {
-        //wait for render thread to pick up our task
+        // Keep the request alive until its render-thread readback has run.
         params_ = params;
         results_ = results.data();
         req_size_ = req_size;
 
-        // Queue up the task of querying camera pose in the game thread and synchronizing render thread with camera pose
+        // CaptureScene enqueues its render commands synchronously from this
+        // game-thread closure. Queue the readback immediately behind them;
+        // waiting for OnEndDraw would permit a later deferred capture to
+        // overwrite the target before it was read.
         AsyncTask(ENamedThreads::GameThread, [this]() {
-            check(IsInGameThread());
-
-            saved_DisableWorldRendering_ = game_viewport_->bDisableWorldRendering;
-            game_viewport_->bDisableWorldRendering = 0;
-            if (prepare_capture_cb_)
-                prepare_capture_cb_();
-            request_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
-            end_draw_handle_ = game_viewport_->OnEndDraw().AddLambda([this] {
-                check(IsInGameThread());
-
-                // capture CameraPose for this frame
-                render_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
-                render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
-                has_render_frame_timestamp_ = true;
-                query_camera_pose_cb_();
-
-                // The completion is called immeidately after GameThread sends the
-                // rendering commands to RenderThread. Hence, our ExecuteTask will
-                // execute *immediately* after RenderThread renders the scene!
-                RenderRequest* This = this;
-                ENQUEUE_RENDER_COMMAND(SceneDrawCompletion)
-                (
-                    [This](FRHICommandListImmediate& RHICmdList) {
-                        This->ExecuteTask();
-                    });
-
-                game_viewport_->bDisableWorldRendering = saved_DisableWorldRendering_;
-
-                assert(end_draw_handle_.IsValid());
-                game_viewport_->OnEndDraw().Remove(end_draw_handle_);
-            });
-
-            // while we're still on GameThread, enqueue request for capture the scene!
-            CaptureScenesForRequests(params_, req_size_);
+            beginCaptureTransaction();
+            RenderRequest* request = this;
+            ENQUEUE_RENDER_COMMAND(AirSimFrameProvenReadback)
+            (
+                [request](FRHICommandListImmediate& RHICmdList) {
+                    request->ExecuteTask();
+                });
         });
 
         // wait for this task to complete
@@ -763,62 +892,20 @@ void RenderRequest::getScreenshot(
                 return;
             }
 
-            request->saved_DisableWorldRendering_ = request->game_viewport_->bDisableWorldRendering;
-            request->game_viewport_->bDisableWorldRendering = 0;
-            state->ViewportModified = true;
-            if (request->prepare_capture_cb_)
-                request->prepare_capture_cb_();
-            request->request_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
-            request->end_draw_handle_ = request->game_viewport_->OnEndDraw().AddLambda([state]() {
-                std::lock_guard<std::mutex> end_draw_lock(state->Mutex);
-                RenderRequest* active_request = state->Request;
-                if (active_request == nullptr)
-                    return;
-
-                if (state->Cancellation->load()) {
-                    if (state->ViewportModified) {
-                        active_request->game_viewport_->bDisableWorldRendering = active_request->saved_DisableWorldRendering_;
-                        state->ViewportModified = false;
+            request->beginCaptureTransaction();
+            state->RenderCommandQueued = true;
+            ENQUEUE_RENDER_COMMAND(AirSimFrameProvenReadbackCancellable)
+            (
+                [state](FRHICommandListImmediate& RHICmdList) {
+                    std::lock_guard<std::mutex> render_lock(state->Mutex);
+                    RenderRequest* render_request = state->Request;
+                    if (render_request != nullptr) {
+                        render_request->ExecuteTask(false);
+                        state->Request = nullptr;
                     }
-                    if (active_request->end_draw_handle_.IsValid()) {
-                        active_request->game_viewport_->OnEndDraw().Remove(active_request->end_draw_handle_);
-                        active_request->end_draw_handle_.Reset();
-                    }
-                    state->Request = nullptr;
                     state->Complete = true;
                     state->Condition.notify_all();
-                    return;
-                }
-
-                active_request->render_time_stamp_ = msr::airlib::ClockFactory::get()->nowNanos();
-                active_request->render_frame_number_ = static_cast<uint64_t>(GFrameNumber);
-                active_request->has_render_frame_timestamp_ = true;
-                active_request->query_camera_pose_cb_();
-                state->RenderCommandQueued = true;
-                ENQUEUE_RENDER_COMMAND(SceneDrawCompletionCancellable)
-                (
-                    [state](FRHICommandListImmediate& RHICmdList) {
-                        std::lock_guard<std::mutex> render_lock(state->Mutex);
-                        RenderRequest* render_request = state->Request;
-                        if (render_request != nullptr) {
-                            render_request->ExecuteTask(false);
-                            state->Request = nullptr;
-                        }
-                        state->Complete = true;
-                        state->Condition.notify_all();
-                    });
-
-                if (state->ViewportModified) {
-                    active_request->game_viewport_->bDisableWorldRendering = active_request->saved_DisableWorldRendering_;
-                    state->ViewportModified = false;
-                }
-                if (active_request->end_draw_handle_.IsValid()) {
-                    active_request->game_viewport_->OnEndDraw().Remove(active_request->end_draw_handle_);
-                    active_request->end_draw_handle_.Reset();
-                }
-            });
-
-            CaptureScenesForRequests(request->params_, request->req_size_);
+                });
         });
 
         double next_warning_time = FPlatformTime::Seconds() + 5.0;
@@ -829,15 +916,6 @@ void RenderRequest::getScreenshot(
                     RenderRequest* active_request = state->Request;
                     if (active_request == nullptr || state->Complete.load() || state->RenderCommandQueued)
                         return;
-
-                    if (state->ViewportModified) {
-                        active_request->game_viewport_->bDisableWorldRendering = active_request->saved_DisableWorldRendering_;
-                        state->ViewportModified = false;
-                    }
-                    if (active_request->end_draw_handle_.IsValid()) {
-                        active_request->game_viewport_->OnEndDraw().Remove(active_request->end_draw_handle_);
-                        active_request->end_draw_handle_.Reset();
-                    }
                     state->Request = nullptr;
                     state->Complete = true;
                     state->Condition.notify_all();
@@ -937,17 +1015,29 @@ void RenderRequest::ExecuteTask(bool signal_completion)
         const msr::airlib::TTimePoint request_time_stamp = request_time_stamp_ != 0
             ? request_time_stamp_
             : msr::airlib::ClockFactory::get()->nowNanos();
-        const msr::airlib::TTimePoint render_time_stamp = render_time_stamp_ != 0
-            ? render_time_stamp_
-            : request_time_stamp;
         for (unsigned int i = 0; i < req_size_; ++i) {
-            results_[i]->request_time_stamp = request_time_stamp;
-            results_[i]->time_stamp = render_time_stamp;
-            results_[i]->render_frame_number = render_frame_number_;
-            results_[i]->has_render_frame_timestamp = has_render_frame_timestamp_;
-            if (params_[i]->isEquirectangular() && params_[i]->render_target_cube != nullptr && params_[i]->render_component_cube != nullptr) {
+            const RenderParams* params = params_[i].get();
+            RenderResult* result = results_[i].get();
+            if (params == nullptr || result == nullptr) {
+                continue;
+            }
+
+            result->request_time_stamp = request_time_stamp;
+            result->time_stamp = params->capture_time_stamp;
+            result->render_frame_number = params->capture_frame_number;
+            result->capture_generation = params->capture_generation;
+            result->has_render_frame_timestamp =
+                params->has_capture_provenance && params->capture_generation != 0;
+            if (!result->has_render_frame_timestamp) {
+                result->message = params->capture_error.empty()
+                    ? "Image capture did not produce a frame-proven render transaction"
+                    : params->capture_error;
+                continue;
+            }
+
+            if (params->isEquirectangular() && params->render_target_cube != nullptr && params->render_component_cube != nullptr) {
                 FIntPoint cube_size;
-                setupEquirectangularRenderResource(params_[i]->render_target_cube, cube_size);
+                setupEquirectangularRenderResource(params->render_target_cube, cube_size);
                 const int32 cube_width = cube_size.X;
                 if (!IsCubeFaceReadbackSupported()) {
                     UE_LOG(LogTemp, Error, TEXT("AirSim equirectangular readback is not supported on the active Vulkan RHI. Use D3D11 or D3D12 for equirectangular capture."));
@@ -955,10 +1045,10 @@ void RenderRequest::ExecuteTask(bool signal_completion)
                 else if (cube_width > 0) {
                     FRHICommandListImmediate& RHICmdList = GetImmediateCommandList_ForRenderCommand();
                     FTextureRenderTargetCubeResource* cube_resource =
-                        static_cast<FTextureRenderTargetCubeResource*>(params_[i]->render_target_cube->GetRenderTargetResource());
+                        static_cast<FTextureRenderTargetCubeResource*>(params->render_target_cube->GetRenderTargetResource());
 
                     if (cube_resource != nullptr && cube_resource->TextureRHI.IsValid()) {
-                        if (!params_[i]->pixels_as_float && UseGlobalEquirectangularScenePipeline(params_[i]->image_type)) {
+                        if (!params->pixels_as_float && UseGlobalEquirectangularScenePipeline(params->image_type)) {
                             TArray<FFloat16Color> cube_faces[6];
                             for (int32 face = 0; face < 6; ++face) {
                                 FReadSurfaceDataFlags flags(RCM_MinMax, static_cast<ECubeFace>(face));
@@ -969,9 +1059,9 @@ void RenderRequest::ExecuteTask(bool signal_completion)
                                     flags);
                             }
 
-                            ConvertCubeFacesToEquirectangularSceneColor(cube_faces, cube_width, params_[i].get(), results_[i].get());
+                            ConvertCubeFacesToEquirectangularSceneColor(cube_faces, cube_width, params, result);
                         }
-                        else if (!params_[i]->pixels_as_float) {
+                        else if (!params->pixels_as_float) {
                             TArray<FColor> cube_faces[6];
                             for (int32 face = 0; face < 6; ++face) {
                                 FReadSurfaceDataFlags flags(RCM_UNorm, static_cast<ECubeFace>(face));
@@ -986,8 +1076,8 @@ void RenderRequest::ExecuteTask(bool signal_completion)
                             ConvertCubeFacesToEquirectangularColor(
                                 cube_faces,
                                 cube_width,
-                                UseBilinearEquirectangularSampling(params_[i]->image_type),
-                                results_[i].get());
+                                UseBilinearEquirectangularSampling(params->image_type),
+                                result);
                         }
                         else {
                             TArray<FFloat16Color> cube_faces[6];
@@ -1000,34 +1090,34 @@ void RenderRequest::ExecuteTask(bool signal_completion)
                                     flags);
                             }
 
-                            ConvertCubeFacesToEquirectangularFloat(cube_faces, cube_width, params_[i].get(), results_[i].get());
+                            ConvertCubeFacesToEquirectangularFloat(cube_faces, cube_width, params, result);
                         }
                     }
                 }
             }
-            else if (params_[i]->render_target != nullptr && params_[i]->render_component != nullptr) {
+            else if (params->render_target != nullptr && params->render_component != nullptr) {
                 FRHICommandListImmediate& RHICmdList = GetImmediateCommandList_ForRenderCommand();
-                auto rt_resource = params_[i]->render_target->GetRenderTargetResource();
+                auto rt_resource = params->render_target->GetRenderTargetResource();
                 if (rt_resource != nullptr) {
                     const FTexture2DRHIRef& rhi_texture = rt_resource->GetRenderTargetTexture();
                     FIntPoint size;
-                    auto flags = setupRenderResource(rt_resource, params_[i].get(), results_[i].get(), size);
+                    auto flags = setupRenderResource(rt_resource, params, result, size);
 
                     //should we be using ENQUEUE_UNIQUE_RENDER_COMMAND_ONEPARAMETER which was in original commit by @saihv
                     //https://github.com/Microsoft/AirSim/pull/162/commits/63e80c43812300a8570b04ed42714a3f6949e63f#diff-56b790f9394f7ca1949ddbb320d8456fR64
-                    if (!params_[i]->pixels_as_float) {
+                    if (!params->pixels_as_float) {
                         //below is undocumented method that avoids flushing, but it seems to segfault every 2000 or so calls
                         RHICmdList.ReadSurfaceData(
                             rhi_texture,
                             FIntRect(0, 0, size.X, size.Y),
-                            results_[i]->bmp,
+                            result->bmp,
                             flags);
                     }
                     else {
                         RHICmdList.ReadSurfaceFloatData(
                             rhi_texture,
                             FIntRect(0, 0, size.X, size.Y),
-                            results_[i]->bmp_float,
+                            result->bmp_float,
                             CubeFace_PosX,
                             0,
                             0);

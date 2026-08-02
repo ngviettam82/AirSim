@@ -71,6 +71,7 @@ target_link_libraries(airsim_ros ${OpenCV_LIBS} yaml-cpp AirLib airsim_settings_
 ament_target_dependencies(airsim_ros 
   rclcpp
   sensor_msgs
+  std_msgs
   geometry_msgs
   nav_msgs
   image_transport

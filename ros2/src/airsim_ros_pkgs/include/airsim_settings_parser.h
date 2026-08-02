@@ -19,7 +19,7 @@ public:
     typedef msr::airlib::AirSimSettings AirSimSettings;
 
 public:
-    AirSimSettingsParser(const std::string& host_ip, uint16_t host_port);
+    AirSimSettingsParser(const std::string& host_ip, uint16_t host_port, float rpc_timeout_sec);
     ~AirSimSettingsParser() = default;
 
     bool success();
@@ -33,4 +33,5 @@ private:
     std::string settings_text_;
     std::string host_ip_;
     uint16_t host_port_;
+    float rpc_timeout_sec_;
 };

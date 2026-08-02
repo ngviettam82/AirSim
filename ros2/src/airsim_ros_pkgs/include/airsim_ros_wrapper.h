@@ -37,6 +37,7 @@ STRICT_MODE_OFF //todo what does this do?
 #include <airsim_interfaces/msg/instance_segmentation_label.hpp>
 #include <airsim_interfaces/msg/instance_segmentation_list.hpp>
 #include <airsim_interfaces/msg/object_transforms_list.hpp>
+#include <airsim_interfaces/msg/px4_hil_sensor_clock.hpp>
 #include <airsim_interfaces/msg/string_array.hpp>
 #include <airsim_interfaces/msg/environment.hpp>
 #include <chrono>
@@ -52,6 +53,7 @@ STRICT_MODE_OFF //todo what does this do?
 #include <nav_msgs/msg/odometry.hpp>
 #include <opencv2/opencv.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
 #include <sensor_msgs/distortion_models.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/image_encodings.hpp>
@@ -66,6 +68,7 @@ STRICT_MODE_OFF //todo what does this do?
 #include <pcl/io/pcd_io.h>
 #include <sensor_msgs/msg/range.hpp>
 #include <rosgraph_msgs/msg/clock.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -76,8 +79,11 @@ STRICT_MODE_OFF //todo what does this do?
 #include <tf2_ros/transform_listener.h>
 #include <tf2/convert.h>
 #include <unordered_map>
+#include <unordered_set>
+#include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 struct PointXYZRGBI
 {
@@ -152,6 +158,7 @@ class AirsimROSWrapper
     using GPULidarSetting = msr::airlib::AirSimSettings::GPULidarSetting;
     using EchoSetting = msr::airlib::AirSimSettings::EchoSetting;
     using VehicleSetting = msr::airlib::AirSimSettings::VehicleSetting;
+    using Ros2ControlMode = msr::airlib::AirSimSettings::Ros2Setting::ControlMode;
     using ImageRequest = msr::airlib::ImageCaptureBase::ImageRequest;
     using ImageResponse = msr::airlib::ImageCaptureBase::ImageResponse;
     using ImageType = msr::airlib::ImageCaptureBase::ImageType;
@@ -164,7 +171,7 @@ public:
         COMPUTERVISION
     };
 
-    AirsimROSWrapper(const std::shared_ptr<rclcpp::Node> nh, const std::shared_ptr<rclcpp::Node> nh_img, const std::shared_ptr<rclcpp::Node> nh_lidar, const std::shared_ptr<rclcpp::Node> nh_gpulidar, const std::shared_ptr<rclcpp::Node> nh_echo, const std::string& host_ip, const std::shared_ptr<rclcpp::CallbackGroup> callbackGroup, bool enable_api_control, bool enable_object_transforms_list, uint16_t host_port);
+    AirsimROSWrapper(const std::shared_ptr<rclcpp::Node> nh, const std::shared_ptr<rclcpp::Node> nh_img, const std::shared_ptr<rclcpp::Node> nh_lidar, const std::shared_ptr<rclcpp::Node> nh_gpulidar, const std::shared_ptr<rclcpp::Node> nh_echo, const std::string& host_ip, bool enable_api_control, bool enable_object_transforms_list, uint16_t host_port, float rpc_timeout_sec);
     ~AirsimROSWrapper(){};
 
     void initialize_airsim();
@@ -176,12 +183,30 @@ public:
     bool is_used_echo_timer_cb_queue_;
 
 private:
+    bool is_px4_control_mode() const;
+    bool has_direct_multirotor_control() const;
+    void log_rpc_error(const char* operation, rpc::rpc_error& error) const;
+    void log_callback_error(const char* operation, const std::exception& error) const;
+    void log_unknown_callback_error(const char* operation) const;
+    bool validate_vehicle_group(const std::vector<std::string>& vehicle_names,
+                                const char* operation) const;
+
     // utility struct for a SINGLE robot
     class VehicleROS
     {
     public:
         virtual ~VehicleROS() {}
         std::string vehicle_name_;
+        // APIPCamera reports position in the pawn-start local NED frame.
+        // Its axes remain aligned with global NED, so image-time camera poses
+        // need this fixed translation to be published under the ROS world
+        // frame without composing the initial vehicle rotation twice.
+        msr::airlib::Vector3r initial_global_ned_position_ =
+            msr::airlib::Vector3r::Zero();
+        // Cameras with a renderable ROS image stream publish their body and
+        // optical transforms from the exact image response instead of a stale
+        // startup snapshot.  Camera names retain their AirSim spelling here.
+        std::unordered_set<std::string> image_time_camera_names_;
 
         /// All things ROS
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_local_pub_;
@@ -189,7 +214,12 @@ private:
         rclcpp::Publisher<airsim_interfaces::msg::Environment>::SharedPtr env_pub_;
         rclcpp::Publisher<airsim_interfaces::msg::InstanceSegmentationList>::SharedPtr instance_segmentation_pub_;
         rclcpp::Publisher<airsim_interfaces::msg::ObjectTransformsList>::SharedPtr object_transforms_pub_;
+        // Published only in Ros2.ControlMode PX4. It proves the clock source
+        // for camera/PX4 association without changing the sensor data itself.
+        rclcpp::Publisher<airsim_interfaces::msg::Px4HilSensorClock>::SharedPtr
+            hil_sensor_clock_pub_;
         airsim_interfaces::msg::Environment env_msg_;
+        airsim_interfaces::msg::Px4HilSensorClock hil_sensor_clock_msg_;
 
         std::vector<SensorPublisher<airsim_interfaces::msg::Altimeter>> barometer_pubs_;
         std::vector<SensorPublisher<sensor_msgs::msg::Imu>> imu_pubs_;
@@ -228,7 +258,7 @@ private:
         rclcpp::Publisher<airsim_interfaces::msg::CarState>::SharedPtr car_state_pub_;
         airsim_interfaces::msg::CarState car_state_msg_;
 
-        bool has_car_cmd_;
+        bool has_car_cmd_ = false;
         msr::airlib::CarApiBase::CarControls car_cmd_;
     };
 
@@ -253,7 +283,7 @@ private:
         rclcpp::Service<airsim_interfaces::srv::Takeoff>::SharedPtr takeoff_srvr_;
         rclcpp::Service<airsim_interfaces::srv::Land>::SharedPtr land_srvr_;
 
-        bool has_vel_cmd_;
+        bool has_vel_cmd_ = false;
         VelCmd vel_cmd_;
     };
 
@@ -288,24 +318,28 @@ private:
     void publish_vehicle_state();
 
     /// ROS service callbacks
-    bool takeoff_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, const std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response, const std::string& vehicle_name);
-    bool takeoff_group_srv_cb(const std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Request> request, const std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Response> response);
-    bool takeoff_all_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, const std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response);
-    bool land_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Land::Request> request, const std::shared_ptr<airsim_interfaces::srv::Land::Response> response, const std::string& vehicle_name);
-    bool land_group_srv_cb(const std::shared_ptr<airsim_interfaces::srv::LandGroup::Request> request, const std::shared_ptr<airsim_interfaces::srv::LandGroup::Response> response);
-    bool land_all_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Land::Request> request, const std::shared_ptr<airsim_interfaces::srv::Land::Response> response);
-    bool reset_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Reset::Request> request, const std::shared_ptr<airsim_interfaces::srv::Reset::Response> response);
-    bool instance_segmentation_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Response> response);
-    bool object_transforms_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Response> response);
-    bool list_scene_object_tags_srv_cb(const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Request> request, const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Response> response);
+    void takeoff_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, const std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response, const std::string& vehicle_name);
+    void takeoff_group_srv_cb(const std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Request> request, const std::shared_ptr<airsim_interfaces::srv::TakeoffGroup::Response> response);
+    void takeoff_all_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Takeoff::Request> request, const std::shared_ptr<airsim_interfaces::srv::Takeoff::Response> response);
+    void land_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Land::Request> request, const std::shared_ptr<airsim_interfaces::srv::Land::Response> response, const std::string& vehicle_name);
+    void land_group_srv_cb(const std::shared_ptr<airsim_interfaces::srv::LandGroup::Request> request, const std::shared_ptr<airsim_interfaces::srv::LandGroup::Response> response);
+    void land_all_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Land::Request> request, const std::shared_ptr<airsim_interfaces::srv::Land::Response> response);
+    void reset_srv_cb(const std::shared_ptr<airsim_interfaces::srv::Reset::Request> request, const std::shared_ptr<airsim_interfaces::srv::Reset::Response> response);
+    void instance_segmentation_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshInstanceSegmentation::Response> response, const std::string& vehicle_name);
+    void object_transforms_refresh_cb(const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Request> request, const std::shared_ptr<airsim_interfaces::srv::RefreshObjectTransforms::Response> response, const std::string& vehicle_name);
+    void list_scene_object_tags_srv_cb(const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Request> request, const std::shared_ptr<airsim_interfaces::srv::ListSceneObjectTags::Response> response);
 
     /// ROS tf broadcasters
     void publish_odom_tf(const nav_msgs::msg::Odometry& odom_msg);
+    void publish_image_time_camera_tf(const ImageResponse& img_response,
+                                      const std::string& vehicle_name);
 
     /// camera helper methods
     sensor_msgs::msg::CameraInfo generate_cam_info(const std::string& camera_name, const CameraSetting& camera_setting, const CaptureSetting& capture_setting) const;
 
     std::shared_ptr<sensor_msgs::msg::Image> get_img_msg_from_response(const ImageResponse& img_response, const rclcpp::Time curr_ros_time, const std::string frame_id);
+    std::shared_ptr<sensor_msgs::msg::CompressedImage> get_compressed_img_msg_from_response(
+        const ImageResponse& img_response, const std::string& frame_id);
     std::shared_ptr<sensor_msgs::msg::Image> get_depth_img_msg_from_response(const ImageResponse& img_response, const rclcpp::Time curr_ros_time, const std::string frame_id);
 
     void process_and_publish_img_response(const std::vector<ImageResponse>& img_response_vec, const int img_response_idx, const std::string& vehicle_name);
@@ -342,8 +376,8 @@ private:
     sensor_msgs::msg::Imu get_imu_msg_from_airsim(const msr::airlib::ImuBase::Output& imu_data) const;
     airsim_interfaces::msg::Altimeter get_altimeter_msg_from_airsim(const msr::airlib::BarometerBase::Output& alt_data) const;
     sensor_msgs::msg::Range get_range_from_airsim(const msr::airlib::DistanceSensorData& dist_data) const;
-    airsim_interfaces::msg::InstanceSegmentationList get_instance_segmentation_list_msg_from_airsim() const;
-    airsim_interfaces::msg::ObjectTransformsList get_object_transforms_list_msg_from_airsim(rclcpp::Time timestamp) const;
+    airsim_interfaces::msg::InstanceSegmentationList get_instance_segmentation_list_msg_from_airsim(msr::airlib::RpcLibClientBase& client) const;
+    airsim_interfaces::msg::ObjectTransformsList get_object_transforms_list_msg_from_airsim(msr::airlib::RpcLibClientBase& client, rclcpp::Time timestamp) const;
     sensor_msgs::msg::PointCloud2 get_lidar_msg_from_airsim(const msr::airlib::LidarData& lidar_data, const std::string& vehicle_name, const std::string& sensor_name) const;
     airsim_interfaces::msg::StringArray get_lidar_labels_msg_from_airsim(const msr::airlib::LidarData& lidar_data, const std::string& vehicle_name, const std::string& sensor_name) const;
     sensor_msgs::msg::PointCloud2 get_gpulidar_msg_from_airsim(const msr::airlib::GPULidarData& gpulidar_data, const std::string& vehicle_name, const std::string& sensor_name) const;
@@ -382,9 +416,11 @@ private:
     rclcpp::Service<airsim_interfaces::srv::LandGroup>::SharedPtr land_group_srvr_;
 
     AIRSIM_MODE airsim_mode_ = AIRSIM_MODE::DRONE;
+    Ros2ControlMode ros2_control_mode_ = Ros2ControlMode::AirSim;
 
     rclcpp::Service<airsim_interfaces::srv::Reset>::SharedPtr reset_srvr_;
     rclcpp::Publisher<airsim_interfaces::msg::GPSYaw>::SharedPtr origin_geo_point_pub_; // home geo coord of drones
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr control_mode_pub_;
     msr::airlib::GeoPoint origin_geo_point_; // gps coord of unreal origin
     airsim_interfaces::msg::GPSYaw origin_geo_point_msg_; // todo duplicate
     rclcpp::Service<airsim_interfaces::srv::ListSceneObjectTags>::SharedPtr list_scene_object_tags_srvr_;
@@ -393,13 +429,13 @@ private:
     std::unordered_map<std::string, std::unique_ptr<VehicleROS>> vehicle_name_ptr_map_;
     static const std::unordered_map<int, std::string> image_type_int_to_string_map_;
 
-    bool is_vulkan_; // rosparam obtained from launch file. If vulkan is being used, we BGR encoding instead of RGB
-
     std::string host_ip_;
     uint16_t host_port_;
+    float rpc_timeout_sec_;
     bool enable_api_control_;
     bool enable_object_transforms_list_;
     std::unique_ptr<msr::airlib::RpcLibClientBase> airsim_client_;
+    std::unique_ptr<msr::airlib::RpcLibClientBase> airsim_client_services_;
     // seperate busy connections to airsim, update in their own thread
     msr::airlib::RpcLibClientBase airsim_client_images_;
     msr::airlib::RpcLibClientBase airsim_client_lidar_;
@@ -411,16 +447,21 @@ private:
     std::shared_ptr<rclcpp::Node> nh_lidar_;
     std::shared_ptr<rclcpp::Node> nh_gpulidar_;
     std::shared_ptr<rclcpp::Node> nh_echo_;
-    std::shared_ptr<rclcpp::CallbackGroup> cb_;
+    std::shared_ptr<rclcpp::CallbackGroup> image_callback_group_;
+    std::shared_ptr<rclcpp::CallbackGroup> lidar_callback_group_;
+    std::shared_ptr<rclcpp::CallbackGroup> gpulidar_callback_group_;
+    std::shared_ptr<rclcpp::CallbackGroup> echo_callback_group_;
+    std::shared_ptr<rclcpp::CallbackGroup> service_callback_group_;
 
     // todo not sure if async spinners shuold be inside this class, or should be instantiated in airsim_node.cpp, and cb queues should be public
     // todo for multiple drones with multiple sensors, this won't scale. make it a part of VehicleROS?
 
     std::mutex control_mutex_;
     std::mutex image_response_mutex_;
+    std::mutex state_mutex_;
 
     // gimbal control
-    bool has_gimbal_cmd_;
+    bool has_gimbal_cmd_ = false;
     GimbalCmd gimbal_cmd_;
 
     /// ROS tf
@@ -443,7 +484,13 @@ private:
 
     typedef std::pair<std::vector<ImageRequest>, std::string> airsim_img_request_vehicle_name_pair;
     std::vector<airsim_img_request_vehicle_name_pair> airsim_img_request_vehicle_name_pair_vec_;
-    std::vector<image_transport::Publisher> image_pub_vec_;
+    std::vector<std::optional<image_transport::Publisher>> image_pub_vec_;
+    std::vector<rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr>
+        compressed_image_pub_vec_;
+    // Kept parallel with the request, image publisher, compressed publisher,
+    // and CameraInfo vectors. A true entry publishes a direct JPEG transport
+    // topic; false preserves the established raw image_transport topic.
+    std::vector<bool> image_response_compress_vec_;
     std::vector<rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr> cam_info_pub_vec_;
 
     std::unordered_map<std::string, bool> sensor_name_to_passive_enable_map_;
@@ -454,7 +501,8 @@ private:
     /// ROS other publishers
     rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_pub_;
     rosgraph_msgs::msg::Clock ros_clock_;
-    bool publish_clock_;
+    bool publish_clock_ = false;
+    bool image_response_compress_ = false;
 
     rclcpp::Subscription<airsim_interfaces::msg::GimbalAngleQuatCmd>::SharedPtr gimbal_angle_quat_cmd_sub_;
     rclcpp::Subscription<airsim_interfaces::msg::GimbalAngleEulerCmd>::SharedPtr gimbal_angle_euler_cmd_sub_;

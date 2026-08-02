@@ -24,7 +24,9 @@
 #include "sensors/wifi/WifiBase.hpp"
 #include "sensors/gps/GpsBase.hpp"
 #include <exception>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace msr { namespace airlib {
 
@@ -435,6 +437,19 @@ Some methods may not be applicable to specific vehicle in which case an exceptio
         }
 
         virtual ~VehicleApiBase() = default;
+
+        // Returns timestamps of HIL_SENSOR messages that this vehicle queued
+        // for MAVLink transport, ordered from oldest to newest. Most vehicle
+        // APIs do not implement MAVLink HIL and therefore return false.
+        // Appending this optional capability after the destructor preserves
+        // the existing virtual method ordering for incremental builds.
+        virtual bool getHilSensorTimeHistory(size_t max_samples,
+                                             std::vector<uint64_t>& timestamps_us) const
+        {
+            unused(max_samples);
+            timestamps_us.clear();
+            return false;
+        }
 
         //exceptions
         class VehicleControllerException : public std::runtime_error

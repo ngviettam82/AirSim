@@ -358,7 +358,13 @@ class ImageResponse(MsgpackMixin):
     image_data_float = 0.0
     camera_position = Vector3r()
     camera_orientation = Quaternionr()
+    request_time_stamp = np.uint64(0)
     time_stamp = np.uint64(0)
+    render_frame_number = np.uint64(0)
+    capture_generation = np.uint64(0)
+    has_render_frame_timestamp = False
+    camera_info_is_perspective = False
+    camera_horizontal_fov_degrees = 0.0
     message = ''
     pixels_as_float = 0.0
     compress = True

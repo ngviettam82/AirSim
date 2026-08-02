@@ -80,12 +80,20 @@ namespace airlib
             Quaternionr camera_orientation = Quaternionr::Identity();
             // Sim-clock time immediately before the render request is submitted.
             TTimePoint request_time_stamp = 0;
-            // Sim-clock time and UE frame for the rendered frame, before readback.
+            // Sim-clock time sampled on the game thread immediately before the
+            // explicit CaptureScene transaction. The ordered render-thread
+            // readback below is bound to that capture command, not to GPU
+            // completion or response delivery.
             TTimePoint time_stamp = 0;
             uint64_t render_frame_number = 0;
-            // True only when time_stamp was captured by RenderRequest's
-            // OnEndDraw callback for this rendered frame. A request or
-            // readback fallback must never be used as a bag-image stamp.
+            // Process-local monotonically increasing identifier for the exact
+            // capture/readback transaction that produced this payload. It is
+            // zero when no frame provenance was established.
+            uint64_t capture_generation = 0;
+            // True only when an explicit CaptureScene command and its ordered
+            // readback establish that time_stamp identifies these pixels. A
+            // request, readback-completion, or transport fallback must never
+            // be used as a bag-image stamp.
             bool has_render_frame_timestamp = false;
             // These are snapped on the game thread immediately before the
             // scene capture is requested. They describe that capture request

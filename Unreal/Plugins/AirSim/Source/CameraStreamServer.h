@@ -75,9 +75,17 @@ private:
     void ServeRaw(FSocket* Socket, const std::shared_ptr<FSource>& Source, uint64 AfterSequence, bool RequireFreshFrame);
     void ServeGimbalInventory(FSocket* Socket);
     void ServeGimbalCommand(FSocket* Socket, const FString& Body);
-    std::shared_ptr<const FFrame> WaitForFrame(const std::shared_ptr<FSource>& Source, uint64 AfterSequence, double TimeoutSeconds) const;
-    uint64 BeginSubscription(const std::shared_ptr<FSource>& Source, uint64 AfterSequence, bool RequireFreshFrame);
-    void EndSubscription(const std::shared_ptr<FSource>& Source);
+    std::shared_ptr<const FFrame> WaitForFrame(
+        const std::shared_ptr<FSource>& Source,
+        uint64 AfterSequence,
+        double TimeoutSeconds,
+        bool RequireJpeg) const;
+    uint64 BeginSubscription(
+        const std::shared_ptr<FSource>& Source,
+        uint64 AfterSequence,
+        bool RequireFreshFrame,
+        bool RequireJpeg);
+    void EndSubscription(const std::shared_ptr<FSource>& Source, bool RequireJpeg);
     void ReapClientThreadsLocked();
 
     FString BuildInventoryJson() const;

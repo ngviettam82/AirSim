@@ -376,7 +376,8 @@ void FRecordingThread::completeRecord(const PendingRecordPtr& record,
         for (const auto& response : record->responses) {
             record->capture.image_request_time_stamps.push_back(response.request_time_stamp);
             const bool has_render_frame_time =
-                response.has_render_frame_timestamp && response.time_stamp != 0;
+                response.has_render_frame_timestamp && response.capture_generation != 0 &&
+                response.time_stamp != 0;
             record->capture.image_time_stamps.push_back(
                 has_render_frame_time ? response.time_stamp : 0);
             const bool has_timing = has_render_frame_time && record->capture.frame_time_stamp != 0;

@@ -4,6 +4,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 from ament_index_python.packages import get_package_share_directory
@@ -19,10 +20,6 @@ def generate_launch_description():
         "publish_clock",
         default_value='False')
 
-    is_vulkan = DeclareLaunchArgument(
-        "is_vulkan",
-        default_value='True')
-
     host_ip = DeclareLaunchArgument(
         "host_ip",
         default_value='localhost')
@@ -30,6 +27,22 @@ def generate_launch_description():
     host_port = DeclareLaunchArgument(
         "host_port",
         default_value='41451')
+
+    rpc_timeout_sec = DeclareLaunchArgument(
+        "rpc_timeout_sec",
+        default_value='5.0')
+
+    update_airsim_img_response_every_n_sec = DeclareLaunchArgument(
+        "update_airsim_img_response_every_n_sec",
+        default_value='0.05')
+
+    update_airsim_control_every_n_sec = DeclareLaunchArgument(
+        "update_airsim_control_every_n_sec",
+        default_value='0.01')
+
+    image_response_compress = DeclareLaunchArgument(
+        "image_response_compress",
+        default_value='False')
     
     enable_api_control = DeclareLaunchArgument(
         "enable_api_control",
@@ -38,6 +51,10 @@ def generate_launch_description():
     enable_object_transforms_list = DeclareLaunchArgument(
         "enable_object_transforms_list",
         default_value='True')
+
+    world_frame_id = DeclareLaunchArgument(
+        "world_frame_id",
+        default_value='world')
   
     airsim_node = Node(
             package='airsim_ros_pkgs',
@@ -45,17 +62,23 @@ def generate_launch_description():
             name='airsim_node',
             output=LaunchConfiguration('output'),
             parameters=[{
-                'is_vulkan': LaunchConfiguration('is_vulkan'),
-                'update_airsim_img_response_every_n_sec': 0.05,
-                'update_airsim_control_every_n_sec': 0.01,
+                'update_airsim_img_response_every_n_sec': ParameterValue(
+                    LaunchConfiguration('update_airsim_img_response_every_n_sec'), value_type=float),
+                'update_airsim_control_every_n_sec': ParameterValue(
+                    LaunchConfiguration('update_airsim_control_every_n_sec'), value_type=float),
+                'image_response_compress': ParameterValue(
+                    LaunchConfiguration('image_response_compress'), value_type=bool),
                 'update_lidar_every_n_sec': 0.01,
                 'update_gpulidar_every_n_sec': 0.01,
                 'update_echo_every_n_sec': 0.01,
                 'publish_clock': LaunchConfiguration('publish_clock'),
                 'host_ip': LaunchConfiguration('host_ip'),
                 'host_port': LaunchConfiguration('host_port'),
+                'rpc_timeout_sec': ParameterValue(
+                    LaunchConfiguration('rpc_timeout_sec'), value_type=float),
                 'enable_api_control': LaunchConfiguration('enable_api_control'),
-                'enable_object_transforms_list': LaunchConfiguration('enable_object_transforms_list')
+                'enable_object_transforms_list': LaunchConfiguration('enable_object_transforms_list'),
+                'world_frame_id': LaunchConfiguration('world_frame_id')
             }])
 
     # Create the launch description and populate
@@ -64,11 +87,15 @@ def generate_launch_description():
     # Declare the launch options
     ld.add_action(output)
     ld.add_action(publish_clock)
-    ld.add_action(is_vulkan)
     ld.add_action(host_ip)
     ld.add_action(host_port)
+    ld.add_action(rpc_timeout_sec)
+    ld.add_action(update_airsim_img_response_every_n_sec)
+    ld.add_action(update_airsim_control_every_n_sec)
+    ld.add_action(image_response_compress)
     ld.add_action(enable_api_control)
     ld.add_action(enable_object_transforms_list)
+    ld.add_action(world_frame_id)
     ld.add_action(airsim_node)
 
     return ld

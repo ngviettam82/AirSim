@@ -304,6 +304,7 @@ struct FCameraStreamServer::FSource
     const UnrealImageCapture* ImageCapture = nullptr;
 
     std::atomic<int32> Subscribers{ 0 };
+    std::atomic<int32> JpegSubscribers{ 0 };
     mutable std::mutex FrameMutex;
     std::condition_variable FrameCondition;
     std::shared_ptr<const FFrame> LatestFrame;
@@ -469,6 +470,10 @@ private:
         }
 
         const bool is_float = IsFloatImageType(source->ImageType);
+        // Raw clients need the exact renderer byte buffer, not a preview. Do
+        // not pay for RGB-to-RGBA expansion and JPEG encoding unless a JPEG
+        // snapshot or MJPEG client is currently subscribed.
+        const bool require_jpeg = source->JpegSubscribers.load() > 0;
         std::vector<uint8> preview;
         std::vector<uint8> raw;
         FString dtype;
@@ -480,35 +485,45 @@ private:
             raw.resize(float_count * sizeof(float));
             if (!raw.empty())
                 std::memcpy(raw.data(), response.image_data_float.data(), raw.size());
-            preview = MakeFloatPreview(response, source->ImageType);
+            if (require_jpeg)
+                preview = MakeFloatPreview(response, source->ImageType);
             dtype = TEXT("float32");
             color_order = TEXT("FLOAT32");
             channels = 1;
         }
         else {
             raw = std::move(response.image_data_uint8);
-            preview = raw;
             dtype = TEXT("uint8");
             color_order = TEXT("RGB");
             channels = 3;
         }
 
         const size_t expected_rgb_size = static_cast<size_t>(response.width) * static_cast<size_t>(response.height) * 3;
-        if (preview.size() != expected_rgb_size) {
-            SetError(source, FString::Printf(TEXT("Unexpected preview byte count %llu (expected %llu)"),
-                                             static_cast<uint64>(preview.size()), static_cast<uint64>(expected_rgb_size)));
+        if (!is_float && raw.size() != expected_rgb_size) {
+            SetError(source, FString::Printf(TEXT("Unexpected raw byte count %llu (expected %llu)"),
+                                             static_cast<uint64>(raw.size()), static_cast<uint64>(expected_rgb_size)));
             return;
         }
 
         std::vector<uint8> jpeg;
-        if (!EncodeJpeg(preview, response.width, response.height, jpeg)) {
-            SetError(source, TEXT("JPEG encoding failed"));
-            return;
+        if (require_jpeg) {
+            if (!is_float)
+                preview = raw;
+            if (preview.size() != expected_rgb_size) {
+                SetError(source, FString::Printf(TEXT("Unexpected preview byte count %llu (expected %llu)"),
+                                                 static_cast<uint64>(preview.size()), static_cast<uint64>(expected_rgb_size)));
+                return;
+            }
+            if (!EncodeJpeg(preview, response.width, response.height, jpeg)) {
+                SetError(source, TEXT("JPEG encoding failed"));
+                return;
+            }
         }
 
         const double now = FPlatformTime::Seconds();
         std::shared_ptr<FFrame> frame = std::make_shared<FFrame>();
-        frame->Jpeg = std::make_shared<const std::vector<uint8>>(std::move(jpeg));
+        if (require_jpeg)
+            frame->Jpeg = std::make_shared<const std::vector<uint8>>(std::move(jpeg));
         frame->Raw = std::make_shared<const std::vector<uint8>>(std::move(raw));
         frame->AirSimTimestamp = static_cast<uint64>(response.time_stamp);
         frame->Width = response.width;
@@ -1056,20 +1071,28 @@ bool FCameraStreamServer::SendBinaryResponse(
 }
 
 std::shared_ptr<const FCameraStreamServer::FFrame> FCameraStreamServer::WaitForFrame(
-    const std::shared_ptr<FSource>& source, uint64 after_sequence, double timeout_seconds) const
+    const std::shared_ptr<FSource>& source,
+    uint64 after_sequence,
+    double timeout_seconds,
+    bool require_jpeg) const
 {
     const auto timeout = std::chrono::duration<double>(timeout_seconds);
     std::unique_lock<std::mutex> lock(source->FrameMutex);
-    source->FrameCondition.wait_for(lock, timeout, [this, &source, after_sequence]() {
-        return !Running_.load() || (source->LatestFrame && source->LatestFrame->Sequence > after_sequence);
+    source->FrameCondition.wait_for(lock, timeout, [this, &source, after_sequence, require_jpeg]() {
+        return !Running_.load() || (source->LatestFrame && source->LatestFrame->Sequence > after_sequence &&
+                                    (!require_jpeg || source->LatestFrame->Jpeg));
     });
-    if (source->LatestFrame && source->LatestFrame->Sequence > after_sequence)
+    if (source->LatestFrame && source->LatestFrame->Sequence > after_sequence &&
+        (!require_jpeg || source->LatestFrame->Jpeg))
         return source->LatestFrame;
     return nullptr;
 }
 
 uint64 FCameraStreamServer::BeginSubscription(
-    const std::shared_ptr<FSource>& source, uint64 after_sequence, bool require_fresh_frame)
+    const std::shared_ptr<FSource>& source,
+    uint64 after_sequence,
+    bool require_fresh_frame,
+    bool require_jpeg)
 {
     std::lock_guard<std::mutex> lock(source->FrameMutex);
     if (require_fresh_frame && source->LatestFrame)
@@ -1079,11 +1102,20 @@ uint64 FCameraStreamServer::BeginSubscription(
     // includes time during which this source had no consumers.
     if (source->Subscribers.fetch_add(1) == 0)
         source->CaptureTimes.clear();
+    if (require_jpeg)
+        source->JpegSubscribers.fetch_add(1);
     return after_sequence;
 }
 
-void FCameraStreamServer::EndSubscription(const std::shared_ptr<FSource>& source)
+void FCameraStreamServer::EndSubscription(const std::shared_ptr<FSource>& source, bool require_jpeg)
 {
+    if (require_jpeg) {
+        const int32 previous_jpeg = source->JpegSubscribers.fetch_sub(1);
+        if (previous_jpeg <= 0) {
+            source->JpegSubscribers = 0;
+            UE_LOG(LogTemp, Error, TEXT("AirSim camera host detected an unbalanced JPEG subscription on %s"), *source->StreamPath);
+        }
+    }
     const int32 previous = source->Subscribers.fetch_sub(1);
     if (previous <= 0) {
         source->Subscribers = 0;
@@ -1093,10 +1125,10 @@ void FCameraStreamServer::EndSubscription(const std::shared_ptr<FSource>& source
 
 void FCameraStreamServer::ServeMjpeg(FSocket* socket, const std::shared_ptr<FSource>& source)
 {
-    uint64 sequence = BeginSubscription(source, 0, true);
+    uint64 sequence = BeginSubscription(source, 0, true, true);
     ON_SCOPE_EXIT
     {
-        EndSubscription(source);
+        EndSubscription(source, true);
     };
     source->Worker->Wake();
 
@@ -1104,7 +1136,7 @@ void FCameraStreamServer::ServeMjpeg(FSocket* socket, const std::shared_ptr<FSou
     FTCHARToUTF8 header_utf8(*header);
     bool connected = SendAll(socket, reinterpret_cast<const uint8*>(header_utf8.Get()), header_utf8.Length());
     while (connected && Running_.load()) {
-        const std::shared_ptr<const FFrame> frame = WaitForFrame(source, sequence, 10.0);
+        const std::shared_ptr<const FFrame> frame = WaitForFrame(source, sequence, 10.0, true);
         if (!frame)
             break;
         sequence = frame->Sequence;
@@ -1124,13 +1156,13 @@ void FCameraStreamServer::ServeJpeg(
     uint64 after_sequence,
     bool require_fresh_frame)
 {
-    after_sequence = BeginSubscription(source, after_sequence, require_fresh_frame);
+    after_sequence = BeginSubscription(source, after_sequence, require_fresh_frame, true);
     ON_SCOPE_EXIT
     {
-        EndSubscription(source);
+        EndSubscription(source, true);
     };
     source->Worker->Wake();
-    const std::shared_ptr<const FFrame> frame = WaitForFrame(source, after_sequence, 10.0);
+    const std::shared_ptr<const FFrame> frame = WaitForFrame(source, after_sequence, 10.0, true);
     if (!frame) {
         FString error;
         {
@@ -1153,13 +1185,13 @@ void FCameraStreamServer::ServeRaw(
     uint64 after_sequence,
     bool require_fresh_frame)
 {
-    after_sequence = BeginSubscription(source, after_sequence, require_fresh_frame);
+    after_sequence = BeginSubscription(source, after_sequence, require_fresh_frame, false);
     ON_SCOPE_EXIT
     {
-        EndSubscription(source);
+        EndSubscription(source, false);
     };
     source->Worker->Wake();
-    const std::shared_ptr<const FFrame> frame = WaitForFrame(source, after_sequence, 10.0);
+    const std::shared_ptr<const FFrame> frame = WaitForFrame(source, after_sequence, 10.0, false);
     if (!frame) {
         FString error;
         {

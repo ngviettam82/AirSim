@@ -10,6 +10,8 @@
 #include "MavLinkVehicle.hpp"
 #include "MavLinkVideoStream.hpp"
 
+#include <atomic>
+#include <deque>
 #include <exception>
 #include <memory>
 #include <mutex>
@@ -63,7 +65,6 @@ namespace airlib
             connection_info_ = connection_info;
             sensors_ = sensors;
             is_simulation_mode_ = is_simulation;
-            lock_step_enabled_ = connection_info.lock_step;
             try {
                 openAllConnections();
                 is_ready_ = true;
@@ -100,13 +101,20 @@ namespace airlib
                 }
             }
             MultirotorApiBase::resetImplementation();
+            // A normal simulator reset retains the MAVLink connection, but it
+            // starts a new AirSim clock epoch. Do not let a ROS consumer
+            // compare fresh PX4 timestamps against pre-reset HIL messages.
+            {
+                std::lock_guard<std::mutex> guard(hil_sensor_history_mutex_);
+                hil_sensor_time_history_.clear();
+            }
             was_reset_ = true;
         }
 
         unsigned long long getSimTime()
         {
             // This ensures HIL_SENSOR and HIL_GPS have matching clocks.
-            if (lock_step_active_) {
+            if (lock_step_active_.load()) {
                 if (sim_time_us_ == 0) {
                     sim_time_us_ = clock()->nowNanos() / 1000;
                 }
@@ -115,6 +123,25 @@ namespace airlib
             else {
                 return clock()->nowNanos() / 1000;
             }
+        }
+
+        virtual bool getHilSensorTimeHistory(size_t max_samples,
+                                             std::vector<uint64_t>& timestamps_us) const override
+        {
+            std::lock_guard<std::mutex> guard(hil_sensor_history_mutex_);
+            timestamps_us.clear();
+            if (max_samples == 0 || hil_sensor_time_history_.empty()) {
+                return true;
+            }
+
+            const size_t first_index = hil_sensor_time_history_.size() > max_samples
+                ? hil_sensor_time_history_.size() - max_samples
+                : 0;
+            timestamps_us.reserve(hil_sensor_time_history_.size() - first_index);
+            for (size_t index = first_index; index < hil_sensor_time_history_.size(); ++index) {
+                timestamps_us.push_back(hil_sensor_time_history_[index]);
+            }
+            return true;
         }
 
         void advanceTime()
@@ -129,7 +156,7 @@ namespace airlib
                 auto now = clock()->nowNanos() / 1000;
                 MultirotorApiBase::update(delta);
 
-                if (sensors_ == nullptr || !connected_ || connection_ == nullptr || !connection_->isOpen() || !got_first_heartbeat_)
+                if (sensors_ == nullptr || !connected_ || connection_ == nullptr || !connection_->isOpen() || !got_first_heartbeat_.load())
                     return;
 
                 {
@@ -137,23 +164,23 @@ namespace airlib
                     update_count_++;
                 }
 
-                if (lock_step_active_) {
-                    if (last_update_time_ + 1000000 < now) {
+                if (lock_step_active_.load()) {
+                    if (last_update_time_.load() + 1000000 < now) {
                         // if 1 second passes then something is terribly wrong, reset lockstep mode
-                        lock_step_active_ = false;
+                        lock_step_active_.store(false);
                         {
                             std::lock_guard<std::mutex> guard(telemetry_mutex_);
                             lock_step_resets_++;
                         }
                         addStatusMessage("timeout on HilActuatorControlsMessage, resetting lock step mode");
                     }
-                    else if (!received_actuator_controls_) {
+                    else if (!received_actuator_controls_.load()) {
                         // drop this one since we are in LOCKSTEP mode and we have not yet received the HilActuatorControlsMessage.
                         return;
                     }
                 }
 
-                last_update_time_ = now;
+                last_update_time_.store(now);
 
                 {
                     std::lock_guard<std::mutex> guard(telemetry_mutex_);
@@ -990,6 +1017,9 @@ namespace airlib
             Utils::log("Opening mavlink connection");
             close(); //just in case if connections were open
             resetState(); //reset all variables we might have changed during last session
+            // resetState intentionally clears runtime lockstep state. Restore the
+            // configured policy before every new connection, including reconnects.
+            lock_step_enabled_ = connection_info_.lock_step;
             connect();
         }
 
@@ -1608,18 +1638,18 @@ namespace airlib
 
         void handleLockStep()
         {
-            received_actuator_controls_ = true;
+            received_actuator_controls_.store(true);
             // if the timestamps match then it means we are in lockstep mode.
-            if (!lock_step_active_ && lock_step_enabled_) {
+            if (!lock_step_active_.load() && lock_step_enabled_) {
                 // && (HilActuatorControlsMessage.flags & 0x1))    // todo: enable this check when this flag is widely available...
-                if (last_hil_sensor_time_ == HilActuatorControlsMessage.time_usec) {
+                if (last_hil_sensor_time_.load() == HilActuatorControlsMessage.time_usec) {
                     addStatusMessage("Enabling lockstep mode");
-                    lock_step_active_ = true;
+                    lock_step_active_.store(true);
                 }
             }
             else {
                 auto now = clock()->nowNanos() / 1000;
-                auto delay = static_cast<uint32_t>(now - last_update_time_);
+                auto delay = static_cast<uint32_t>(now - last_update_time_.load());
 
                 std::lock_guard<std::mutex> guard(telemetry_mutex_);
                 actuator_delay_ += delay;
@@ -1638,10 +1668,10 @@ namespace airlib
 
                 bool armed = (HeartbeatMessage.base_mode & static_cast<uint8_t>(mavlinkcom::MAV_MODE_FLAG::MAV_MODE_FLAG_SAFETY_ARMED)) > 0;
                 setArmed(armed);
-                if (!got_first_heartbeat_) {
+                if (!got_first_heartbeat_.load()) {
                     Utils::log("received first heartbeat");
 
-                    got_first_heartbeat_ = true;
+                    got_first_heartbeat_.store(true);
                     if (HeartbeatMessage.autopilot == static_cast<uint8_t>(mavlinkcom::MAV_AUTOPILOT::MAV_AUTOPILOT_PX4) &&
                         HeartbeatMessage.type == static_cast<uint8_t>(mavlinkcom::MAV_TYPE::MAV_TYPE_FIXED_WING)) {
                         // PX4 will scale fixed wing servo outputs to -1 to 1
@@ -1758,7 +1788,8 @@ namespace airlib
                 throw std::logic_error("Attempt to send simulated sensor messages while not in simulation mode");
 
             mavlinkcom::MavLinkHilSensor hil_sensor;
-            hil_sensor.time_usec = last_hil_sensor_time_ = getSimTime();
+            hil_sensor.time_usec = getSimTime();
+            last_hil_sensor_time_.store(hil_sensor.time_usec);
 
             hil_sensor.xacc = acceleration.x();
             hil_sensor.yacc = acceleration.y();
@@ -1788,9 +1819,24 @@ namespace airlib
             }
 
             if (hil_node_ != nullptr) {
+                // Clear before sending the next HIL sample. The PX4 receive thread can
+                // acknowledge a TCP packet before sendMessage returns, so clearing this
+                // flag afterwards loses that acknowledgement and can stall lockstep.
+                received_actuator_controls_.store(false);
                 hil_node_->sendMessage(hil_sensor);
-                received_actuator_controls_ = false;
-                if (lock_step_active_ && world_ != nullptr) {
+
+                // Retain only messages accepted by the local MAVLink transport. PX4 can
+                // receive the packet before sendMessage returns, but the ROS consumer
+                // observes this history asynchronously and establishes delivery by
+                // matching the resulting PX4 sample.
+                {
+                    std::lock_guard<std::mutex> guard(hil_sensor_history_mutex_);
+                    hil_sensor_time_history_.push_back(hil_sensor.time_usec);
+                    while (hil_sensor_time_history_.size() > kHilSensorTimeHistoryCapacity) {
+                        hil_sensor_time_history_.pop_front();
+                    }
+                }
+                if (lock_step_active_.load() && world_ != nullptr) {
                     world_->pauseForTime(1); // 1 second delay max waiting for actuator controls.
                 }
             }
@@ -1895,14 +1941,18 @@ namespace airlib
             state_version_ = 0;
             current_state_ = mavlinkcom::VehicleState();
             target_height_ = 0;
-            got_first_heartbeat_ = false;
+            got_first_heartbeat_.store(false);
             is_armed_ = false;
             has_home_ = false;
             sim_time_us_ = 0;
             last_sys_time_ = 0;
             last_gps_time_ = 0;
-            last_update_time_ = 0;
-            last_hil_sensor_time_ = 0;
+            last_update_time_.store(0);
+            last_hil_sensor_time_.store(0);
+            {
+                std::lock_guard<std::mutex> guard(hil_sensor_history_mutex_);
+                hil_sensor_time_history_.clear();
+            }
             update_count_ = 0;
             hil_sensor_count_ = 0;
             lock_step_resets_ = 0;
@@ -1911,8 +1961,8 @@ namespace airlib
             thrust_controller_ = PidController();
             Utils::setValue(rotor_controls_, 0.0f);
             was_reset_ = false;
-            received_actuator_controls_ = false;
-            lock_step_active_ = false;
+            received_actuator_controls_.store(false);
+            lock_step_active_.store(false);
             lock_step_enabled_ = false;
             has_gps_lock_ = false;
             send_params_ = false;
@@ -1979,7 +2029,8 @@ namespace airlib
         std::mutex mocap_pose_mutex_, heartbeat_mutex_, set_mode_mutex_, status_text_mutex_, last_message_mutex_, telemetry_mutex_;
 
         //variables required for VehicleApiBase implementation
-        bool got_first_heartbeat_ = false, is_hil_mode_set_ = false, is_armed_ = false;
+        std::atomic_bool got_first_heartbeat_{false};
+        bool is_hil_mode_set_ = false, is_armed_ = false;
         bool is_controls_0_1_; //Are motor controls specified in 0..1 or -1..1?
         bool send_params_ = false;
         std::queue<std::string> status_messages_;
@@ -1989,9 +2040,9 @@ namespace airlib
         bool has_home_ = false;
         bool is_ready_ = false;
         bool has_gps_lock_ = false;
-        bool lock_step_active_ = false;
+        std::atomic_bool lock_step_active_{false};
         bool lock_step_enabled_ = false;
-        bool received_actuator_controls_ = false;
+        std::atomic_bool received_actuator_controls_{false};
         std::string is_ready_message_;
         Pose mocap_pose_;
         std::thread connect_thread_;
@@ -2005,8 +2056,11 @@ namespace airlib
         uint32_t last_sys_time_ = 0;
         unsigned long long sim_time_us_ = 0;
         uint64_t last_gps_time_ = 0;
-        uint64_t last_update_time_ = 0;
-        uint64_t last_hil_sensor_time_ = 0;
+        std::atomic_uint64_t last_update_time_{0};
+        std::atomic_uint64_t last_hil_sensor_time_{0};
+        static constexpr size_t kHilSensorTimeHistoryCapacity = 2048;
+        mutable std::mutex hil_sensor_history_mutex_;
+        std::deque<uint64_t> hil_sensor_time_history_;
 
         // variables accumulated for MavLinkTelemetry messages.
         uint64_t update_time_ = 0;

@@ -40,7 +40,8 @@ void RecordingFile::appendRecord(const std::vector<msr::airlib::ImageCaptureBase
                         << "_fs" << capture.frame_time_stamp;
 
         const bool has_render_frame_time =
-            response.has_render_frame_timestamp && response.time_stamp != 0;
+            response.has_render_frame_timestamp && response.capture_generation != 0 &&
+            response.time_stamp != 0;
         const bool has_timing = has_render_frame_time && capture.frame_time_stamp != 0;
         const int64_t delay_ns = has_timing
             ? static_cast<int64_t>(response.time_stamp) - static_cast<int64_t>(capture.frame_time_stamp)

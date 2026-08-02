@@ -485,6 +485,14 @@ namespace airlib
             getWorldSimApi()->setCameraPose(pose.to(), CameraDetails(camera_name, vehicle_name));
         });
 
+        pimpl_->server.bind("simSetCameraOrientation", [&](const std::string& camera_name, const RpcLibAdaptorsBase::Quaternionr& orientation, const std::string& vehicle_name) -> void {
+            getWorldSimApi()->setCameraOrientation(orientation.to(), CameraDetails(camera_name, vehicle_name));
+        });
+
+        pimpl_->server.bind("simGetHilSensorTimeHistory", [&](uint32_t max_samples, const std::string& vehicle_name) -> std::vector<uint64_t> {
+            return getWorldSimApi()->getHilSensorTimeHistory(max_samples, vehicle_name);
+        });
+
         pimpl_->server.bind("simSetCameraFov", [&](const std::string& camera_name, float fov_degrees, const std::string& vehicle_name) -> void {
             getWorldSimApi()->setCameraFoV(fov_degrees, CameraDetails(camera_name, vehicle_name));
         });
