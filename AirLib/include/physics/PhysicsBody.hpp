@@ -234,6 +234,12 @@ namespace airlib
             grounded_ = grounded;
         }
 
+        /** Quadratic angular-drag coefficient for FastPhysicsEngine (N·m·s²/rad² scale with density). 0 disables. */
+        virtual real_T getAngularDragCoefficient() const
+        {
+            return 0;
+        }
+
         void lock()
         {
             mutex_.lock();

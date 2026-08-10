@@ -74,6 +74,16 @@ Some methods may not be applicable to specific vehicle in which case an exceptio
             unused(last_interval);
         }
 
+        /** Plant battery snapshot for external firmwares (e.g. PX4 MAVLink). Default: ignore. */
+        virtual void updateBatteryTelemetry(bool enabled, float soc, float voltage_v, float current_a, float capacity_mah)
+        {
+            unused(enabled);
+            unused(soc);
+            unused(voltage_v);
+            unused(current_a);
+            unused(capacity_mah);
+        }
+
         //below APIs are used by FastPhysicsEngine
         virtual real_T getActuation(unsigned int actuator_index) const
         {

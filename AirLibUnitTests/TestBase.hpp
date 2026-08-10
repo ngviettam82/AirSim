@@ -24,7 +24,7 @@ namespace airlib
         void testAssert(bool condition, const std::string& message)
         {
             if (!condition) {
-                common_utils::Utils::DebugBreak();
+                // Prefer exception over DebugBreak so automated runners get a clear failure.
                 throw std::runtime_error(message.c_str());
             }
         }

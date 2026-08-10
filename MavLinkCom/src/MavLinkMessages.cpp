@@ -4963,6 +4963,9 @@ std::string MavLinkControlSystemState::toJSon()
 
 int MavLinkBatteryStatus::pack(char* buffer) const
 {
+    // Core BATTERY_STATUS is 36 bytes (MAVLink min_msg_len). Extension fields
+    // (time_remaining, charge_state, voltages_ext) push packed size to 49 and
+    // break MavLinkCom when the peer link still expects min length / mavlink1.
     pack_int32_t(buffer, reinterpret_cast<const int32_t*>(&this->current_consumed), 0);
     pack_int32_t(buffer, reinterpret_cast<const int32_t*>(&this->energy_consumed), 4);
     pack_int16_t(buffer, reinterpret_cast<const int16_t*>(&this->temperature), 8);
@@ -4972,10 +4975,7 @@ int MavLinkBatteryStatus::pack(char* buffer) const
     pack_uint8_t(buffer, reinterpret_cast<const uint8_t*>(&this->battery_function), 33);
     pack_uint8_t(buffer, reinterpret_cast<const uint8_t*>(&this->type), 34);
     pack_int8_t(buffer, reinterpret_cast<const int8_t*>(&this->battery_remaining), 35);
-    pack_int32_t(buffer, reinterpret_cast<const int32_t*>(&this->time_remaining), 36);
-    pack_uint8_t(buffer, reinterpret_cast<const uint8_t*>(&this->charge_state), 40);
-    pack_uint16_t_array(4, buffer, reinterpret_cast<const uint16_t*>(&this->voltages_ext[0]), 41);
-    return 49;
+    return 36;
 }
 
 int MavLinkBatteryStatus::unpack(const char* buffer)

@@ -10,6 +10,7 @@
 #include "api/VehicleApiBase.hpp"
 #include "api/VehicleSimApiBase.hpp"
 #include "MultiRotorParams.hpp"
+#include "common/MultirotorPhysicsConfig.hpp"
 #include <vector>
 #include "physics/PhysicsBody.hpp"
 
@@ -36,12 +37,27 @@ namespace airlib
             //reset rotors, kinematics and environment
             PhysicsBody::resetImplementation();
 
+            battery_.reset(params_->getPhysicsConfig());
+            last_battery_time_ = 0;
             //reset sensors last after their ground truth has been reset
             resetSensors();
         }
 
         virtual void update(float delta = 0) override
         {
+            // Feed body-relative aero context into rotors before they produce wrench.
+            const auto& kin = getKinematics();
+            const Vector3r body_vel = VectorMath::transformToBodyFrame(kin.twist.linear, kin.pose.orientation, true);
+            // Flat-world AGL: NED z increases downward; origin on ground plane → AGL = max(0, -z).
+            const real_T agl = std::max(0.0f, -kin.pose.position.z());
+            const real_T batt_scale = battery_.thrustScale();
+
+            for (uint rotor_index = 0; rotor_index < rotors_.size(); ++rotor_index) {
+                rotors_.at(rotor_index).setBodyLinearVelocity(body_vel);
+                rotors_.at(rotor_index).setAltitudeAgl(agl);
+                rotors_.at(rotor_index).setBatteryThrustScale(batt_scale);
+            }
+
             //update forces on vertices that we will use next
             PhysicsBody::update(delta);
 
@@ -55,6 +71,12 @@ namespace airlib
             PhysicsBody::reportState(reporter);
 
             reportSensors(*params_, reporter);
+
+            if (battery_.enabled) {
+                reporter.writeValue("Batt SOC", battery_.soc);
+                reporter.writeValue("Batt V", battery_.voltage);
+                reporter.writeValue("Batt I", battery_.current_a);
+            }
 
             //report rotors
             for (uint rotor_index = 0; rotor_index < rotors_.size(); ++rotor_index) {
@@ -93,12 +115,39 @@ namespace airlib
             for (uint rotor_index = 0; rotor_index < rotors_.size(); ++rotor_index) {
                 rotors_.at(rotor_index).setControlSignal(vehicle_api_->getActuation(rotor_index));
             }
+
+            // Battery drain once per kinematics step using rotor demand; push to firmware API (PX4, etc.).
+            if (battery_.enabled) {
+                real_T sum_ctrl = 0;
+                for (uint rotor_index = 0; rotor_index < rotors_.size(); ++rotor_index) {
+                    sum_ctrl += std::max(0.0f, vehicle_api_->getActuation(rotor_index));
+                }
+                const TTimePoint now = clock()->nowNanos();
+                real_T dt = 0;
+                if (last_battery_time_ != 0) {
+                    dt = static_cast<real_T>((now - last_battery_time_) / 1.0E9);
+                }
+                last_battery_time_ = now;
+                if (dt > 0 && dt < 0.1f) {
+                    battery_.update(dt, sum_ctrl, static_cast<uint>(rotors_.size()));
+                }
+                vehicle_api_->updateBatteryTelemetry(
+                    true, battery_.soc, battery_.voltage, battery_.current_a, battery_.capacity_mah);
+            }
+            else {
+                vehicle_api_->updateBatteryTelemetry(false, 1.0f, 0.0f, 0.0f, 0.0f);
+            }
         }
 
         //sensor getter
         const SensorCollection& getSensors() const
         {
             return params_->getSensors();
+        }
+
+        const BatteryState& getBatteryState() const
+        {
+            return battery_;
         }
 
         //physics body interface
@@ -137,6 +186,11 @@ namespace airlib
             return params_->getParams().friction;
         }
 
+        virtual real_T getAngularDragCoefficient() const override
+        {
+            return params_->getParams().angular_drag_coefficient;
+        }
+
         RotorActuator::Output getRotorOutput(uint rotor_index) const
         {
             return rotors_.at(rotor_index).getOutput();
@@ -151,6 +205,7 @@ namespace airlib
 
             createRotors(*params_, rotors_, environment);
             createDragVertices();
+            battery_.reset(params_->getPhysicsConfig());
 
             initSensors(*params_, getKinematics(), getEnvironment());
         }
@@ -222,6 +277,8 @@ namespace airlib
         //let us be the owner of rotors object
         vector<RotorActuator> rotors_;
         vector<PhysicsBodyVertex> drag_faces_;
+        BatteryState battery_;
+        TTimePoint last_battery_time_ = 0;
 
         std::unique_ptr<Environment> environment_;
         VehicleApiBase* vehicle_api_;

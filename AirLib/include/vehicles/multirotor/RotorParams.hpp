@@ -47,6 +47,16 @@ namespace airlib
         real_T max_speed_square;
         real_T max_thrust = 4.179446268f; //computed from above formula for the given constants
         real_T max_torque = 0.055562f; //computed from above formula
+        real_T tip_speed = 0; // m/s at max RPM (prop tip)
+
+        // Aero realism (applied in RotorActuator; can be overridden from MultirotorPhysicsConfig)
+        bool enable_ground_effect = true;
+        real_T ground_effect_max_height = 2.0f;
+        real_T ground_effect_max_boost = 0.25f;
+        real_T ground_effect_min_height = 0.02f;
+        bool enable_thrust_air_speed = true;
+        real_T thrust_air_speed_coeff = 0.15f;
+        real_T thrust_air_speed_min_scale = 0.35f;
 
         // call this method to recalculate thrust if you want to use different numbers for C_T, C_P, max_rpm, etc.
         void calculateMaxThrust()
@@ -54,6 +64,7 @@ namespace airlib
             revolutions_per_second = max_rpm / 60;
             max_speed = revolutions_per_second * 2 * M_PIf; // radians / sec
             max_speed_square = pow(max_speed, 2.0f);
+            tip_speed = max_speed * (propeller_diameter * 0.5f);
 
             real_T nsquared = revolutions_per_second * revolutions_per_second;
             max_thrust = C_T * air_density * nsquared * static_cast<real_T>(pow(propeller_diameter, 4));

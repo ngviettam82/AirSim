@@ -5,10 +5,13 @@
 #define msr_airlib_MultiRotorParameters_hpp
 
 #include "common/Common.hpp"
+#include "common/EarthUtils.hpp"
 #include "RotorParams.hpp"
+#include "common/MultirotorPhysicsConfig.hpp"
 #include "sensors/SensorCollection.hpp"
 #include "sensors/SensorFactory.hpp"
 #include "vehicles/multirotor/api/MultirotorApiBase.hpp"
+#include <cmath>
 
 namespace msr
 {
@@ -47,9 +50,8 @@ namespace airlib
             real_T linear_drag_coefficient = 1.3f / 4.0f;
             //sample value 1.3 from http://klsin.bpmsg.com/how-fast-can-a-quadcopter-fly/, but divided by 4 to account
             // for nice streamlined frame design and allow higher top speed which is more fun.
-            //angular coefficient is usually 10X smaller than linear, however we should replace this with exact number
-            //http://physics.stackexchange.com/q/304742/14061
-            real_T angular_drag_coefficient = linear_drag_coefficient;
+            // Angular quadratic-drag coefficient used by FastPhysicsEngine (torque ∝ -ω|ω| ρ c).
+            real_T angular_drag_coefficient = 0.02f;
             real_T restitution = 0.55f; // value of 1 would result in perfectly elastic collisions, 0 would be completely inelastic.
             real_T friction = 0.5f;
             RotorParams rotor_params;
@@ -69,6 +71,8 @@ namespace airlib
             sensors_.clear();
 
             setupParams();
+            applyPhysicsConfig(vehicle_setting != nullptr ? vehicle_setting->multirotor_physics
+                                                          : MultirotorPhysicsConfig());
 
             addSensorsFromSettings(vehicle_setting);
         }
@@ -80,6 +84,10 @@ namespace airlib
         Params& getParams()
         {
             return params_;
+        }
+        const MultirotorPhysicsConfig& getPhysicsConfig() const
+        {
+            return physics_config_;
         }
         SensorCollection& getSensors()
         {
@@ -544,11 +552,124 @@ namespace airlib
             computeInertiaMatrix(params.inertia, params.body_box, params.rotor_poses, box_mass, motor_assembly_weight);
         }
 
+        /** Apply settings.json "Physics" block over frame defaults. Safe no-op if empty. */
+        void applyPhysicsConfig(const MultirotorPhysicsConfig& cfg)
+        {
+            physics_config_ = cfg;
+            auto& p = params_;
+
+            if (!std::isnan(cfg.mass) && cfg.mass > 0)
+                p.mass = cfg.mass;
+            if (!std::isnan(cfg.linear_drag_coefficient) && cfg.linear_drag_coefficient >= 0)
+                p.linear_drag_coefficient = cfg.linear_drag_coefficient;
+            if (!std::isnan(cfg.angular_drag_coefficient) && cfg.angular_drag_coefficient >= 0)
+                p.angular_drag_coefficient = cfg.angular_drag_coefficient;
+            if (!std::isnan(cfg.restitution) && cfg.restitution >= 0)
+                p.restitution = cfg.restitution;
+            if (!std::isnan(cfg.friction) && cfg.friction >= 0)
+                p.friction = cfg.friction;
+
+            if (!std::isnan(cfg.body_box.x()) && !std::isnan(cfg.body_box.y()) && !std::isnan(cfg.body_box.z()))
+                p.body_box = cfg.body_box;
+
+            bool rotor_recalc = false;
+            if (!std::isnan(cfg.rotor_C_T)) {
+                p.rotor_params.C_T = cfg.rotor_C_T;
+                rotor_recalc = true;
+            }
+            if (!std::isnan(cfg.rotor_C_P)) {
+                p.rotor_params.C_P = cfg.rotor_C_P;
+                rotor_recalc = true;
+            }
+            if (!std::isnan(cfg.rotor_max_rpm) && cfg.rotor_max_rpm > 0) {
+                p.rotor_params.max_rpm = cfg.rotor_max_rpm;
+                rotor_recalc = true;
+            }
+            if (!std::isnan(cfg.propeller_diameter) && cfg.propeller_diameter > 0) {
+                p.rotor_params.propeller_diameter = cfg.propeller_diameter;
+                rotor_recalc = true;
+            }
+            if (!std::isnan(cfg.propeller_height) && cfg.propeller_height > 0) {
+                p.rotor_params.propeller_height = cfg.propeller_height;
+                rotor_recalc = true;
+            }
+            if (!std::isnan(cfg.control_signal_filter_tc) && cfg.control_signal_filter_tc > 0)
+                p.rotor_params.control_signal_filter_tc = cfg.control_signal_filter_tc;
+
+            p.rotor_params.enable_ground_effect = cfg.enable_ground_effect;
+            p.rotor_params.ground_effect_max_height = cfg.ground_effect_max_height;
+            p.rotor_params.ground_effect_max_boost = cfg.ground_effect_max_boost;
+            p.rotor_params.ground_effect_min_height = cfg.ground_effect_min_height;
+            p.rotor_params.enable_thrust_air_speed = cfg.enable_thrust_air_speed;
+            p.rotor_params.thrust_air_speed_coeff = cfg.thrust_air_speed_coeff;
+            p.rotor_params.thrust_air_speed_min_scale = cfg.thrust_air_speed_min_scale;
+
+            if (rotor_recalc)
+                p.rotor_params.calculateMaxThrust();
+            else if (p.rotor_params.tip_speed <= 0)
+                p.rotor_params.calculateMaxThrust();
+
+            // Rebuild symmetric arm layout if ArmLength provided and rotor count matches
+            if (!cfg.arm_lengths.empty() && cfg.arm_lengths.size() == p.rotor_count) {
+                std::vector<real_T> arms = cfg.arm_lengths;
+                const real_T rz = !std::isnan(cfg.rotor_z) ? cfg.rotor_z
+                    : (p.rotor_poses.empty() ? 0.025f : p.rotor_poses[0].position.z());
+                if (p.rotor_count == 4)
+                    initializeRotorQuadX(p.rotor_poses, p.rotor_count, arms.data(), rz);
+                else if (p.rotor_count == 6)
+                    initializeRotorHexX(p.rotor_poses, p.rotor_count, arms.data(), rz);
+                else if (p.rotor_count == 8)
+                    initializeRotorOctoX(p.rotor_poses, p.rotor_count, arms.data(), rz);
+            }
+            else if (!std::isnan(cfg.rotor_z) && !p.rotor_poses.empty()) {
+                for (auto& rp : p.rotor_poses)
+                    rp.position.z() = cfg.rotor_z;
+            }
+
+            // Mass / inertia recompute when mass or motor weight or body changed
+            const bool recompute_inertia =
+                !std::isnan(cfg.mass) || !std::isnan(cfg.motor_assembly_weight) ||
+                (!std::isnan(cfg.body_box.x()) && !std::isnan(cfg.body_box.y()) && !std::isnan(cfg.body_box.z())) ||
+                !cfg.arm_lengths.empty();
+
+            if (recompute_inertia &&
+                (std::isnan(cfg.inertia_diagonal.x()) || std::isnan(cfg.inertia_diagonal.y()) ||
+                 std::isnan(cfg.inertia_diagonal.z()))) {
+                real_T motor_w = !std::isnan(cfg.motor_assembly_weight) ? cfg.motor_assembly_weight : 0.055f;
+                // Keep existing motor weight estimate if mass unchanged proportionally is hard;
+                // use explicit or default 0.055f and clamp box mass positive.
+                real_T box_mass = p.mass - p.rotor_count * motor_w;
+                if (box_mass < 0.05f * p.mass)
+                    box_mass = 0.7f * p.mass;
+                computeInertiaMatrix(p.inertia, p.body_box, p.rotor_poses, box_mass, motor_w);
+            }
+
+            if (!std::isnan(cfg.inertia_diagonal.x()) && !std::isnan(cfg.inertia_diagonal.y()) &&
+                !std::isnan(cfg.inertia_diagonal.z())) {
+                p.inertia = Matrix3x3r::Zero();
+                p.inertia(0, 0) = cfg.inertia_diagonal.x();
+                p.inertia(1, 1) = cfg.inertia_diagonal.y();
+                p.inertia(2, 2) = cfg.inertia_diagonal.z();
+            }
+
+            const real_T max_lift = p.rotor_params.max_thrust * static_cast<real_T>(p.rotor_count);
+            const real_T weight = p.mass * EarthUtils::Gravity;
+            if (max_lift < weight * 1.05f) {
+                Utils::log(Utils::stringf(
+                               "Multirotor Physics: max thrust %.2f N < weight %.2f N (mass=%.3f). "
+                               "Vehicle may not take off. Raise RotorMaxRpm/RotorCT or lower Mass.",
+                               max_lift, weight, p.mass),
+                           Utils::kLogLevelWarn);
+            }
+        }
+
     private:
         Params params_;
+        MultirotorPhysicsConfig physics_config_;
         SensorCollection sensors_; //maintains sensor type indexed collection of sensors
         vector<shared_ptr<SensorBase>> sensor_storage_; //RAII for created sensors
     };
 }
 } //namespace
 #endif
+

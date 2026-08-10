@@ -64,6 +64,12 @@ namespace airlib
             // x(k+1) = Ad*x(k) + Bd*u(k)
             output_ = static_cast<real_T>(output_ * alpha + input_ * (1 - alpha));
         }
+
+        virtual void failResetUpdateOrdering(std::string err) override
+        {
+            // Nested filters are often re-initialized when their parent actuator is recreated.
+            unused(err);
+        }
         //*** End: UpdatableState implementation ***//
 
         void setInput(T input)

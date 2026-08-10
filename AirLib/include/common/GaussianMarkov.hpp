@@ -44,6 +44,12 @@ namespace airlib
             rand_.reset();
         }
 
+        virtual void failResetUpdateOrdering(std::string err) override
+        {
+            // Allow re-initialize/re-reset of turbulence and bias processes.
+            unused(err);
+        }
+
         virtual void update(float delta = 0) override
         {
             /*

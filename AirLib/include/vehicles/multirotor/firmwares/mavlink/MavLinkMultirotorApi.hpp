@@ -11,8 +11,10 @@
 #include "MavLinkVideoStream.hpp"
 
 #include <atomic>
+#include <cmath>
 #include <deque>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -84,6 +86,17 @@ namespace airlib
         virtual const SensorCollection& getSensors() const override
         {
             return *sensors_;
+        }
+
+        /** Called from MultiRotorPhysicsBody each kinematics step when plant battery is configured. */
+        virtual void updateBatteryTelemetry(bool enabled, float soc, float voltage_v, float current_a, float capacity_mah) override
+        {
+            std::lock_guard<std::mutex> guard(battery_telemetry_mutex_);
+            battery_telem_enabled_ = enabled;
+            battery_soc_ = Utils::clip(soc, 0.0f, 1.0f);
+            battery_voltage_v_ = voltage_v;
+            battery_current_a_ = current_a;
+            battery_capacity_mah_ = capacity_mah;
         }
 
         //reset PX4 stack
@@ -239,6 +252,9 @@ namespace airlib
                         sendHILGps(gps_output.gnss.geo_point, gps_velocity, gps_velocity_xy.norm(), gps_cog, gps_output.gnss.eph, gps_output.gnss.epv, gps_output.gnss.fix_type, 10);
                     }
                 }
+
+                // AirSim plant battery → PX4 (control channel BATTERY_STATUS, not HIL socket)
+                sendBatteryStatusIfDue(now);
 
                 auto end = clock()->nowNanos() / 1000;
                 {
@@ -1895,6 +1911,71 @@ namespace airlib
             last_distance_message_ = distance_sensor;
         }
 
+        /** Publish plant battery on the vehicle/control MAVLink link (not the HIL-only socket). */
+        void sendBatteryStatusIfDue(uint64_t now_us)
+        {
+            bool enabled = false;
+            float soc = 1.0f, voltage_v = 0.0f, current_a = 0.0f, capacity_mah = 0.0f;
+            {
+                std::lock_guard<std::mutex> guard(battery_telemetry_mutex_);
+                enabled = battery_telem_enabled_;
+                soc = battery_soc_;
+                voltage_v = battery_voltage_v_;
+                current_a = battery_current_a_;
+                capacity_mah = battery_capacity_mah_;
+            }
+            if (!enabled || !is_simulation_mode_)
+                return;
+
+            // ~5 Hz is enough for PX4 failsafe / QGC display
+            constexpr uint64_t kIntervalUs = 200000;
+            if (last_battery_send_us_ != 0 && now_us < last_battery_send_us_ + kIntervalUs)
+                return;
+            last_battery_send_us_ = now_us;
+
+            mavlinkcom::MavLinkBatteryStatus batt;
+            batt.id = 0;
+            batt.battery_function = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_FUNCTION::MAV_BATTERY_FUNCTION_ALL);
+            batt.type = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_TYPE::MAV_BATTERY_TYPE_LIPO);
+            batt.temperature = std::numeric_limits<int16_t>::max(); // unknown
+
+            // Pack voltage in cell 0 (mV); remaining cells = unknown
+            const float mv_f = Utils::clip(voltage_v * 1000.0f, 0.0f, 65534.0f);
+            batt.voltages[0] = static_cast<uint16_t>(mv_f);
+            for (int i = 1; i < 10; ++i)
+                batt.voltages[i] = std::numeric_limits<uint16_t>::max();
+
+            // current in cA (0.01 A); MAVLink uses -1 for not measured
+            if (current_a < 0)
+                batt.current_battery = -1;
+            else
+                batt.current_battery = static_cast<int16_t>(Utils::clip(current_a * 100.0f, 0.0f, 32767.0f));
+
+            batt.current_consumed = static_cast<int32_t>(Utils::clip((1.0f - soc) * capacity_mah, 0.0f, 1.0e7f));
+            batt.energy_consumed = -1;
+            batt.battery_remaining = static_cast<int8_t>(Utils::clip(std::round(soc * 100.0f), 0.0f, 100.0f));
+            batt.time_remaining = 0;
+
+            if (soc > 0.30f)
+                batt.charge_state = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_CHARGE_STATE::MAV_BATTERY_CHARGE_STATE_OK);
+            else if (soc > 0.15f)
+                batt.charge_state = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_CHARGE_STATE::MAV_BATTERY_CHARGE_STATE_LOW);
+            else if (soc > 0.05f)
+                batt.charge_state = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_CHARGE_STATE::MAV_BATTERY_CHARGE_STATE_CRITICAL);
+            else
+                batt.charge_state = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_CHARGE_STATE::MAV_BATTERY_CHARGE_STATE_EMERGENCY);
+
+            // Control/GCS vehicle link — PX4 ignores non-HIL msgs on the simulator HIL socket.
+            if (mav_vehicle_ != nullptr) {
+                try {
+                    mav_vehicle_->sendMessage(batt);
+                }
+                catch (const std::exception& ex) {
+                    Utils::log(Utils::stringf("BATTERY_STATUS send failed: %s", ex.what()), Utils::kLogLevelWarn);
+                }
+            }
+        }
+
         void sendHILGps(const GeoPoint& geo_point, const Vector3r& velocity, float velocity_xy, float cog,
                         float eph, float epv, int fix_type, unsigned int satellites_visible)
         {
@@ -2056,6 +2137,13 @@ namespace airlib
         uint32_t last_sys_time_ = 0;
         unsigned long long sim_time_us_ = 0;
         uint64_t last_gps_time_ = 0;
+        uint64_t last_battery_send_us_ = 0;
+        std::mutex battery_telemetry_mutex_;
+        bool battery_telem_enabled_ = false;
+        float battery_soc_ = 1.0f;
+        float battery_voltage_v_ = 0.0f;
+        float battery_current_a_ = 0.0f;
+        float battery_capacity_mah_ = 0.0f;
         std::atomic_uint64_t last_update_time_{0};
         std::atomic_uint64_t last_hil_sensor_time_{0};
         static constexpr size_t kHilSensorTimeHistoryCapacity = 2048;

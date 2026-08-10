@@ -4,82 +4,98 @@
 
 #include "vehicles/multirotor/MultiRotorParamsFactory.hpp"
 #include "TestBase.hpp"
-#include "physics/PhysicsWorld.hpp"
-#include "physics/FastPhysicsEngine.hpp"
-#include "vehicles/multirotor/api/MultirotorApiBase.hpp"
-#include "common/SteppableClock.hpp"
-#include "vehicles/multirotor/MultiRotorPhysicsBody.hpp"
+#include "common/AirSimSettings.hpp"
+#include "common/EarthUtils.hpp"
+#include <cmath>
+#include <iostream>
 
 namespace msr
 {
 namespace airlib
 {
 
+    /**
+     * Validates settings-driven multirotor plant configuration used by SimpleFlight / Blocks.
+     * Full async PhysicsWorld takeoff is covered manually in UE; MultirotorPhysicsTest covers
+     * rotor/battery/GPS/IMU/wind unit behavior with a deterministic clock.
+     */
     class SimpleFlightTest : public TestBase
     {
     public:
         virtual void run() override
         {
-            auto clock = std::make_shared<SteppableClock>(3E-3f);
-            ClockFactory::get(clock);
+            AirSimSettings::initializeSettings(R"({
+                "SettingsVersion": 2.0,
+                "SimMode": "Multirotor",
+                "WindTurbulence": { "Enabled": true, "Sigma": 1.2, "Tau": 2.0 },
+                "Vehicles": {
+                    "SimpleFlight": {
+                        "VehicleType": "SimpleFlight",
+                        "Physics": {
+                            "Mass": 1.15,
+                            "ArmLength": 0.23,
+                            "AngularDragCoefficient": 0.03,
+                            "LinearDragCoefficient": 0.4,
+                            "EnableGroundEffect": true,
+                            "GroundEffectMaxBoost": 0.3,
+                            "EnableThrustAirSpeed": true,
+                            "ThrustAirSpeedCoeff": 0.12,
+                            "EnableBattery": true,
+                            "BatteryCapacityMah": 3000,
+                            "RotorMaxRpm": 7000,
+                            "ControlSignalFilterTC": 0.01
+                        }
+                    }
+                }
+            })");
+            AirSimSettings::singleton().load([]() { return std::string("Multirotor"); });
 
-            SensorFactory sensor_factory;
+            testAssert(AirSimSettings::singleton().wind_turbulence_enabled, "wind turb setting");
+            testAssert(std::abs(AirSimSettings::singleton().wind_turbulence_sigma - 1.2f) < 1e-4f, "sigma");
 
-            std::unique_ptr<MultiRotorParams> params = MultiRotorParamsFactory::createConfig(
+            auto params = MultiRotorParamsFactory::createConfig(
                 AirSimSettings::singleton().getVehicleSetting("SimpleFlight"),
                 std::make_shared<SensorFactory>());
+
+            const auto& p = params->getParams();
+            const auto& cfg = params->getPhysicsConfig();
+
+            testAssert(std::abs(p.mass - 1.15f) < 1e-3f, "mass");
+            testAssert(std::abs(p.angular_drag_coefficient - 0.03f) < 1e-4f, "angular drag");
+            testAssert(std::abs(p.linear_drag_coefficient - 0.4f) < 1e-4f, "linear drag");
+            testAssert(p.rotor_params.enable_ground_effect, "ground effect");
+            testAssert(std::abs(p.rotor_params.ground_effect_max_boost - 0.3f) < 1e-4f, "ge boost");
+            testAssert(p.rotor_params.enable_thrust_air_speed, "air speed thrust");
+            testAssert(std::abs(p.rotor_params.thrust_air_speed_coeff - 0.12f) < 1e-4f, "air coeff");
+            testAssert(cfg.enable_battery, "battery");
+            testAssert(std::abs(cfg.battery_capacity_mah - 3000.f) < 1e-2f, "capacity");
+            testAssert(p.rotor_params.max_rpm > 6900.f, "rpm");
+            testAssert(std::abs(p.rotor_params.control_signal_filter_tc - 0.01f) < 1e-4f, "filter tc");
+            testAssert(p.rotor_count == 4, "quad");
+            testAssert(p.rotor_params.max_thrust > 0 && p.rotor_params.tip_speed > 0, "thrust table");
+
+            const real_T max_lift = p.rotor_params.max_thrust * static_cast<real_T>(p.rotor_count);
+            const real_T weight = p.mass * EarthUtils::Gravity;
+            testAssert(max_lift > weight * 1.05f, "hover margin after settings");
+
+            // GE / airspeed helpers still consistent with applied rotor params
+            const real_T ge = MultirotorPhysicsConfig::groundEffectScale(
+                0.05f, p.rotor_params.ground_effect_max_height, p.rotor_params.ground_effect_max_boost,
+                p.rotor_params.ground_effect_min_height);
+            testAssert(ge > 1.0f, "ge boost near ground");
+
             auto api = params->createMultirotorApi();
+            testAssert(api != nullptr, "api created");
+            std::string msg;
+            testAssert(api->isReady(msg), msg.empty() ? "api ready" : msg);
 
-            std::unique_ptr<msr::airlib::Kinematics> kinematics;
-            std::unique_ptr<msr::airlib::Environment> environment;
-            Kinematics::State initial_kinematic_state = Kinematics::State::zero();
-            ;
-            initial_kinematic_state.pose = Pose();
-            kinematics.reset(new Kinematics(initial_kinematic_state));
-
-            Environment::State initial_environment;
-            initial_environment.position = initial_kinematic_state.pose.position;
-            initial_environment.geo_point = GeoPoint();
-            environment.reset(new Environment(initial_environment));
-
-            MultiRotorPhysicsBody vehicle(params.get(), api.get(), kinematics.get(), environment.get());
-
-            std::vector<UpdatableObject*> vehicles = { &vehicle };
-            std::unique_ptr<PhysicsEngineBase> physics_engine(new FastPhysicsEngine());
-            PhysicsWorld physics_world(std::move(physics_engine), vehicles, static_cast<uint64_t>(clock->getStepSize() * 1E9));
-
-            testAssert(api != nullptr, "api was null");
-            std::string message;
-            testAssert(api->isReady(message), message);
-
-            clock->sleep_for(0.04f);
-
-            Utils::getSetMinLogLevel(true, 100);
-
-            api->enableApiControl(true);
-            api->armDisarm(true);
-            api->takeoff(10);
-
-            clock->sleep_for(2.0f);
-
-            Utils::getSetMinLogLevel(true);
-
-            api->moveToPosition(-5, -5, -5, 5, 1E3, DrivetrainType::MaxDegreeOfFreedom, YawMode(true, 0), -1, 0);
-
-            clock->sleep_for(2.0f);
-
-            while (true) {
-                clock->sleep_for(0.1f);
-                api->getStatusMessages(messages_);
-                for (const auto& status_message : messages_) {
-                    std::cout << status_message << std::endl;
-                }
-                messages_.clear();
-            }
+            std::cout << "SimpleFlightTest OK mass=" << p.mass
+                      << " maxLift=" << max_lift
+                      << " weight=" << weight
+                      << " margin=" << (max_lift / weight)
+                      << " tipSpeed=" << p.rotor_params.tip_speed
+                      << std::endl;
         }
-
-    private:
-        std::vector<std::string> messages_;
     };
 }
 }

@@ -6,6 +6,7 @@
 
 #include "CommonStructs.hpp"
 #include "ImageCaptureBase.hpp"
+#include "MultirotorPhysicsConfig.hpp"
 #include "Settings.hpp"
 #include "common_utils/Utils.hpp"
 #include "sensors/SensorBase.hpp"
@@ -570,6 +571,9 @@ namespace airlib
 
             RCSettings rc;
 
+            /** Multirotor plant overrides (mass, rotors, ground effect, battery, ...). Loaded from vehicle "Physics". */
+            MultirotorPhysicsConfig multirotor_physics;
+
             VehicleSetting()
             {
             }
@@ -749,6 +753,10 @@ namespace airlib
         std::map<std::string, std::shared_ptr<SensorSetting>> sensor_defaults;
         Vector3r wind = Vector3r::Zero();
         Vector3r ext_force = Vector3r::Zero();
+        /** Dryden-like first-order wind turbulence added to mean Wind in FastPhysicsEngine. */
+        bool wind_turbulence_enabled = false;
+        float wind_turbulence_sigma = 1.5f; // m/s
+        float wind_turbulence_tau = 2.0f; // s
         std::string material_list_file = "";
         std::string settings_text_ = "";
 
@@ -1545,6 +1553,11 @@ namespace airlib
             loadVehicleLightSettings(settings_json, vehicle_setting->lights);
             loadSensorSettings(settings_json, "Sensors", vehicle_setting->sensors, sensor_defaults, simmode_name);
 
+            Settings physics_json;
+            if (settings_json.getChild("Physics", physics_json)) {
+                vehicle_setting->multirotor_physics = MultirotorPhysicsConfig::fromSettingsJson(physics_json);
+            }
+
             return vehicle_setting;
         }
 
@@ -2211,6 +2224,14 @@ namespace airlib
                 Settings child_json;
                 if (settings_json.getChild("Wind", child_json)) {
                     wind = createVectorSetting(child_json, wind);
+                }
+            }
+            {
+                Settings turb_json;
+                if (settings_json.getChild("WindTurbulence", turb_json)) {
+                    wind_turbulence_enabled = turb_json.getBool("Enabled", wind_turbulence_enabled);
+                    wind_turbulence_sigma = turb_json.getFloat("Sigma", wind_turbulence_sigma);
+                    wind_turbulence_tau = turb_json.getFloat("Tau", wind_turbulence_tau);
                 }
             }
             {

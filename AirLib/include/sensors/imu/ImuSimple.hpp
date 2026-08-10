@@ -67,6 +67,13 @@ namespace airlib
             if (add_noise) {
                 // TODO: Add noise in orientation?
                 addNoise(output.linear_acceleration, output.angular_velocity);
+
+                if (params_.enable_vibration) {
+                    const real_T ang_mag = output.angular_velocity.norm();
+                    const real_T vib_scale = 1.0f + params_.vibration_angular_gain * ang_mag;
+                    output.linear_acceleration += gauss_dist.next() * (params_.vibration_accel_sigma * vib_scale);
+                    output.angular_velocity += gauss_dist.next() * (params_.vibration_gyro_sigma * vib_scale);
+                }
             }
 
         output.time_stamp = clock()->nowNanos();

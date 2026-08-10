@@ -48,6 +48,13 @@ namespace airlib
 
         real_T min_sample_time = 1 / 1000.0f; //internal IMU frequency
 
+        // Prop-wash / motor vibration proxy (added on top of Allan noise when GenerateNoise)
+        bool enable_vibration = true;
+        real_T vibration_accel_sigma = 0.5f; // m/s^2
+        real_T vibration_gyro_sigma = 0.02f; // rad/s
+        // Scales vibration with body angular-rate magnitude (proxy for aggressive flight / RPM)
+        real_T vibration_angular_gain = 0.15f;
+
         bool initializeFromSettings(const AirSimSettings::ImuSetting& settings)
         {
             const auto& json = settings.settings;
@@ -70,7 +77,13 @@ namespace airlib
                 accel.bias_stability = bias_stability * 1E-6f * EarthUtils::Gravity; //ug converted to m/s^2
             }
 
-            return json.getBool("GenerateNoise", false);
+            enable_vibration = json.getBool("EnableVibration", enable_vibration);
+            vibration_accel_sigma = json.getFloat("VibrationAccelSigma", vibration_accel_sigma);
+            vibration_gyro_sigma = json.getFloat("VibrationGyroSigma", vibration_gyro_sigma);
+            vibration_angular_gain = json.getFloat("VibrationAngularGain", vibration_angular_gain);
+
+            // Default GenerateNoise true; set false in settings for noise-free IMU.
+            return json.getBool("GenerateNoise", true);
         }
     };
 }

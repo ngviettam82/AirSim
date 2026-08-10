@@ -11,6 +11,8 @@
 #include "common/FirstOrderFilter.hpp"
 #include "common/FrequencyLimiter.hpp"
 #include "common/DelayLine.hpp"
+#include "common/GaussianMarkov.hpp"
+#include "common/EarthUtils.hpp"
 
 namespace msr
 {
@@ -33,6 +35,10 @@ namespace airlib
             //initialize filters
             eph_filter.initialize(params_.eph_time_constant, params_.eph_final, params_.eph_initial); //starting dilution set to 100 which we will reduce over time to targeted 0.3f, with 45% accuracy within 100 updates, each update occurring at 0.2s interval
             epv_filter.initialize(params_.epv_time_constant, params_.epv_final, params_.epv_initial);
+
+            bias_n_.initialize(params_.bias_tau, params_.bias_sigma, 0);
+            bias_e_.initialize(params_.bias_tau, params_.bias_sigma, 0);
+            bias_d_.initialize(params_.bias_tau, params_.bias_sigma * 1.5f, 0);
         }
 
         //*** Start: UpdatableState implementation ***//
@@ -43,6 +49,10 @@ namespace airlib
 
             eph_filter.reset();
             epv_filter.reset();
+            bias_n_.reset();
+            bias_e_.reset();
+            bias_d_.reset();
+            gauss_dist_.reset();
 
             addOutputToDelayLine(eph_filter.getOutput(), epv_filter.getOutput());
         }
@@ -54,6 +64,11 @@ namespace airlib
             freq_limiter_.update(delta);
             eph_filter.update(delta);
             epv_filter.update(delta);
+            if (params_.generate_noise) {
+                bias_n_.update(delta);
+                bias_e_.update(delta);
+                bias_d_.update(delta);
+            }
 
             if (freq_limiter_.isWaitComplete()) { //update output
                 addOutputToDelayLine(eph_filter.getOutput(), epv_filter.getOutput());
@@ -83,6 +98,30 @@ namespace airlib
             output.gnss.velocity = ground_truth.kinematics->twist.linear;
             output.is_valid = true;
 
+            if (params_.generate_noise) {
+                // Position noise in local NED, then convert offset to geo deltas (first-order).
+                const real_T sig_h = std::max(0.01f, eph * params_.position_sigma_scale);
+                const real_T sig_v = std::max(0.01f, epv * params_.position_sigma_scale);
+                const Vector3r noise_ned(
+                    gauss_dist_.next() * sig_h + bias_n_.getOutput(),
+                    gauss_dist_.next() * sig_h + bias_e_.getOutput(),
+                    gauss_dist_.next() * sig_v + bias_d_.getOutput());
+
+                // Approximate geo offset: 1 deg lat ~ 111320 m, lon scaled by cos(lat)
+                const double lat = output.gnss.geo_point.latitude;
+                const double meters_per_deg_lat = 111320.0;
+                const double meters_per_deg_lon =
+                    std::max(1.0, meters_per_deg_lat * std::cos(Utils::degreesToRadians(lat)));
+                output.gnss.geo_point.latitude += static_cast<double>(noise_ned.x()) / meters_per_deg_lat;
+                output.gnss.geo_point.longitude += static_cast<double>(noise_ned.y()) / meters_per_deg_lon;
+                output.gnss.geo_point.altitude -= noise_ned.z(); // NED z down
+
+                output.gnss.velocity += Vector3r(
+                    gauss_dist_.next() * params_.velocity_sigma,
+                    gauss_dist_.next() * params_.velocity_sigma,
+                    gauss_dist_.next() * params_.velocity_sigma);
+            }
+
             output.gnss.fix_type =
                 output.gnss.eph <= params_.eph_min_3d   ? GnssFixType::GNSS_FIX_3D_FIX
                 : output.gnss.eph <= params_.eph_min_2d ? GnssFixType::GNSS_FIX_2D_FIX
@@ -101,6 +140,8 @@ namespace airlib
         FirstOrderFilter<real_T> eph_filter, epv_filter;
         FrequencyLimiter freq_limiter_;
         DelayLine<Output> delay_line_;
+        GaussianMarkov bias_n_, bias_e_, bias_d_;
+        RandomGeneratorGausianR gauss_dist_ = RandomGeneratorGausianR(0.0f, 1.0f);
     };
 }
 } //namespace

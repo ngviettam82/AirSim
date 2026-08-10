@@ -79,6 +79,12 @@ std::unique_ptr<ASimModeWorldBase::PhysicsEngineBase> ASimModeWorldBase::createP
 
         physics_engine->setWind(getSettings().wind);
         physics_engine->setExtForce(getSettings().ext_force);
+        if (auto* fast = static_cast<msr::airlib::FastPhysicsEngine*>(physics_engine.get())) {
+            fast->configureWindTurbulence(
+                getSettings().wind_turbulence_enabled,
+                getSettings().wind_turbulence_sigma,
+                getSettings().wind_turbulence_tau);
+        }
     }
     else if (physics_engine_name == "ExternalPhysicsEngine") {
         physics_engine.reset(new msr::airlib::ExternalPhysicsEngine());

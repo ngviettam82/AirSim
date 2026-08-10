@@ -5,6 +5,7 @@
 #define msr_airlib_GpsSimpleParams_hpp
 
 #include "common/Common.hpp"
+#include "common/AirSimSettings.hpp"
 
 namespace msr
 {
@@ -22,6 +23,17 @@ namespace airlib
         real_T update_frequency = 50; //Hz
         real_T startup_delay = 1; //sec
 
+        // When true, inject NED position/velocity noise scaled to current eph/epv.
+        bool generate_noise = true;
+        // Horizontal position sigma ≈ eph * position_sigma_scale (m)
+        real_T position_sigma_scale = 0.5f;
+        // Vertical position sigma ≈ epv * position_sigma_scale (m)
+        // Velocity noise (m/s) independent of eph for simplicity
+        real_T velocity_sigma = 0.1f;
+        // Slow multipath-like bias walk (m), sigma of GM process
+        real_T bias_sigma = 0.5f;
+        real_T bias_tau = 60.0f; // s
+
         void initializeFromSettings(const AirSimSettings::GpsSetting& settings)
         {
             const auto& json = settings.settings;
@@ -36,6 +48,12 @@ namespace airlib
             update_latency = json.getFloat("UpdateLatency", update_latency);
             update_frequency = json.getFloat("UpdateFrequency", update_frequency);
             startup_delay = json.getFloat("StartupDelay", startup_delay);
+
+            generate_noise = json.getBool("GenerateNoise", generate_noise);
+            position_sigma_scale = json.getFloat("PositionSigmaScale", position_sigma_scale);
+            velocity_sigma = json.getFloat("VelocitySigma", velocity_sigma);
+            bias_sigma = json.getFloat("BiasSigma", bias_sigma);
+            bias_tau = json.getFloat("BiasTau", bias_tau);
         }
     };
 }
