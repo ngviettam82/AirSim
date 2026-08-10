@@ -1965,14 +1965,28 @@ namespace airlib
             else
                 batt.charge_state = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_CHARGE_STATE::MAV_BATTERY_CHARGE_STATE_EMERGENCY);
 
-            // Control/GCS vehicle link — PX4 ignores non-HIL msgs on the simulator HIL socket.
-            if (mav_vehicle_ != nullptr) {
-                try {
+            // PX4 MavlinkReceiver::handle_message_battery_status only accepts packets where
+            //   msg.sysid == vehicle sysid  (default 1) AND msg.compid != autopilot compid (1).
+            // AirSim's mav_vehicle_ node uses VehicleSysID=135 by default, so those are ignored.
+            // Publish as same-system companion computer (compid 191).
+            try {
+                if (battery_pub_node_ == nullptr && mav_vehicle_ != nullptr) {
+                    auto conn = mav_vehicle_->getConnection();
+                    if (conn != nullptr) {
+                        // sysid 1 = default PX4 vehicle; 191 = MAV_COMP_ID_ONBOARD_COMPUTER
+                        battery_pub_node_ = std::make_shared<mavlinkcom::MavLinkNode>(1, 191);
+                        battery_pub_node_->connect(conn);
+                    }
+                }
+                if (battery_pub_node_ != nullptr) {
+                    battery_pub_node_->sendMessage(batt);
+                }
+                else if (mav_vehicle_ != nullptr) {
                     mav_vehicle_->sendMessage(batt);
                 }
-                catch (const std::exception& ex) {
-                    Utils::log(Utils::stringf("BATTERY_STATUS send failed: %s", ex.what()), Utils::kLogLevelWarn);
-                }
+            }
+            catch (const std::exception& ex) {
+                Utils::log(Utils::stringf("BATTERY_STATUS send failed: %s", ex.what()), Utils::kLogLevelWarn);
             }
         }
 
@@ -2144,6 +2158,8 @@ namespace airlib
         float battery_voltage_v_ = 0.0f;
         float battery_current_a_ = 0.0f;
         float battery_capacity_mah_ = 0.0f;
+        // Companion-identity publisher so PX4 accepts external BATTERY_STATUS (sysid=1,compid!=1)
+        std::shared_ptr<mavlinkcom::MavLinkNode> battery_pub_node_;
         std::atomic_uint64_t last_update_time_{0};
         std::atomic_uint64_t last_hil_sensor_time_{0};
         static constexpr size_t kHilSensorTimeHistoryCapacity = 2048;

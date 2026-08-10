@@ -112,7 +112,7 @@ When `EnableBattery` is true:
 
 1. Thrust scales approximately with `(V/Vmax)²` and SOC drains from motor demand.
 2. Values appear in the physics state reporter (`Batt SOC`, `Batt V`, `Batt I`).
-3. For **PX4 / MAVLink** vehicles, AirSim publishes `BATTERY_STATUS` (~5 Hz) on the **control** MAVLink link (not the HIL sensor socket), using plant SOC, voltage, current, and consumed mAh.
+3. For **PX4 / MAVLink** vehicles, AirSim publishes `BATTERY_STATUS` (~5 Hz) on the **control** MAVLink link (not the HIL sensor socket), using plant SOC, voltage, current, and consumed mAh. Packets are sent as **sysid=1, compid=191** (onboard companion). PX4 only accepts external battery when `sysid` matches the vehicle and `compid` is not the autopilot.
 
 Example:
 
@@ -125,11 +125,43 @@ Example:
 }
 ```
 
-### PX4 failsafe (RTL on low battery)
+### PX4 battery failsafe
 
-AirSim only feeds telemetry. PX4 still needs failsafe parameters, for example low-battery action = RTL/Land. PX4 SITL often runs its **own** battery model; if QGC still shows a different pack, disable or override the SITL battery simulation for your PX4 version so external `BATTERY_STATUS` is used. Param names vary by PX4 release — check `BAT_*` / simulation battery docs for your build.
+AirSim publishes plant battery over MAVLink. **Failsafe action is configured in PX4**, typically via vehicle `Parameters` in `settings.json` (sent at connect) or QGC.
 
-SimpleFlight does not use MAVLink; battery still affects plant thrust only.
+Recommended SITL values (PX4 with `COM_LOW_BAT_ACT` / `BAT_*_THR` — verified against common PX4 SITL builds):
+
+```json
+"Parameters": {
+  "SIM_BAT_ENABLE": 0,
+  "CBRK_SUPPLY_CHK": 894281,
+  "COM_LOW_BAT_ACT": 3,
+  "BAT_LOW_THR": 0.15,
+  "BAT_CRIT_THR": 0.07,
+  "BAT_EMERGEN_THR": 0.05,
+  "COM_ARM_BAT_MIN": 0.05,
+  "COM_FAIL_ACT_T": 1.0,
+  "COM_ARM_WO_GPS": 1,
+  "COM_RCL_EXCEPT": 7,
+  "NAV_RCL_ACT": 0,
+  "NAV_DLL_ACT": 0
+}
+```
+
+| Param | Meaning |
+|-------|---------|
+| `SIM_BAT_ENABLE` | `0` = do not use PX4’s internal SITL battery (use AirSim `BATTERY_STATUS`) |
+| `COM_LOW_BAT_ACT` | `0` = warn only; `2` = land; **`3` = RTL at critical, land at emergency** |
+| `BAT_LOW_THR` | Remaining fraction for “low” warning (e.g. `0.15` = 15%) |
+| `BAT_CRIT_THR` | Critical fraction (triggers return when action = 3) |
+| `BAT_EMERGEN_THR` | Emergency fraction (land in place when action = 3) |
+| `CBRK_SUPPLY_CHK` | `894281` disables power-module arming check (common SITL need) |
+
+Example profile: `settings.px4-battery-test.json` (local / gitignored).
+
+WSL2: set `PX4_SIM_HOST_ADDR` to the Windows vEthernet (WSL) IPv4 and AirSim `LocalHostIp` to the same address. Start AirSim first, then PX4 `none_iris`.
+
+SimpleFlight does not use MAVLink; battery only scales plant thrust.
 
 ## Code map
 
