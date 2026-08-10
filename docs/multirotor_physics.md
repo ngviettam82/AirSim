@@ -112,7 +112,40 @@ When `EnableBattery` is true:
 
 1. Thrust scales approximately with `(V/Vmax)²` and SOC drains from motor demand.
 2. Values appear in the physics state reporter (`Batt SOC`, `Batt V`, `Batt I`).
-3. For **PX4 / MAVLink** vehicles, AirSim publishes `BATTERY_STATUS` (~5 Hz) on the **control** MAVLink link (not the HIL sensor socket), using plant SOC, voltage, current, and consumed mAh. Packets are sent as **sysid=1, compid=191** (onboard companion). PX4 only accepts external battery when `sysid` matches the vehicle and `compid` is not the autopilot.
+3. For **PX4 / MAVLink** vehicles, AirSim publishes `BATTERY_STATUS` (~5 Hz) on the **control** MAVLink link (not the HIL sensor socket), using plant SOC, voltage, current, and consumed mAh. Packets are sent as **sysid = that vehicle’s PX4 `MAV_SYS_ID`**, **compid = 191** (onboard companion). PX4 only accepts external battery when `sysid` matches the vehicle and `compid` is not the autopilot.
+
+### Multi-vehicle PX4 + GCS
+
+| Concern | Behavior |
+|---------|----------|
+| Distinguish drones in QGC / GCS | Each PX4 SITL instance uses `MAV_SYS_ID = instance + 1` (1, 2, 3…). Different `TcpPort` / control ports per vehicle. GCS lists separate vehicles by **sysid**. |
+| AirSim vehicle names | Settings keys (`Drone1`, `Drone2`) are independent of MAVLink sysid; map ports carefully. |
+| Battery per drone | Each AirSim vehicle has its own plant battery and its own MAVLink connection; battery is published with **that instance’s target sysid** (from the PX4 heartbeat), not a hardcoded `1`. |
+| Failsafe params | Set `Parameters` (or per-vehicle params) on each vehicle; each PX4 instance applies its own `COM_LOW_BAT_ACT` / `BAT_*_THR`. |
+
+Example (two vehicles — ports and spawn only; sysids come from PX4 instances 0 and 1):
+
+```json
+"Vehicles": {
+  "Drone1": {
+    "VehicleType": "PX4Multirotor",
+    "UseTcp": true, "TcpPort": 4560,
+    "ControlPortLocal": 14540, "ControlPortRemote": 14580,
+    "Physics": { "EnableBattery": true, "BatteryCapacityMah": 5000 },
+    "Parameters": { "SIM_BAT_ENABLE": 0, "COM_LOW_BAT_ACT": 3, "BAT_CRIT_THR": 0.07 }
+  },
+  "Drone2": {
+    "VehicleType": "PX4Multirotor",
+    "UseTcp": true, "TcpPort": 4561,
+    "ControlPortLocal": 14541, "ControlPortRemote": 14581,
+    "Y": 2,
+    "Physics": { "EnableBattery": true, "BatteryCapacityMah": 5000 },
+    "Parameters": { "SIM_BAT_ENABLE": 0, "COM_LOW_BAT_ACT": 3, "BAT_CRIT_THR": 0.07 }
+  }
+}
+```
+
+See also [multi-vehicle PX4](px4_multi_vehicle.md).
 
 Example:
 

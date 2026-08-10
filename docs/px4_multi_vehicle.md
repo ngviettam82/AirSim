@@ -68,6 +68,14 @@ there is no Pixhawk hardware plugged in, otherwise QGroundControl will choose
 to use that instead.  Note that as we don't have a physical board, an RC cannot be connected directly to it. So the alternatives are either use XBox 360 Controller or connect your RC using USB (for example, in case of FrSky Taranis X9D Plus) or using trainer USB cable to your PC. This makes your RC look like a joystick. You will need to do extra set up in QGroundControl to use virtual joystick for RC control.  You do not need to do this unless you plan to fly a drone manually in AirSim.  Autonomous flight using the Python
 API does not require RC, see [`No Remote Control`](px4_sitl.md#no-remote-control).
 
+### System IDs and GCS multi-vehicle view
+
+PX4 SITL sets `MAV_SYS_ID = px4_instance + 1` (first instance → sysid **1**, second → **2**, …). QGroundControl (and other GCS tools) distinguish vehicles by that **MAVLink system id**, not by the AirSim vehicle name in `settings.json`.
+
+AirSim plant battery (`EnableBattery`) is published per vehicle as `BATTERY_STATUS` with **sysid = that PX4 instance’s system id** and **compid = 191** (companion). That matches PX4’s rule for accepting external battery telemetry and keeps each drone’s SOC separate on the GCS.
+
+Ensure each vehicle uses unique `TcpPort` / `ControlPortLocal` / `ControlPortRemote` as in the example above. Do not put two vehicles on the same TCP port.
+
 ## Starting SITL instances with PX4 console
 
 If you want to start your SITL instances while being able to view the PX4 console, you will need to run the shell scripts found [here](https://github.com/ngviettam82/Airsim/blob/main/PX4Scripts) rather than `sitl_multiple_run.sh`.

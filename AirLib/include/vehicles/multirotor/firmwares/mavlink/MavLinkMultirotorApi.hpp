@@ -979,6 +979,12 @@ namespace airlib
                 mav_vehicle_ = nullptr;
             }
 
+            if (battery_pub_node_ != nullptr) {
+                battery_pub_node_->close();
+                battery_pub_node_ = nullptr;
+                battery_pub_sysid_ = 0;
+            }
+
             if (video_server_ != nullptr)
                 video_server_->close();
 
@@ -1966,23 +1972,29 @@ namespace airlib
                 batt.charge_state = static_cast<uint8_t>(mavlinkcom::MAV_BATTERY_CHARGE_STATE::MAV_BATTERY_CHARGE_STATE_EMERGENCY);
 
             // PX4 MavlinkReceiver::handle_message_battery_status only accepts packets where
-            //   msg.sysid == vehicle sysid  (default 1) AND msg.compid != autopilot compid (1).
-            // AirSim's mav_vehicle_ node uses VehicleSysID=135 by default, so those are ignored.
-            // Publish as same-system companion computer (compid 191).
+            //   msg.sysid == vehicle MAV_SYS_ID  AND msg.compid != autopilot compid (usually 1).
+            // Multi-vehicle SITL: instance i uses MAV_SYS_ID = i+1 (1, 2, 3, ...).
+            // AirSim's mav_vehicle_ local node uses VehicleSysID=135 by default (GCS-like), so we
+            // must not send battery with that identity — PX4 would ignore it.
+            // Publish as companion on the *target* vehicle system (compid 191).
             try {
-                if (battery_pub_node_ == nullptr && mav_vehicle_ != nullptr) {
-                    auto conn = mav_vehicle_->getConnection();
-                    if (conn != nullptr) {
-                        // sysid 1 = default PX4 vehicle; 191 = MAV_COMP_ID_ONBOARD_COMPUTER
-                        battery_pub_node_ = std::make_shared<mavlinkcom::MavLinkNode>(1, 191);
-                        battery_pub_node_->connect(conn);
+                if (mav_vehicle_ != nullptr) {
+                    const int target_sys = mav_vehicle_->getTargetSystemId();
+                    // Until the first vehicle heartbeat, target may be 0 — skip (try next tick).
+                    if (target_sys > 0) {
+                        if (battery_pub_node_ == nullptr || battery_pub_sysid_ != target_sys) {
+                            auto conn = mav_vehicle_->getConnection();
+                            if (conn != nullptr) {
+                                battery_pub_node_ = std::make_shared<mavlinkcom::MavLinkNode>(
+                                    static_cast<int>(target_sys), 191); // MAV_COMP_ID_ONBOARD_COMPUTER
+                                battery_pub_node_->connect(conn);
+                                battery_pub_sysid_ = target_sys;
+                            }
+                        }
+                        if (battery_pub_node_ != nullptr) {
+                            battery_pub_node_->sendMessage(batt);
+                        }
                     }
-                }
-                if (battery_pub_node_ != nullptr) {
-                    battery_pub_node_->sendMessage(batt);
-                }
-                else if (mav_vehicle_ != nullptr) {
-                    mav_vehicle_->sendMessage(batt);
                 }
             }
             catch (const std::exception& ex) {
@@ -2158,8 +2170,9 @@ namespace airlib
         float battery_voltage_v_ = 0.0f;
         float battery_current_a_ = 0.0f;
         float battery_capacity_mah_ = 0.0f;
-        // Companion-identity publisher so PX4 accepts external BATTERY_STATUS (sysid=1,compid!=1)
+        // Companion publisher: sysid = connected PX4 MAV_SYS_ID, compid 191 (not autopilot)
         std::shared_ptr<mavlinkcom::MavLinkNode> battery_pub_node_;
+        int battery_pub_sysid_ = 0;
         std::atomic_uint64_t last_update_time_{0};
         std::atomic_uint64_t last_hil_sensor_time_{0};
         static constexpr size_t kHilSensorTimeHistoryCapacity = 2048;
