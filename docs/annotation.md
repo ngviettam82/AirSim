@@ -1,6 +1,6 @@
-# Annotation in Cosys-AirSim
+# Annotation in AirSim
 
-A multi-layer annotation system is implemented into Cosys-AirSim. Annotation can render custom RGB, greyscale, or texture layers for actors and components in the world.
+A multi-layer annotation system is implemented into AirSim. Annotation can render custom RGB, greyscale, or texture layers for actors and components in the world.
 
 There are two rendering paths:
 
@@ -163,7 +163,7 @@ To use direct mode, set the settings of this layer with `SetDirect` to `true`. F
 Actor/component tags have the following format: `annotationName_texturepath` for direct mode.
 The Unreal texture path name has to be rather specific:
  - If your texture is in the environment content folder, you must add `/Game/` in front of the path.
- - If it is in the Cosys-AirSim plugin content folder, you must add `/AirSim/` in front of the path.
+ - If it is in the AirSim plugin content folder, you must add `/AirSim/` in front of the path.
  - For Engine textures, you must add `/Engine/` in front of the path.
 So if for example your texture annotation layer is called `TextureTestDirect`, and your texture *TestTexture* is in the game content folder under a subfolder *AnnotationTest* you can tag an actor with the tag `TextureTest_/Game/AnnotationTest/TestTexture` to give it this texture.
 

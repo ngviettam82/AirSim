@@ -1,4 +1,4 @@
-# Multirotor physics settings
+# AirSim multirotor physics settings
 
 Vehicle plant parameters can be set under each multirotor entry in `settings.json` via a `Physics` object. Omitted fields keep the frame defaults (Generic, Blacksheep, Flamewheel, Hex, Octo).
 

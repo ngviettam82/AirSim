@@ -1,6 +1,6 @@
-# Infrared Camera in Cosys-AirSim
+# Infrared Camera in AirSim
 
-This page describes the current `ImageType::Infrared` output in Cosys-AirSim.
+This page describes the current `ImageType::Infrared` output in AirSim.
 
 ## Current runtime behavior
 

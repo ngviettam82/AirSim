@@ -1,26 +1,26 @@
-# Cosys-AirSim
+# AirSim
 
-Cosys-AirSim is a simulator for drones, cars and more, with extensive API support, built on [Unreal Engine](https://www.unrealengine.com/). It is open-source, cross platform, and supports hardware-in-loop with popular flight controllers such as PX4 for physically and visually realistic simulations. It is developed as an Unreal plugin that can simply be dropped into any Unreal environment. 
+AirSim is a simulator for drones, cars and more, with extensive API support, built on [Unreal Engine](https://www.unrealengine.com/). It is open-source, cross platform, and supports hardware-in-loop with popular flight controllers such as PX4 for physically and visually realistic simulations. It is developed as an Unreal plugin that can simply be dropped into any Unreal environment. 
 
 This fork is based on last public AirSim release from Microsoft's GitHub.
 Cosys-Lab made extensive modifications to the AirSim platform to support multiple projects and research goals. 
 Please contact a Cosys-Lab researcher to get more in depth information on our work or if you wish to collaborate. 
-The [original AirSim MIT license](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/LICENSE) applies to all native AirSim source files. 
-Please note that we use that same [MIT license](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/LICENSE) as which applies to all changes made by Cosys-Lab in case you plan to do anything within this repository.
+The [original AirSim MIT license](https://github.com/ngviettam82/Airsim/blob/main/LICENSE) applies to all native AirSim source files. 
+Please note that we use that same [MIT license](https://github.com/ngviettam82/Airsim/blob/main/LICENSE) as which applies to all changes made by Cosys-Lab in case you plan to do anything within this repository.
 Do note that this repository is provided as is, will not be actively updated and comes without warranty or support. 
 Please contact a Cosys-Lab researcher to get more in depth information on which branch or version is best for your work.
 
-This documentation is for the latest stable Unreal Version v5.5 on the [main branch](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main), maintained for support, and is available for builds in the [releases](https://github.com/Cosys-Lab/Cosys-AirSim/releases).
-Unreal [5.2.1](https://github.com/Cosys-Lab/Cosys-AirSim/tree/5.2.1) is also available for long term support builds but the documentation is best read from [source](https://github.com/Cosys-Lab/Cosys-AirSim/tree/5.2.1/docs).
+This documentation is for the latest stable Unreal Version v5.5 on the [main branch](https://github.com/ngviettam82/Airsim/tree/main), maintained for support, and is available for builds in the [releases](https://github.com/ngviettam82/Airsim/releases).
+Unreal [5.2.1](https://github.com/ngviettam82/Airsim/tree/5.2.1) is also available for long term support builds but the documentation is best read from [source](https://github.com/ngviettam82/Airsim/tree/5.2.1/docs).
 
 ## Associated publications
 
-- [Cosys-AirSim: A Real-Time Simulation Framework Expanded for Complex Industrial Applications](https://arxiv.org/abs/2303.13381)
+- [AirSim: A Real-Time Simulation Framework Expanded for Complex Industrial Applications](https://arxiv.org/abs/2303.13381)
 ```
-@inproceedings{cosysairsim2023jansen,
+@inproceedings{AirSim2023jansen,
   author={Jansen, Wouter and Verreycken, Erik and Schenck, Anthony and Blanquart, Jean-Edouard and Verhulst, Connor and Huebel, Nico and Steckel, Jan},
   booktitle={2023 Annual Modeling and Simulation Conference (ANNSIM)}, 
-  title={COSYS-AIRSIM: A Real-Time Simulation Framework Expanded for Complex Industrial Applications}, 
+  title={AirSim: A Real-Time Simulation Framework Expanded for Complex Industrial Applications}, 
   year={2023},
   volume={},
   number={},
@@ -57,42 +57,42 @@ Unreal [5.2.1](https://github.com/Cosys-Lab/Cosys-AirSim/tree/5.2.1) is also ava
 
 ## Cosys-Lab Modifications
 * Updated for Unreal 5.
-* Added [multi-layer annotation](https://cosys-lab.github.io/Cosys-AirSim/annotation) for groundtruth label generation with RGB, greyscale and texture options. Extensive API integration and available for camera and GPU-LiDAR sensors.
-* Added [Instance Segmentation](https://cosys-lab.github.io/Cosys-AirSim/instance_segmentation). 
-* Added [Echo sensor type](https://cosys-lab.github.io/Cosys-AirSim/echo) for simulation of sensors like sonar and radar.
-* Added [GPU LIDAR sensor type](https://cosys-lab.github.io/Cosys-AirSim/gpulidar): Uses GPU acceleration to simulate a LiDAR sensor. Can support much higher point density then normal LiDAR and behaves more authentic and has realistic intensity generation.
-* Added [skid steering SimMode and vehicle type](https://cosys-lab.github.io/Cosys-AirSim/skid_steer_vehicle). ClearPath Husky and Pioneer P3DX implemented as vehicle types using this new vehicle model. 
-* Added [Matlab API Client](https://cosys-lab.github.io/Cosys-AirSim/matlab) implementation as an easy to install Matlab toolbox.
-* Added various [random but deterministic dynamic object types and world configuration options](https://cosys-lab.github.io/Cosys-AirSim/dynamic_objects).
-* Added [Artificial Lights](https://cosys-lab.github.io/Cosys-AirSim/lights). 
+* Added [multi-layer annotation](https://cosys-lab.github.io/AirSim/annotation) for groundtruth label generation with RGB, greyscale and texture options. Extensive API integration and available for camera and GPU-LiDAR sensors.
+* Added [Instance Segmentation](https://cosys-lab.github.io/AirSim/instance_segmentation). 
+* Added [Echo sensor type](https://cosys-lab.github.io/AirSim/echo) for simulation of sensors like sonar and radar.
+* Added [GPU LIDAR sensor type](https://cosys-lab.github.io/AirSim/gpulidar): Uses GPU acceleration to simulate a LiDAR sensor. Can support much higher point density then normal LiDAR and behaves more authentic and has realistic intensity generation.
+* Added [skid steering SimMode and vehicle type](https://cosys-lab.github.io/AirSim/skid_steer_vehicle). ClearPath Husky and Pioneer P3DX implemented as vehicle types using this new vehicle model. 
+* Added [Matlab API Client](https://cosys-lab.github.io/AirSim/matlab) implementation as an easy to install Matlab toolbox.
+* Added various [random but deterministic dynamic object types and world configuration options](https://cosys-lab.github.io/AirSim/dynamic_objects).
+* Added [Artificial Lights](https://cosys-lab.github.io/AirSim/lights). 
 * Added BoxCar vehicle model to the Car SimMode to have a smaller vehicle to use in indoor spaces.
-* Added a new image type called [Lighting](https://cosys-lab.github.io/Cosys-AirSim/image_apis) which only shows the light information and no materials.
-* Updated [ComputerVision mode](https://cosys-lab.github.io/Cosys-AirSim/image_apis#computer-vision-mode-1): Now has full API and Simulation just like other vehicle types. It mostly means it can now have sensors attached (outside of IMU). Improved handling and camera operation.
-* Updated [LIDAR sensor type](https://cosys-lab.github.io/Cosys-AirSim/lidar): Fixed not tracing correctly, added ground truth (point labels) generation, added range-noise generation. Improved API pointcloud delivery to be full scan instead of being frame-rate dependent and partial.
+* Added a new image type called [Lighting](https://cosys-lab.github.io/AirSim/image_apis) which only shows the light information and no materials.
+* Updated [ComputerVision mode](https://cosys-lab.github.io/AirSim/image_apis#computer-vision-mode-1): Now has full API and Simulation just like other vehicle types. It mostly means it can now have sensors attached (outside of IMU). Improved handling and camera operation.
+* Updated [LIDAR sensor type](https://cosys-lab.github.io/AirSim/lidar): Fixed not tracing correctly, added ground truth (point labels) generation, added range-noise generation. Improved API pointcloud delivery to be full scan instead of being frame-rate dependent and partial.
 * Updated the camera, Echo and (GPU-)LiDAR sensors to be uncoupled from the vehicle and be placed as external world sensors.
-* Updated sensors like cameras, Echo sensor and GPU-LiDAR to ignore certain objects with the _MarkedIgnore_ Unreal tag and enabling the "IgnoreMarked" setting in [the settings file](https://cosys-lab.github.io/Cosys-AirSim/settings).
+* Updated sensors like cameras, Echo sensor and GPU-LiDAR to ignore certain objects with the _MarkedIgnore_ Unreal tag and enabling the "IgnoreMarked" setting in [the settings file](https://cosys-lab.github.io/AirSim/settings).
 * Updated cameras sensor with more distortion features such as chromatic aberration, motion blur and lens distortion. 
-* Updated Python [ROS implementation](https://cosys-lab.github.io/Cosys-AirSim/ros_python) with completely new implementation and feature set.
-* Updated C++ [ROS2 implementation](https://cosys-lab.github.io/Cosys-AirSim/ros_cplusplus) to support custom Cosys-AirSim features.
+* Updated Python [ROS implementation](https://cosys-lab.github.io/AirSim/ros_python) with completely new implementation and feature set.
+* Updated C++ [ROS2 implementation](https://cosys-lab.github.io/AirSim/ros_cplusplus) to support custom AirSim features.
 * Dropped support for Unity Environments.
 
-Some more details on our changes can be found in the [changelog](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/CHANGELOG.md).
+Some more details on our changes can be found in the [changelog](https://github.com/ngviettam82/Airsim/blob/main/CHANGELOG.md).
 
 ## How to Get It
 #### Download and run from packaged binary - Windows/Linux
-* [Download and run it](https://cosys-lab.github.io/Cosys-AirSim/run_packaged)
+* [Download and run it](https://cosys-lab.github.io/AirSim/run_packaged)
 #### Download and install from precompiled plugin - Windows/Linux
-* [Download and install it](https://cosys-lab.github.io/Cosys-AirSim/install_precompiled)
+* [Download and install it](https://cosys-lab.github.io/AirSim/install_precompiled)
 #### Install and use from source - Windows
-* [Install/Build it](https://cosys-lab.github.io/Cosys-AirSim/install_windows)
+* [Install/Build it](https://cosys-lab.github.io/AirSim/install_windows)
 #### Install and use from source - Linux
-* [Install/Build it](https://cosys-lab.github.io/Cosys-AirSim/install_linux)
+* [Install/Build it](https://cosys-lab.github.io/AirSim/install_linux)
 
 ## How to Use It
 
 ### Documentation
 
-View our [detailed documentation](https://cosys-lab.github.io/Cosys-AirSim/) on all aspects of Cosys-AirSim.
+View our [detailed documentation](https://cosys-lab.github.io/AirSim/) on all aspects of AirSim.
 
 ## Original AirSim Paper
 
@@ -110,4 +110,4 @@ More technical details are available in [AirSim paper (FSR 2017 Conference)](htt
 
 ## License
 
-This project is released under the MIT License. Please review the [License file](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/LICENSE) for more details.
+This project is released under the MIT License. Please review the [License file](https://github.com/ngviettam82/Airsim/blob/main/LICENSE) for more details.

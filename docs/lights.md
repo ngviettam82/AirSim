@@ -1,6 +1,6 @@
-# Artificial Lights in Cosys-AirSim
+# Artificial Lights in AirSim
 
-Cosys-AirSim supports adding artificial lights that are either static in the world or attached to the vehicle. 
+AirSim supports adding artificial lights that are either static in the world or attached to the vehicle. 
 These can be configured via the [settings.json file](settings.md).
 
 ## Vehicle Lights

@@ -1,6 +1,6 @@
 # Equirectangular Captures
 
-Cosys-AirSim can capture existing image types as 360 degree equirectangular images by setting `ProjectionMode` to `"Equirectangular"` in `settings.json`. This is a projection mode, not a new `ImageType`; the image request still uses the normal image type values such as `Scene`, `DepthPerspective`, `Segmentation`, `Infrared`, `Lighting`, or `Annotation`.
+AirSim can capture existing image types as 360 degree equirectangular images by setting `ProjectionMode` to `"Equirectangular"` in `settings.json`. This is a projection mode, not a new `ImageType`; the image request still uses the normal image type values such as `Scene`, `DepthPerspective`, `Segmentation`, `Infrared`, `Lighting`, or `Annotation`.
 
 ## Settings
 
@@ -95,7 +95,7 @@ Discrete or metric outputs use nearest sampling to preserve exact labels and num
 
 Unreal's eye adaptation, local exposure, bloom, depth of field, and some other view-local post effects are evaluated per rendered view. If those effects are applied independently to six cube faces, seams can appear after unwrap.
 
-For equirectangular `Scene` and `Lighting`, Cosys-AirSim captures the six cube faces as HDR scene color, unwraps them, then applies one global exposure and tonemap to the full equirectangular image. This is why these captures intentionally do not use the exact same per-face post-processing path as normal perspective or orthographic captures.
+For equirectangular `Scene` and `Lighting`, AirSim captures the six cube faces as HDR scene color, unwraps them, then applies one global exposure and tonemap to the full equirectangular image. This is why these captures intentionally do not use the exact same per-face post-processing path as normal perspective or orthographic captures.
 
 The global equirectangular exposure can be adjusted with:
 
@@ -123,7 +123,7 @@ The validated runtime target is Windows with D3D11 or D3D12. UE 5.5 Vulkan has k
 
 Each equirectangular image type owns a cube render target. High resolutions can therefore consume much more GPU memory than a normal perspective camera, especially when several equirectangular image types are enabled on the same camera. If memory pressure is a concern, configure only the image types needed for that run or split captures across separate camera/settings profiles.
 
-When copying Cosys-AirSim into another Unreal project, copy the complete `Unreal/Plugins` plugin set. Equirectangular subwindow previews depend on the `AirSimShaders` plugin in addition to the main `AirSim` plugin.
+When copying AirSim into another Unreal project, copy the complete `Unreal/Plugins` plugin set. Equirectangular subwindow previews depend on the `AirSimShaders` plugin in addition to the main `AirSim` plugin.
 
 Exact `DepthPlanar` and `DepthPerspective` responses should use `float_as_bytes=True` for high-resolution captures. This keeps the same `float32` values while avoiding the very slow RPC path that serializes one float object per pixel.
 

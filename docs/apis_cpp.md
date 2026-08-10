@@ -3,7 +3,7 @@
 Please read [general API doc](apis.md) first if you haven't already. This document describes C++ examples and other C++ specific details.
 
 ## Quick Start
-Fastest way to get started is to open AirSim.sln in Visual Studio 2017. You will see [Hello Car](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloCar/) and [Hello Drone](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloDrone/) examples in the solution. These examples will show you the include paths and lib paths you will need to setup in your VC++ projects. If you are using Linux then you will specify these paths either in your [cmake file](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/cmake/HelloCar/CMakeLists.txt) or on compiler command line.
+Fastest way to get started is to open AirSim.sln in Visual Studio 2017. You will see [Hello Car](https://github.com/ngviettam82/Airsim/tree/main/HelloCar/) and [Hello Drone](https://github.com/ngviettam82/Airsim/tree/main/HelloDrone/) examples in the solution. These examples will show you the include paths and lib paths you will need to setup in your VC++ projects. If you are using Linux then you will specify these paths either in your [cmake file](https://github.com/ngviettam82/Airsim/tree/main/cmake/HelloCar/CMakeLists.txt) or on compiler command line.
 
 #### Include and Lib Folders
 * Include folders: `$(ProjectDir)..\AirLib\deps\rpclib\include;include;$(ProjectDir)..\AirLib\deps\eigen3;$(ProjectDir)..\AirLib\include`
@@ -16,7 +16,7 @@ Here's how to use AirSim APIs using C++ to control simulated car (see also [Pyth
 
 ```cpp
 
-// ready to run example: https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/HelloCar/main.cpp
+// ready to run example: https://github.com/ngviettam82/Airsim/blob/main/HelloCar/main.cpp
 
 #include <iostream>
 #include "vehicles/car/api/CarRpcLibClient.hpp"
@@ -54,7 +54,7 @@ Here's how to use AirSim APIs using C++ to control simulated quadrotor (see also
 
 ```cpp
 
-// ready to run example: https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/HelloDrone/main.cpp
+// ready to run example: https://github.com/ngviettam82/Airsim/blob/main/HelloDrone/main.cpp
 
 #include <iostream>
 #include "vehicles/multirotor/api/MultirotorRpcLibClient.hpp"
@@ -85,6 +85,6 @@ int main()
 ```
 
 ## See Also
-* [Examples](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/Examples) of how to use internal infrastructure in AirSim in your other projects
-* [DroneShell](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/DroneShell) app shows how to make simple interface using C++ APIs to control drones
+* [Examples](https://github.com/ngviettam82/Airsim/tree/main/Examples) of how to use internal infrastructure in AirSim in your other projects
+* [DroneShell](https://github.com/ngviettam82/Airsim/tree/main/DroneShell) app shows how to make simple interface using C++ APIs to control drones
 * [Python APIs](apis.md)

@@ -1,12 +1,12 @@
 # airsim_ros_pkgs
 
-A ROS2 wrapper over the Cosys-AirSim C++ client library. All coordinates and data are in the right-handed coordinate frame of the ROS standard and not in NED except for geo points.
+A ROS2 wrapper over the AirSim C++ client library. All coordinates and data are in the right-handed coordinate frame of the ROS standard and not in NED except for geo points.
 
 This guide targets Ubuntu 22.04 WSL with ROS 2 Humble and the ROS 2 MCAP storage plugin.
 
 ## Build
 
-- Build Cosys-AirSim as per the instructions.
+- Build AirSim as per the instructions.
 
 - Install ROS 2 Humble and the MCAP tooling used to inspect Unreal-recorded bags:
 
@@ -28,7 +28,7 @@ source ~/.bashrc
 apt-get install python3-rosdep
 sudo rosdep init
 rosdep update
-cd <path-to-cosys-airsim>/ros2
+cd <path-to-AirSim>/ros2
 rosdep install --from-paths src -y --ignore-src --skip-keys pcl --skip-keys message_runtime --skip-keys message_generation --skip-keys px4_msgs
 ```
 
@@ -133,7 +133,7 @@ synchronized PX4 odometry have the same world frame. The generic
 
 The camera synchronizer leaves the original image topic and `Header.stamp` untouched. The wrapper publishes an image and its sibling `CameraInfo` only after Unreal establishes an explicit `CaptureScene()`/ordered-readback transaction; their stamp, dimensions, and pinhole intrinsics are the game-thread simulation/camera-state snapshot immediately before that capture, while request, GPU-readback, and callback-time fallbacks are dropped. Orthographic and equirectangular images are explicitly uncalibrated (`CameraInfo.K[0] == 0`), rather than being assigned false pinhole intrinsics. The synchronizer reads that identical `CameraInfo` header without a second image-payload subscription, and retains only the header while pairing. It blocks pairs until the direct-HIL timestamp proof, PX4 clock, and HIL-history freshness checks all pass; every emitted `Px4ImageSync` carries the proof state and matching-source metadata. Dynamic camera body/optical TF uses the same frame pose and stamp, including gimbal rotation. It interpolates PX4 `VehicleOdometry`, `VehicleAttitude`, and image-associated gyro and accelerometer vectors from `SensorCombined`, rejects estimator-reset, calibration-change, clipping, excessive-gap brackets, and incompatible PX4 message schemas, publishes body-frame odometry twist with valid covariance semantics, and associates low-rate GPS causally with its original source timestamp and reported age. It does not pause physics, wait for GPU readback, or copy images into a second ROS image.
 
-Frame gates are enabled by default for the live PX4 launch. Consume the matching `<camera_prefix>_gated/camera_info`, image (or `image/compressed`), and `image_sync` topics by their identical header stamp. The gate drops an incomplete sample and the rate bridge then accepts commands only after it has observed that gated image, calibration, and verified synchronization event. A camera-authorized rate controller cannot disable `start_frame_gates`; gate opt-out is restricted to observation-only or explicitly non-image-synchronized control. Use relative `camera_output_prefixes` such as `front_sync;down_sync`, never absolute paths, so vehicle namespaces cannot alias each other's outputs. The optional native rate bridge accepts `airsim_interfaces/msg/Px4RateSetpoint` in ROS FLU axes and forwards bounded values to PX4 `VehicleRatesSetpoint`/`OffboardControlMode` at 100 Hz. The input header is mandatory and must carry the AirSim/PX4 HIL source timestamp used by the algorithm, normally the gated camera stamp. When image synchronization is required, the header must exactly equal an accepted primary `Px4ImageSync` stamp with verified direct-HIL proof and the selected AirSim camera topic. Invalid values, replayed/future/stale source stamps, a non-advancing PX4 clock, active DDS timestamp translation, an unproven or stale image synchronization event, a PX4 restart fence, stale command transport, lost image synchronization, or PX4 failsafe/user takeover stop publication immediately. After a PX4 failsafe clears, the bridge requires a new gated frame and a new command before it resumes. The bridge does not arm the vehicle or select OFFBOARD mode. Use QGroundControl or an explicit, separately reviewed PX4 `VehicleCommand` publisher for those state changes. Complete parameters and multi-camera/multi-vehicle guidance are in [the package guide](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_px4_offboard/README.md).
+Frame gates are enabled by default for the live PX4 launch. Consume the matching `<camera_prefix>_gated/camera_info`, image (or `image/compressed`), and `image_sync` topics by their identical header stamp. The gate drops an incomplete sample and the rate bridge then accepts commands only after it has observed that gated image, calibration, and verified synchronization event. A camera-authorized rate controller cannot disable `start_frame_gates`; gate opt-out is restricted to observation-only or explicitly non-image-synchronized control. Use relative `camera_output_prefixes` such as `front_sync;down_sync`, never absolute paths, so vehicle namespaces cannot alias each other's outputs. The optional native rate bridge accepts `airsim_interfaces/msg/Px4RateSetpoint` in ROS FLU axes and forwards bounded values to PX4 `VehicleRatesSetpoint`/`OffboardControlMode` at 100 Hz. The input header is mandatory and must carry the AirSim/PX4 HIL source timestamp used by the algorithm, normally the gated camera stamp. When image synchronization is required, the header must exactly equal an accepted primary `Px4ImageSync` stamp with verified direct-HIL proof and the selected AirSim camera topic. Invalid values, replayed/future/stale source stamps, a non-advancing PX4 clock, active DDS timestamp translation, an unproven or stale image synchronization event, a PX4 restart fence, stale command transport, lost image synchronization, or PX4 failsafe/user takeover stop publication immediately. After a PX4 failsafe clears, the bridge requires a new gated frame and a new command before it resumes. The bridge does not arm the vehicle or select OFFBOARD mode. Use QGroundControl or an explicit, separately reviewed PX4 `VehicleCommand` publisher for those state changes. Complete parameters and multi-camera/multi-vehicle guidance are in [the package guide](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_px4_offboard/README.md).
 
 The wrapper requests camera frames every `update_airsim_img_response_every_n_sec` seconds (20 Hz by default); set it to `0.016666667` to request 60 Hz after measuring the actual map, resolution, GPU, and RPC path. An overdue camera RPC poll is dropped rather than queued, so no old frame is relabeled or held behind a backlog. `update_airsim_control_every_n_sec` independently controls the AirSim state/HIL-history poll period (100 Hz by default).
 
@@ -191,29 +191,29 @@ ros2 bag record -s mcap -o px4_fmu <runtime-fmu-topic>...
 
 If MCAP log time must equal PX4's synchronized message time, use a PX4-aware subscriber/writer that writes the PX4 source `msg.timestamp * 1000`; normal bag recorders may use receive time. In AirSim HIL this source time is already the camera simulation-time domain. Do not append a WSL PX4 recorder to the Unreal-written MCAP file. Merge the two closed bags offline using source timestamps rather than recorder arrival time.
 
-## Using Cosys-Airsim ROS wrapper
+## Using AirSim ROS wrapper
 
-The ROS wrapper is composed of two ROS nodes - the first is a wrapper over Cosys-AirSim's multirotor C++ client library, and the second is a simple PD position controller.
+The ROS wrapper is composed of two ROS nodes - the first is a wrapper over AirSim's multirotor C++ client library, and the second is a simple PD position controller.
 Let's look at the ROS API for both nodes:
 
-### Cosys-Airsim ROS Wrapper Node
+### AirSim ROS Wrapper Node
 
 #### Publishers:
 Vehicle-state publishers are created for configured vehicles. Individual sensor publishers are created only for enabled sensors explicitly listed in `Ros2.Sensors`; no individual sensor topics are created when that list is omitted or empty.
 
-- `/airsim_node/VEHICLE-NAME/car_state` [airsim_interfaces::CarState](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/CarState.msg)
+- `/airsim_node/VEHICLE-NAME/car_state` [airsim_interfaces::CarState](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/CarState.msg)
   The state of the car if the vehicle is of this sim-mode type.
 
-- `/airsim_node/VEHICLE-NAME/computervision_state` [airsim_interfaces::ComputerVisionState](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/ComputerVisionState.msg)
+- `/airsim_node/VEHICLE-NAME/computervision_state` [airsim_interfaces::ComputerVisionState](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/ComputerVisionState.msg)
   The state of the computer vision actor if the vehicle is of this sim-mode type.
 
-- `/airsim_node/origin_geo_point` [airsim_interfaces::GPSYaw](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/GPSYaw.msg)
-  GPS coordinates corresponding to global frame. This is set in the airsim's [settings.json](https://cosys-lab.github.io/Cosys-AirSim/settings/) file under the `OriginGeopoint` key.
+- `/airsim_node/origin_geo_point` [airsim_interfaces::GPSYaw](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/GPSYaw.msg)
+  GPS coordinates corresponding to global frame. This is set in the airsim's [settings.json](https://cosys-lab.github.io/AirSim/settings/) file under the `OriginGeopoint` key.
 
 - `/airsim_node/VEHICLE-NAME/global_gps` [sensor_msgs::NavSatFix](https://docs.ros.org/api/sensor_msgs/html/msg/NavSatFix.html)
   This the current GPS coordinates of the drone in airsim.
 
-- `/airsim_node/VEHICLE-NAME/environment` [airsim_interfaces::Environment](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/Environment.msg)
+- `/airsim_node/VEHICLE-NAME/environment` [airsim_interfaces::Environment](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/Environment.msg)
 
 - `/airsim_node/VEHICLE-NAME/odom_local` [nav_msgs::Odometry](https://docs.ros.org/api/nav_msgs/html/msg/Odometry.html)
   Estimated odometry frame (default name: odom_local, launch name and frame type are configurable) wrt take-off point; it is not an explicit simulator ground-truth topic.
@@ -226,7 +226,7 @@ Vehicle-state publishers are created for configured vehicles. Individual sensor 
 
 - `/tf` [tf2_msgs::TFMessage](https://docs.ros.org/api/tf2_msgs/html/msg/TFMessage.html)
 
-- `/airsim_node/VEHICLE-NAME/altimeter/SENSOR_NAME` [airsim_interfaces::Altimeter](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/Altimeter.msg)
+- `/airsim_node/VEHICLE-NAME/altimeter/SENSOR_NAME` [airsim_interfaces::Altimeter](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/Altimeter.msg)
   This the current altimeter reading for altitude, pressure, and [QNH](https://en.wikipedia.org/wiki/QNH)
 
 - `/airsim_node/VEHICLE-NAME/gps/SENSOR_NAME` [sensor_msgs::NavSatFix](https://docs.ros.org/api/sensor_msgs/html/msg/NavSatFix.html)
@@ -244,7 +244,7 @@ Vehicle-state publishers are created for configured vehicles. Individual sensor 
 - `/airsim_node/VEHICLE-NAME/lidar/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
   LIDAR pointcloud 
 
-- `/airsim_node/VEHICLE-NAME/lidar/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
+- `/airsim_node/VEHICLE-NAME/lidar/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
   Custom message type with an array of string that are the labels for each point in the pointcloud of the lidar sensor
 
 - `/airsim_node/VEHICLE-NAME/gpulidar/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
@@ -256,71 +256,71 @@ Vehicle-state publishers are created for configured vehicles. Individual sensor 
 - `/airsim_node/VEHICLE-NAME/echo/passive/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
   Echo sensor pointcloud for passive sensing
 
-- `/airsim_node/VEHICLE-NAME/echo/active/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
+- `/airsim_node/VEHICLE-NAME/echo/active/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
   Custom message type with an array of string that are the labels for each point in the pointcloud for the active echo pointcloud
 
-- `/airsim_node/VEHICLE-NAME/echo/passive/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
+- `/airsim_node/VEHICLE-NAME/echo/passive/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
   Custom message type with an array of string that are the labels for each point in the pointcloud for the passive echo pointcloud
 
-- `/airsim_node/instance_segmentation_labels` [airsim_interfaces::InstanceSegmentationList](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/InstanceSegmentationList.msg)
+- `/airsim_node/instance_segmentation_labels` [airsim_interfaces::InstanceSegmentationList](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/InstanceSegmentationList.msg)
   Custom message type with an array of a custom messages that are the names, color and index of the instance segmentation system for each object in the world.
    
-- `/airsim_node/object_transforms` [airsim_interfaces::ObjectTransformsList](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/ObjectTransformsList.msg)
+- `/airsim_node/object_transforms` [airsim_interfaces::ObjectTransformsList](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/ObjectTransformsList.msg)
   Custom message type with an array of [geometry_msgs::TransformStamped](http://docs.ros.org/api/geometry_msgs/html/msg/TransformStamped.html) that are the transforms of all objects in the world, each child frame ID is the object name.
    
 #### Subscribers:
 
-- `/airsim_node/VEHICLE-NAME/vel_cmd_body_frame` [airsim_interfaces::VelCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
+- `/airsim_node/VEHICLE-NAME/vel_cmd_body_frame` [airsim_interfaces::VelCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
   
-- `/airsim_node/VEHICLE-NAME/vel_cmd_world_frame` [airsim_interfaces::VelCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
+- `/airsim_node/VEHICLE-NAME/vel_cmd_world_frame` [airsim_interfaces::VelCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
   
-- `/airsim_node/all_robots/vel_cmd_body_frame` [airsim_interfaces::VelCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
+- `/airsim_node/all_robots/vel_cmd_body_frame` [airsim_interfaces::VelCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
   Set velocity command for all drones.
 
-- `/airsim_node/all_robots/vel_cmd_world_frame` [airsim_interfaces::VelCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
+- `/airsim_node/all_robots/vel_cmd_world_frame` [airsim_interfaces::VelCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
 
-- `/airsim_node/group_of_robots/vel_cmd_body_frame` [airsim_interfaces::VelCmdGroup](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmdGroup.msg)
+- `/airsim_node/group_of_robots/vel_cmd_body_frame` [airsim_interfaces::VelCmdGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmdGroup.msg)
   Set velocity command for a specific set of drones.
 - 
-- `/airsim_node/group_of_robots/vel_cmd_world_frame` [airsim_interfaces::VelCmdGroup](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmdGroup.msg)
+- `/airsim_node/group_of_robots/vel_cmd_world_frame` [airsim_interfaces::VelCmdGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmdGroup.msg)
   Set velocity command for a specific set of drones.
 
-- `/gimbal_angle_euler_cmd` [airsim_interfaces::GimbalAngleEulerCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/GimbalAngleEulerCmd.msg)
+- `/gimbal_angle_euler_cmd` [airsim_interfaces::GimbalAngleEulerCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/GimbalAngleEulerCmd.msg)
   Gimbal set point in euler angles.
 
-- `/gimbal_angle_quat_cmd` [airsim_interfaces::GimbalAngleQuatCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/GimbalAngleQuatCmd.msg)
+- `/gimbal_angle_quat_cmd` [airsim_interfaces::GimbalAngleQuatCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/GimbalAngleQuatCmd.msg)
   Gimbal set point in quaternion.
 
-- `/airsim_node/VEHICLE-NAME/car_cmd` [airsim_interfaces::CarControls](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/CarControls.msg)
-Throttle, brake, steering and gear selections for control. Both automatic and manual transmission control possible, see the [`car_joy.py`](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros/src/airsim_ros_pkgs/scripts/car_joy) script for use.
+- `/airsim_node/VEHICLE-NAME/car_cmd` [airsim_interfaces::CarControls](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/CarControls.msg)
+Throttle, brake, steering and gear selections for control. Both automatic and manual transmission control possible, see the [`car_joy.py`](https://github.com/ngviettam82/Airsim/blob/main/ros/src/airsim_ros_pkgs/scripts/car_joy) script for use.
 
 #### Services:
 
 For the per-vehicle `takeoff` and `land` services, `success=true` with `wait_on_last_task: false` means only that the wrapper queued the asynchronous RPC request; it does not prove that AirSim accepted or completed the task. With `wait_on_last_task: true`, it reports the completed AirSim task result. Group and all-vehicle services aggregate the completed results when waiting.
 
-- `/airsim_node/VEHICLE-NAME/land` [airsim_interfaces::Land](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/Land.html)
+- `/airsim_node/VEHICLE-NAME/land` [airsim_interfaces::Land](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Land.html)
 
-- `/airsim_node/VEHICLE-NAME/takeoff` [airsim_interfaces::Takeoff](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.html)
+- `/airsim_node/VEHICLE-NAME/takeoff` [airsim_interfaces::Takeoff](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.html)
 
-- `/airsim_node/all_robots/land` [airsim_interfaces::Land](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/Land.html)
+- `/airsim_node/all_robots/land` [airsim_interfaces::Land](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Land.html)
  land all drones
 
-- `/airsim_node/all_robots/takeoff` [airsim_interfaces::Takeoff](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.html)
+- `/airsim_node/all_robots/takeoff` [airsim_interfaces::Takeoff](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.html)
  take-off all drones
 
-- `/airsim_node/group_of_robots/land` [airsim_interfaces::LandGroup](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/LandGroup.html)
+- `/airsim_node/group_of_robots/land` [airsim_interfaces::LandGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/LandGroup.html)
  land a specific set of drones
 
-- `/airsim_node/group_of_robots/takeoff` [airsim_interfaces::TakeoffGroup](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/TakeoffGroup.html)
+- `/airsim_node/group_of_robots/takeoff` [airsim_interfaces::TakeoffGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/TakeoffGroup.html)
  take-off a specific set of drones
 
-- `/airsim_node/reset` [airsim_interfaces::Reset](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/Reset.html)
+- `/airsim_node/reset` [airsim_interfaces::Reset](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Reset.html)
  Resets *all* vehicles
 
-- `/airsim_node/instance_segmentation_refresh` [airsim_interfaces::RefreshInstanceSegmentation](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/RefreshInstanceSegmentation.html)
+- `/airsim_node/instance_segmentation_refresh` [airsim_interfaces::RefreshInstanceSegmentation](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/RefreshInstanceSegmentation.html)
  Refresh the instance segmentation list
 
-- `/airsim_node/object_transforms_refresh` [airsim_interfaces::RefreshObjectTransforms](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/srv/RefreshObjectTransforms.html)
+- `/airsim_node/object_transforms_refresh` [airsim_interfaces::RefreshObjectTransforms](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/RefreshObjectTransforms.html)
  Refresh the object transforms list
 
   
@@ -427,16 +427,16 @@ For the per-vehicle `takeoff` and `land` services, `success=true` with `wait_on_
 
 #### Services:
 
-- `/airsim_node/VEHICLE-NAME/gps_goal` [Request: [airsim_interfaces::SetGPSPosition](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros/src/airsim_ros_pkgs/srv/SetGPSPosition.srv)]
+- `/airsim_node/VEHICLE-NAME/gps_goal` [Request: [airsim_interfaces::SetGPSPosition](https://github.com/ngviettam82/Airsim/blob/main/ros/src/airsim_ros_pkgs/srv/SetGPSPosition.srv)]
   Target gps position + yaw.
   In **absolute** altitude.
 
-- `/airsim_node/VEHICLE-NAME/local_position_goal` [Request: [airsim_interfaces::SetLocalPosition](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros/src/airsim_ros_pkgs/srv/SetLocalPosition.srv)]
+- `/airsim_node/VEHICLE-NAME/local_position_goal` [Request: [airsim_interfaces::SetLocalPosition](https://github.com/ngviettam82/Airsim/blob/main/ros/src/airsim_ros_pkgs/srv/SetLocalPosition.srv)]
   Target local position + yaw in global frame.
 
 #### Subscribers:
 
-- `/airsim_node/origin_geo_point` [airsim_interfaces::GPSYaw](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/GPSYaw.msg)
+- `/airsim_node/origin_geo_point` [airsim_interfaces::GPSYaw](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/GPSYaw.msg)
   Listens to home geo coordinates published by `airsim_node`.
 
 - `/airsim_node/VEHICLE-NAME/odom_local` [nav_msgs::Odometry](https://docs.ros.org/api/nav_msgs/html/msg/Odometry.html)
@@ -444,10 +444,10 @@ For the per-vehicle `takeoff` and `land` services, `success=true` with `wait_on_
 
 #### Publishers:
 
-- `/vel_cmd_world_frame` [airsim_interfaces::VelCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
+- `/vel_cmd_world_frame` [airsim_interfaces::VelCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
   Sends velocity command to `airsim_node`
 
-- `/vel_cmd_body_frame` [airsim_interfaces::VelCmd](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
+- `/vel_cmd_body_frame` [airsim_interfaces::VelCmd](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/VelCmd.msg)
   Sends velocity command to `airsim_node`
 
 #### Global params

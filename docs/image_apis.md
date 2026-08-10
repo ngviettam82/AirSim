@@ -151,9 +151,9 @@ int getStereoAndDepthImages()
 
 ### C++
 
-For a more complete ready to run sample code please see [sample code in HelloDrone project](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloDrone/main.cpp) for multirotors or [HelloCar project](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/HelloCar/main.cpp).
+For a more complete ready to run sample code please see [sample code in HelloDrone project](https://github.com/ngviettam82/Airsim/tree/main/HelloDrone/main.cpp) for multirotors or [HelloCar project](https://github.com/ngviettam82/Airsim/tree/main/HelloCar/main.cpp).
 
-See also [other example code](https://github.com/Cosys-Lab/Cosys-AirSim/tree/main/Examples/DataCollection/StereoImageGenerator.hpp) that generates specified number of stereo images along with ground truth depth and disparity and saving it to [pfm format](pfm.md).
+See also [other example code](https://github.com/ngviettam82/Airsim/tree/main/Examples/DataCollection/StereoImageGenerator.hpp) that generates specified number of stereo images along with ground truth depth and disparity and saving it to [pfm format](pfm.md).
 
 ## Available Cameras
 
@@ -315,8 +315,8 @@ To retrieve the color map to know which color is assign to each color index you 
 ```python
 colorMap = client.simGetSegmentationColorMap()
 ```
-An example can be found in _segmentation_test.py_ (Cosys-AirSim/PythonClient/segmentation/segmentation_test.py).
-For a script that generates a full list of objects and their associated color, please see the script _segmentation_generate_list.py_ (Cosys-AirSim/PythonClient/segmentation/segmentation_generate_list.py).
+An example can be found in _segmentation_test.py_ (AirSim/PythonClient/segmentation/segmentation_test.py).
+For a script that generates a full list of objects and their associated color, please see the script _segmentation_generate_list.py_ (AirSim/PythonClient/segmentation/segmentation_generate_list.py).
 
 #### How to Find Mesh names?
 To get desired ground truth segmentation you will need to know the names of the meshes in your Unreal environment. To do this, you can use the API:

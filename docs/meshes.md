@@ -1,6 +1,6 @@
 # How to Access Meshes in AIRSIM
 
-Cosys-AirSim supports the ability to access the static meshes that make up the scene.
+AirSim supports the ability to access the static meshes that make up the scene.
 
 
 ## Mesh structure

@@ -1,5 +1,5 @@
-# Cosys-AirSim on Docker in Linux
-We've two options for docker. You can either build an image for running [Cosys-AirSim binaries](#packaged-runtime-binaries), or for compiling Cosys-AirSim [from source](#source).
+# AirSim on Docker in Linux
+We've two options for docker. You can either build an image for running [AirSim binaries](#packaged-runtime-binaries), or for compiling AirSim [from source](#source).
 
 ## Packaged runtime Binaries
 
@@ -24,7 +24,7 @@ python build_airsim_image.py \
  `docker images | grep airsim`
 
 #### Running an unreal binary inside a docker container
-- Get a Linux packaged Unreal project binary like the Blocks packaged binary example [found in the releases of Cosys-AirSim](https://github.com/Cosys-Lab/Cosys-AirSim/releases) or package your own project in Ubuntu.
+- Get a Linux packaged Unreal project binary like the Blocks packaged binary example [found in the releases of AirSim](https://github.com/ngviettam82/Airsim/releases) or package your own project in Ubuntu.
 Let's take the Blocks project binary as an example.
 You can download it by running
 
@@ -59,9 +59,9 @@ xhost +local:docker
  - [Follow this guide for preparing setting up your GitHub access, installing Docker and authenticating with the GitHub Container Registry.](https://dev.epicgames.com/documentation/en-us/unreal-engine/quick-start-guide-for-using-container-images-in-unreal-engine).
  - [And this guide for installing Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
-#### Building Cosys-AirSim inside UE5 dev docker container:
+#### Building AirSim inside UE5 dev docker container:
 - Below are the default arguments.
-  `--base_image`: This is image over which we'll install Cosys-AirSim. We've tested only the official Unreal Engine dev container, more info can be found [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-containers-in-unreal-engine). Change the base image at your own risk. This image includes everything needed and includes a pre-installed Unreal Engine and editor. 
+  `--base_image`: This is image over which we'll install AirSim. We've tested only the official Unreal Engine dev container, more info can be found [here](https://dev.epicgames.com/documentation/en-us/unreal-engine/overview-of-containers-in-unreal-engine). Change the base image at your own risk. This image includes everything needed and includes a pre-installed Unreal Engine and editor. 
    `--target_image` is the desired name of your docker image.
    Defaults to `airsim_source` with same tag as the base image
 
@@ -73,7 +73,7 @@ $ python build_airsim_image.py \
    --target_image=airsim_source:dev-slim-5.5.4
 ```
 
-#### Running Cosys-AirSim container
+#### Running AirSim container
 * Run the airsim source image we built by:
 
 ```bash
@@ -84,15 +84,15 @@ xhost +local:docker
    Syntax is `./run_airsim_image_source.sh DOCKER_IMAGE_NAME`
    Do not forget to run the xhost command first to bind the X11 to docker.
 
-* Inside the container, you can see `UnrealEngine` and `Cosys-AirSim` under `/home/ue4`.
+* Inside the container, you can see `UnrealEngine` and `AirSim` under `/home/ue4`.
 * Start unreal engine inside the container:
    `/home/ue4/UnrealEngine/Engine/Binaries/Linux/UnrealEditor`
 * [Specifying an airsim settings.json](#specifying-settingsjson)
-* Continue with [Cosys-AirSims's Linux docs](install_linux.md#build-unreal-environment).
+* Continue with [AirSims's Linux docs](install_linux.md#build-unreal-environment).
   For example start the Blocks environment in the container run (This will first copy the plugin and afterwards start open the project with the Unreal Editor):
 ```bash
-/home/ue4/Cosys-AirSim/Unreal/Environments/Blocks/update_from_git.sh
-/home/ue4/UnrealEngine/Engine/Binaries/Linux/UnrealEditor /home/ue4/Cosys-AirSim/Unreal/Environments/Blocks/Blocks.uproject
+/home/ue4/AirSim/Unreal/Environments/Blocks/update_from_git.sh
+/home/ue4/UnrealEngine/Engine/Binaries/Linux/UnrealEditor /home/ue4/AirSim/Unreal/Environments/Blocks/Blocks.uproject
 ```
 
 #### Packaging Unreal Environments in `airsim_source` containers
@@ -100,8 +100,8 @@ xhost +local:docker
     In the following script, specify the full path to your unreal uproject file by `project` and the directory where you want the binaries to be placed by `archivedirectory`
 * If you have not run the environment once manually you still need to copy the plugin to the project folder first like with the first command below. 
 ```bash
-/home/ue4/Cosys-AirSim/Unreal/Environments/Blocks/update_from_git.sh
-/home/ue4/UnrealEngine/Engine/Build/BatchFiles/RunUAT.sh BuildCookRun -nop4 -utf8output -cook -project=/home/ue4/Cosys-AirSim/Unreal/Environments/Blocks/Blocks.uproject -target=Blocks -platform=Linux -installed -stage -archive -package -build -pak -iostore -compressed -prereqs -archivedirectory=/home/ue4/Binaries/Blocks/ -clientconfig=Development -nocompile -nocompileuat
+/home/ue4/AirSim/Unreal/Environments/Blocks/update_from_git.sh
+/home/ue4/UnrealEngine/Engine/Build/BatchFiles/RunUAT.sh BuildCookRun -nop4 -utf8output -cook -project=/home/ue4/AirSim/Unreal/Environments/Blocks/Blocks.uproject -target=Blocks -platform=Linux -installed -stage -archive -package -build -pak -iostore -compressed -prereqs -archivedirectory=/home/ue4/Binaries/Blocks/ -clientconfig=Development -nocompile -nocompileuat
 ```
 
 This would create a Blocks binary in `/home/ue4/Binaries/Blocks/`.
@@ -110,7 +110,7 @@ You can test it by running `/home/ue4/Binaries/Blocks/Linux/Blocks.sh -windowed`
 ## Specifying settings.json
 #### `airsim_binary` docker image:
   - We're mapping the host machine's `PATH/TO/Airsim/settings.json` to the docker container's `/home/airsim_user/Documents/airsim/settings.json`.
-  - Hence, we can load any settings file by simply modifying `PATH_TO_YOUR/settings.json` by modifying the following snippets in [`run_airsim_image_binary.sh`](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/docker/run_airsim_image_binary.sh) to link `$PATH_TO_YOUR` to the correct folder. 
+  - Hence, we can load any settings file by simply modifying `PATH_TO_YOUR/settings.json` by modifying the following snippets in [`run_airsim_image_binary.sh`](https://github.com/ngviettam82/Airsim/blob/main/docker/run_airsim_image_binary.sh) to link `$PATH_TO_YOUR` to the correct folder. 
 
 ```sh
 $DOCKER_CMD -it \
@@ -123,8 +123,8 @@ $DOCKER_IMAGE_NAME \
 
 ####  `airsim_source` docker image:
 
-  * We're mapping the host machine's `PATH/TO/Cosys-AirSim/settings.json` to the docker container's `/home/ue4/Documents/airsim/settings.json`.
-  * Hence, we can load any settings file by simply modifying `PATH_TO_YOUR/settings.json` by modifying the following snippets in [`run_airsim_image_source.sh`](https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/docker/run_airsim_image_source.sh):
+  * We're mapping the host machine's `PATH/TO/AirSim/settings.json` to the docker container's `/home/ue4/Documents/airsim/settings.json`.
+  * Hence, we can load any settings file by simply modifying `PATH_TO_YOUR/settings.json` by modifying the following snippets in [`run_airsim_image_source.sh`](https://github.com/ngviettam82/Airsim/blob/main/docker/run_airsim_image_source.sh):
 
 ```sh
 $DOCKER_CMD -it \
