@@ -2378,6 +2378,8 @@ namespace airlib
                                        const std::string& simmode_name)
 
         {
+            unused(simmode_name); // formerly gated GPU LiDAR off Multirotor; async capture allows it
+
             // NOTE: Increase type if number of sensors goes above 8
             uint8_t present_sensors_bitmask = 0;
 
@@ -2393,15 +2395,13 @@ namespace airlib
                     auto sensor_type = Utils::toEnum<SensorBase::SensorType>(child.getInt("SensorType", 0));
                     auto enabled = child.getBool("Enabled", false);
 
-                    if (simmode_name == kSimModeTypeMultirotor  && sensor_type == SensorBase::SensorType::GPULidar && enabled) {
-                        throw std::invalid_argument(std::string("GPULiDAR sensor from MultiRotor vehicle as this combination is not supported. Please remove or disable."));
-                    }else{
-                        sensors[key] = createSensorSetting(sensor_type, key, enabled);
-                        initializeSensorSetting(sensors[key].get(), child);
+                    // GPU LiDAR is allowed on Multirotor when LidarCamera uses async
+                    // game-thread capture (see ALidarCamera async_capture_mode_).
+                    sensors[key] = createSensorSetting(sensor_type, key, enabled);
+                    initializeSensorSetting(sensors[key].get(), child);
 
-                        // Mark sensor types already added
-                        present_sensors_bitmask |= 1U << Utils::toNumeric(sensor_type);
-                    }
+                    // Mark sensor types already added
+                    present_sensors_bitmask |= 1U << Utils::toNumeric(sensor_type);
                 }
             }
 

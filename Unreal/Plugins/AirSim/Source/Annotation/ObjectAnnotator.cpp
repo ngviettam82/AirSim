@@ -588,20 +588,30 @@ void FObjectAnnotator::getPaintableComponentMeshesAndTags(AActor* actor, TMap<FS
 						component_name.Append("_");
 						component_name.Append(FString::FromInt(PersistentPrimitiveIndex));
 						paintable_components_meshes->Emplace(component_name, component);
-						if (actor->Tags.Num() > 0)
-							paintable_components_tags->Emplace(component_name, actor->Tags);
-						else
-							paintable_components_tags->Emplace(component_name, staticmesh_component->ComponentTags);
+						{
+			// Cosys: keep both actor and component tags when present.
+			TArray<FName> combined_tags = actor->Tags;
+			for (const FName& tag : staticmesh_component->ComponentTags)
+			{
+				combined_tags.AddUnique(tag);
+			}
+			paintable_components_tags->Emplace(component_name, combined_tags);
+		}
 					}
 					else {
 						FString component_name = actor->GetName();
 						component_name.Append("_");
 						component_name.Append(FString::FromInt(PersistentPrimitiveIndex));
 						paintable_components_meshes->Emplace(component_name, component);
-						if (actor->Tags.Num() > 0)
-							paintable_components_tags->Emplace(component_name, actor->Tags);
-						else
-							paintable_components_tags->Emplace(component_name, staticmesh_component->ComponentTags);
+						{
+			// Cosys: keep both actor and component tags when present.
+			TArray<FName> combined_tags = actor->Tags;
+			for (const FName& tag : staticmesh_component->ComponentTags)
+			{
+				combined_tags.AddUnique(tag);
+			}
+			paintable_components_tags->Emplace(component_name, combined_tags);
+		}
 					}
 			
 				}
@@ -610,10 +620,15 @@ void FObjectAnnotator::getPaintableComponentMeshesAndTags(AActor* actor, TMap<FS
 				FString component_name = actor->GetName();
 				component_name.Append("_");
 				component_name.Append(FString::FromInt(PersistentPrimitiveIndex));
-				if (actor->Tags.Num() > 0)
-					paintable_components_tags->Emplace(component_name, actor->Tags);
-				else
-					paintable_components_tags->Emplace(component_name, SkinnedMeshComponent->ComponentTags);
+				{
+			// Cosys: keep both actor and component tags when present.
+			TArray<FName> combined_tags = actor->Tags;
+			for (const FName& tag : SkinnedMeshComponent->ComponentTags)
+			{
+				combined_tags.AddUnique(tag);
+			}
+			paintable_components_tags->Emplace(component_name, combined_tags);
+		}
 				paintable_components_meshes->Emplace(component_name, component);
 			}
 		}
@@ -689,13 +704,14 @@ void FObjectAnnotator::getPaintableLandscapeComponentsAndTags(AActor* actor, TMa
 		}
 
 		paintable_landscape_components->Emplace(component_name, landscape_component);
-		if (actor->Tags.Num() > 0)
 		{
-			paintable_component_tags->Emplace(component_name, actor->Tags);
-		}
-		else
-		{
-			paintable_component_tags->Emplace(component_name, landscape_component->ComponentTags);
+			// Cosys: keep both actor and component tags when present.
+			TArray<FName> combined_tags = actor->Tags;
+			for (const FName& tag : landscape_component->ComponentTags)
+			{
+				combined_tags.AddUnique(tag);
+			}
+			paintable_component_tags->Emplace(component_name, combined_tags);
 		}
 	}
 }
@@ -739,7 +755,7 @@ bool FObjectAnnotator::SetComponentRGBColorByIndex(FString component_id, uint32 
 
 			UpdateColorMappings(current_component_id, color_index);
 			updated_any = true;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted indexed annotation of object %s to new ID # %s (Display: %s)"), *name_, *current_component_id, *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[current_component_id]);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted indexed annotation of object %s to new ID # %s (Display: %s)"), *name_, *current_component_id, *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[current_component_id]);
 		}
 		return updated_any;
 	}
@@ -782,7 +798,7 @@ bool FObjectAnnotator::SetComponentRGBColorByColor(FString component_id, FColor 
 
 			UpdateColorMappings(current_component_id, color_index);
 			updated_any = true;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted RGB annotation of object %s to new RGB color: %s (ID # %s)"), *name_, *current_component_id, *name_to_gammacorrected_color_map_[current_component_id], *FString::FromInt(color_index));
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted RGB annotation of object %s to new RGB color: %s (ID # %s)"), *name_, *current_component_id, *name_to_gammacorrected_color_map_[current_component_id], *FString::FromInt(color_index));
 		}
 		return updated_any;
 	}
@@ -823,7 +839,7 @@ bool FObjectAnnotator::SetComponentGreyScaleColorByValue(FString component_id, f
 			gammacorrected_color_to_name_map_.Emplace(color_string_gammacorrected, component_id);
 			name_to_gammacorrected_color_map_[component_id] = color_string_gammacorrected;
 			name_to_value_map_[component_id] = greyscale_value;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted greyscale annotation of object %s to new value %f (RGB: %s)"), *name_, *component_id, greyscale_value, *color_string_gammacorrected);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted greyscale annotation of object %s to new value %f (RGB: %s)"), *name_, *component_id, greyscale_value, *color_string_gammacorrected);
 			return true;
 		}
 		else
@@ -854,7 +870,7 @@ bool FObjectAnnotator::SetComponentTextureByDirectPath(FString component_id, FSt
 		if (UpdatePaintTextureComponent(component, path, component_id))
 		{
 			name_to_texture_path_map_[component_id] = new_texture;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted texture annotation of object %s to new direct texture %s"), *name_, *component_id, *path);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted texture annotation of object %s to new direct texture %s"), *name_, *component_id, *path);
 			return true;
 		}
 		else
@@ -896,7 +912,7 @@ bool FObjectAnnotator::SetComponentTextureByRelativePath(FString component_id)
 		if (UpdatePaintTextureComponent(component, new_texture, component_id))
 		{
 			name_to_texture_path_map_[component_id] = new_texture;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted texture annotation of object %s to new relative texture %s"), *name_, *component_id, *new_texture);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Adjusted texture annotation of object %s to new relative texture %s"), *name_, *component_id, *new_texture);
 			return true;
 		}
 		else
@@ -967,10 +983,10 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 						continue;
 					}
 					UpdateColorMappings(it.Key(), ObjectIndex);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
 					annotated_any = true;
 				}else{
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Ignored new object %s"), *name_, *it.Key());
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Ignored new object %s"), *name_, *it.Key());
 				}
 			}
 		}
@@ -1011,11 +1027,11 @@ bool FObjectAnnotator::AnnotateNewActorInstanceSegmentation(AActor* actor) {
 						continue;
 					}
 					UpdateColorMappings(it.Key(), ObjectIndex);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(ObjectIndex), *name_to_gammacorrected_color_map_[it.Key()]);
 					annotated_any = true;
 				}
 				else {
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Ignored new landscape object %s"), *name_, *it.Key());
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Ignored new landscape object %s"), *name_, *it.Key());
 				}
 			}
 		}
@@ -1094,11 +1110,11 @@ bool FObjectAnnotator::AnnotateNewActorRGB(AActor* actor) {
 			annotated_any = true;
 
 			if (set_direct_) {
-				UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s RGB annotated object %s with direct RGB color: %s (ID # %s)"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), *color_string_gammacorrected, *FString::FromInt(color_index));
+				//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s RGB annotated object %s with direct RGB color: %s (ID # %s)"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), *color_string_gammacorrected, *FString::FromInt(color_index));
 
 			}
 			else {
-				UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s RGB annotated object %s with ID # %s (RGB: %s)"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), *FString::FromInt(color_index), *color_string_gammacorrected);
+				//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s RGB annotated object %s with ID # %s (RGB: %s)"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), *FString::FromInt(color_index), *color_string_gammacorrected);
 			}
 		}else if (show_by_default_ && !it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere")) {
 			FColor new_color = FColor(0, 0, 0);
@@ -1110,7 +1126,7 @@ bool FObjectAnnotator::AnnotateNewActorRGB(AActor* actor) {
 			component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 			const FString color_string_gammacorrected = update_color_maps(it.Key(), MaxRGBColorMapIndex, new_color);
 			annotated_any = true;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged RGB annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged RGB annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
 		}
 	}
 	return annotated_any;
@@ -1176,7 +1192,7 @@ bool FObjectAnnotator::AnnotateNewActorGreyscale(AActor* actor) {
 			name_to_value_map_.FindOrAdd(it.Key()) = greyscale_value;
 			annotated_any = true;
 
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s greyscale annotated object %s with value %f (RGB: %s)"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), greyscale_value, *color_string_gammacorrected);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s greyscale annotated object %s with value %f (RGB: %s)"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), greyscale_value, *color_string_gammacorrected);
 		}else if (show_by_default_ && !it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere")) {
 			FColor new_color = FColor(0, 0, 0);
 			if (!PaintRGBComponent(it.Value(), new_color, it.Key()))
@@ -1192,7 +1208,7 @@ bool FObjectAnnotator::AnnotateNewActorGreyscale(AActor* actor) {
 			name_to_gammacorrected_color_map_.FindOrAdd(it.Key()) = color_string_gammacorrected;
 			name_to_value_map_.FindOrAdd(it.Key()) = 0;
 			annotated_any = true;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged greyscale annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged greyscale annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
 		}
 	}
 	return annotated_any;
@@ -1255,7 +1271,7 @@ bool FObjectAnnotator::AnnotateNewActorTexture(AActor* actor) {
 			component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 			name_to_texture_path_map_.FindOrAdd(it.Key()) = new_texture;
 			annotated_any = true;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s texture annotated object %s with texture: %s"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), *new_texture);
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: %s texture annotated object %s with texture: %s"), *name_, component_exists ? TEXT("Updated") : TEXT("Added new"), *it.Key(), *new_texture);
 		}else if (show_by_default_ && !it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere")) {
 			FString new_texture = "/AirSim/HUDAssets/k";
 			if (!PaintTextureComponent(it.Value(), new_texture, it.Key()))
@@ -1266,7 +1282,7 @@ bool FObjectAnnotator::AnnotateNewActorTexture(AActor* actor) {
 			component_to_name_map_.FindOrAdd(it.Value()) = it.Key();
 			name_to_texture_path_map_.FindOrAdd(it.Key()) = new_texture;
 			annotated_any = true;
-			UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged texture annotated object %s with default texture"), *name_, *it.Key());
+			//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged texture annotated object %s with default texture"), *name_, *it.Key());
 		}
 	}
 	return annotated_any;
@@ -1287,12 +1303,12 @@ bool FObjectAnnotator::DeleteActor(AActor* actor)
 					continue;
 				}
 				RemoveTrackedComponent(it.Key());
-				UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted object %s."), *name_, *it.Key());
+				//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted object %s."), *name_, *it.Key());
 				deleted_any = true;
 
 			}
 			else {
-				UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: could not delete object %s."), *name_, *it.Key());
+				//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: could not delete object %s."), *name_, *it.Key());
 				return false;
 			}
 		}
@@ -1311,11 +1327,11 @@ bool FObjectAnnotator::DeleteActor(AActor* actor)
 						continue;
 					}
 					RemoveTrackedComponent(it.Key());
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted landscape object %s."), *name_, *it.Key());
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Deleted landscape object %s."), *name_, *it.Key());
 					deleted_any = true;
 				}
 				else {
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: could not delete landscape object %s."), *name_, *it.Key());
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: could not delete landscape object %s."), *name_, *it.Key());
 					return false;
 				}
 			}
@@ -1445,7 +1461,7 @@ FString FObjectAnnotator::GetDisplayColorString(const FColor& color) const
 
 void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR* annotation_mode)
 {
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level %s annotation."), *name_, annotation_mode);
+	//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level %s annotation."), *name_, annotation_mode);
 	int32 skipped_mesh_component_count = 0;
 	int32 skipped_landscape_component_count = 0;
 	for (AActor* actor : InLevel->Actors)
@@ -1481,7 +1497,7 @@ void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR*
 						continue;
 					}
 					UpdateColorMappings(it.Key(), color_index);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
 				}				
 			}
 
@@ -1514,7 +1530,7 @@ void FObjectAnnotator::InitializeIndexedAnnotation(ULevel* InLevel, const TCHAR*
 						continue;
 					}
 					UpdateColorMappings(it.Key(), color_index);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new landscape object %s with ID # %s (Display: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *name_to_gammacorrected_color_map_[it.Key()]);
 				}
 			}
 		}
@@ -1536,7 +1552,7 @@ void FObjectAnnotator::InitializeInfrared(ULevel* InLevel)
 
 void FObjectAnnotator::InitializeRGB(ULevel* InLevel)
 {
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level RGB annotation by searching for tags."), *name_);
+	//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level RGB annotation by searching for tags."), *name_);
 	const auto update_color_maps = [this](const FString& component_name, int32 color_index, const FColor& color) {
 		const FString color_string = FString::FromInt(color.R) + "," + FString::FromInt(color.G) + "," + FString::FromInt(color.B);
 		const FString color_string_gammacorrected =
@@ -1585,11 +1601,11 @@ void FObjectAnnotator::InitializeRGB(ULevel* InLevel)
 					component_to_name_map_.Emplace(it.Value(), it.Key());
 					const FString color_string_gammacorrected = update_color_maps(it.Key(), color_index, new_color);
 					if (set_direct_) {
-						UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new RGB annotated object %s with direct RGB color: %s (ID # %s)"), *name_, *it.Key(), *color_string_gammacorrected, *FString::FromInt(color_index));
+						//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new RGB annotated object %s with direct RGB color: %s (ID # %s)"), *name_, *it.Key(), *color_string_gammacorrected, *FString::FromInt(color_index));
 
 					}
 					else {
-						UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new RGB annotated object %s with ID # %s (RGB: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *color_string_gammacorrected);
+						//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new RGB annotated object %s with ID # %s (RGB: %s)"), *name_, *it.Key(), *FString::FromInt(color_index), *color_string_gammacorrected);
 					}
 				}
 				else if (show_by_default_ && !it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere")) {
@@ -1601,18 +1617,18 @@ void FObjectAnnotator::InitializeRGB(ULevel* InLevel)
 					name_to_component_map_.Emplace(it.Key(), it.Value());
 					component_to_name_map_.Emplace(it.Value(), it.Key());
 					const FString color_string_gammacorrected = update_color_maps(it.Key(), MaxRGBColorMapIndex, new_color);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged RGB annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged RGB annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
 				}
 
 			}
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level RGB annotation."), *name_);
+	//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level RGB annotation."), *name_);
 }
 
 void FObjectAnnotator::InitializeGreyscale(ULevel* InLevel)
 {
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level greyscale annotation by searching for tags."), *name_);
+	//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level greyscale annotation by searching for tags."), *name_);
 	for (AActor* actor : InLevel->Actors)
 	{
 		if (actor && IsPaintable(actor))
@@ -1660,7 +1676,7 @@ void FObjectAnnotator::InitializeGreyscale(ULevel* InLevel)
 					gammacorrected_color_to_name_map_.Emplace(color_string_gammacorrected, it.Key());
 					name_to_gammacorrected_color_map_.Emplace(it.Key(), color_string_gammacorrected);
 					name_to_value_map_.Emplace(it.Key(), greyscale_value);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new greyscale annotated object %s with direct greyscale value %f (RGB: %s)"), *name_, *it.Key(), greyscale_value , *color_string_gammacorrected);
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new greyscale annotated object %s with direct greyscale value %f (RGB: %s)"), *name_, *it.Key(), greyscale_value , *color_string_gammacorrected);
 				}
 				else if (show_by_default_ && !it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere")) {
 					FColor new_color = FColor(0, 0, 0);
@@ -1676,17 +1692,17 @@ void FObjectAnnotator::InitializeGreyscale(ULevel* InLevel)
 					gammacorrected_color_to_name_map_.Emplace(color_string_gammacorrected, it.Key());
 					name_to_gammacorrected_color_map_.Emplace(it.Key(), color_string_gammacorrected);
 					name_to_value_map_.Emplace(it.Key(), 0);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged greyscale annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged greyscale annotated object %s with default color (RGB: %s)"), *name_, *it.Key(), *color_string_gammacorrected);
 				}
 			}
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level greyscale annotation."), *name_);
+	//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level greyscale annotation."), *name_);
 }
 
 void FObjectAnnotator::InitializeTexture(ULevel* InLevel)
 {
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level texture annotation by searching for tags."), *name_);
+	//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Starting full level texture annotation by searching for tags."), *name_);
 	for (AActor* actor : InLevel->Actors)
 	{
 		if (actor && IsPaintable(actor))
@@ -1739,10 +1755,10 @@ void FObjectAnnotator::InitializeTexture(ULevel* InLevel)
 					component_to_name_map_.Emplace(it.Value(), it.Key());
 					name_to_texture_path_map_.Emplace(it.Key(), new_texture);
 					if (set_direct_) {
-						UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new texture annotated object %s with texture: %s"), *name_, *it.Key(), *new_texture);
+						//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new texture annotated object %s with texture: %s"), *name_, *it.Key(), *new_texture);
 					}
 					else {
-						UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new texture annotated object %s with texture: %s"), *name_, *it.Key(), *new_texture);
+						//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added new texture annotated object %s with texture: %s"), *name_, *it.Key(), *new_texture);
 					}
 				}
 				else if (show_by_default_ && !it.Key().Contains("hidden_sphere") && !it.Key().Contains("AnnotationSphere")) {
@@ -1754,13 +1770,13 @@ void FObjectAnnotator::InitializeTexture(ULevel* InLevel)
 					name_to_component_map_.Emplace(it.Key(), it.Value());
 					component_to_name_map_.Emplace(it.Value(), it.Key());
 					name_to_texture_path_map_.Emplace(it.Key(), new_texture);
-					UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged texture annotated object %s with default texture"), *name_, *it.Key());
+					//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Added untagged texture annotated object %s with default texture"), *name_, *it.Key());
 				}
 
 			}
 		}
 	}
-	UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level texture annotation."), *name_);
+	//UE_LOG(LogTemp, Log, TEXT("AirSim Annotation [%s]: Completed full level texture annotation."), *name_);
 }
 
 bool FObjectAnnotator::IsRGBColorValid(FColor color) {

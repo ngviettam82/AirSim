@@ -1494,6 +1494,12 @@ void APIPCamera::setupCameraFromSettings(const APIPCamera::CameraSetting& camera
     ned_transform_ = &ned_transform;
 
     sensor_params_ = camera_setting;
+
+    // Cosys default: non-manual (auto) focus. enableManualFocus(true) still switches to Manual via API.
+    if (IsValid(camera_)) {
+        camera_->FocusSettings.FocusMethod = ECameraFocusMethod::Disable;
+    }
+
     hosted_gimbal_mount_relative_location_ = GetRelativeLocationSafe(this);
     hosted_gimbal_initial_relative_rotator_ = NormalizeRotator(GetRelativeRotationSafe(this));
     hosted_gimbal_current_relative_rotator_ = hosted_gimbal_initial_relative_rotator_;

@@ -133,7 +133,12 @@ void ALidarCamera::BeginPlay()
 void ALidarCamera::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	
+
+	// Multirotor path: finish CaptureScene/ReadPixels on the game thread.
+	if (async_capture_mode_ && async_capture_in_flight_.load()) {
+		ServiceAsyncCapture();
+	}
+
 	if (!used_by_airsim_) {
 		msr::airlib::vector<msr::airlib::real_T> point_cloud_empty;
 		Update(DeltaTime, point_cloud_empty, point_cloud_empty);
@@ -142,6 +147,8 @@ void ALidarCamera::Tick(float DeltaTime)
 
 void ALidarCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	async_capture_in_flight_ = false;
+	async_capture_ready_ = false;
 	capture_2D_depth_ = nullptr;
 	render_target_2D_depth_ = nullptr;
 	segmentation_material_ = nullptr;
@@ -150,6 +157,7 @@ void ALidarCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	render_target_2D_segmentation_ = nullptr;
 	capture_2D_intensity_ = nullptr;
 	render_target_2D_intensity_ = nullptr;
+	Super::EndPlay(EndPlayReason);
 }
 
 // Get all the settings from AirSim
@@ -179,6 +187,10 @@ void ALidarCamera::InitializeSettingsFromAirSim(const msr::airlib::GPULidarSimpl
 	rain_constant_a_ = settings.rain_constant_a;
 	rain_constant_b_ = settings.rain_constant_b;
 	generate_distance_noise_ = settings.generate_noise;
+	async_capture_mode_ = settings.async_capture_mode;
+	if (async_capture_mode_ && draw_debug_) {
+		UAirBlueprintLib::LogMessageString("LidarCamera", "draw_debug_ is not supported in multirotor async GPU LiDAR capture mode and will be ignored.", LogDebugLevel::Failure);
+	}
 
 	material_map_.clear();
 	material_map_.emplace(0, 1);
@@ -329,6 +341,10 @@ bool ALidarCamera::Update(float delta_time, msr::airlib::vector<msr::airlib::rea
 		InitializeSensor();
 	}
 
+	if (async_capture_mode_) {
+		return UpdateAsync(delta_time, point_cloud, point_cloud_final);
+	}
+
 	// Toggle to indicate to AirSim that the sensor has done a full measurement and that the point_cloud_final holds a new full measurement that can be given to the API
 	bool refresh_pointcloud = false;
 
@@ -398,6 +414,134 @@ bool ALidarCamera::Update(float delta_time, msr::airlib::vector<msr::airlib::rea
 		sensor_sum_rotation_angle_ = 0;
 	}
 	return refresh_pointcloud;
+}
+
+
+bool ALidarCamera::UpdateAsync(float delta_time, msr::airlib::vector<msr::airlib::real_T>& point_cloud,
+                                msr::airlib::vector<msr::airlib::real_T>& point_cloud_final)
+{
+	bool refresh_pointcloud = false;
+
+	if (async_capture_ready_.load()) {
+		refresh_pointcloud = ProcessCapturedBuffers(async_job_rotation_angle_, async_job_fov_, point_cloud, point_cloud_final);
+		async_capture_ready_ = false;
+	}
+
+	float sensor_rotation_angle_ = hfov_ * delta_time * sensor_rotation_frequency_;
+	sensor_sum_rotation_angle_ += sensor_rotation_angle_;
+
+	if (sensor_sum_rotation_angle_ > h_delta_angle_) {
+
+		if (async_capture_in_flight_.load()) {
+			return refresh_pointcloud;
+		}
+
+		if (reset_hfov_) {
+			sensor_cur_angle_ = FMath::Fmod(horizontal_fov_min_, 360);
+			sensor_prev_rotation_angle_ = 0;
+			completed_hfov_ = 0;
+			reset_hfov_ = false;
+		}
+
+		int32 cur_fov = target_fov_;
+		if (sensor_sum_rotation_angle_ > target_fov_) cur_fov = FMath::CeilToInt(FMath::Min(sensor_sum_rotation_angle_ + (3 * h_delta_angle_), 178.0f));
+		if (cur_fov % 2 != 0) cur_fov += 1;
+		if (cur_fov < 90) cur_fov = 90;
+
+		float capture_rotation = FMath::Fmod(sensor_cur_angle_ + sensor_prev_rotation_angle_ + (cur_fov / 2), 360);
+		sensor_cur_angle_ = FMath::Fmod(sensor_cur_angle_ + sensor_prev_rotation_angle_, 360);
+
+		if (sensor_sum_rotation_angle_ > cur_fov) sensor_sum_rotation_angle_ = cur_fov;
+
+		if (sensor_sum_rotation_angle_ >= hfov_ - completed_hfov_ && hfov_ != 360) {
+			sensor_sum_rotation_angle_ = hfov_ - completed_hfov_;
+			reset_hfov_ = true;
+		}
+		completed_hfov_ += sensor_sum_rotation_angle_;
+
+		bool do_capture = waited_frames_ >= wait_frames_;
+		if (!do_capture) waited_frames_++;
+
+		async_job_rotation_angle_ = sensor_sum_rotation_angle_;
+		async_job_fov_ = static_cast<float>(cur_fov);
+		StartAsyncCapture(capture_rotation, cur_fov, do_capture);
+
+		sensor_prev_rotation_angle_ = sensor_sum_rotation_angle_;
+		sensor_sum_rotation_angle_ = 0;
+	}
+	return refresh_pointcloud;
+}
+
+void ALidarCamera::StartAsyncCapture(float capture_rotation, int32 cur_fov, bool do_capture)
+{
+	pending_capture_rotation_ = capture_rotation;
+	pending_capture_fov_ = cur_fov;
+	pending_do_capture_ = do_capture;
+	async_capture_in_flight_ = true;
+}
+
+void ALidarCamera::ServiceAsyncCapture()
+{
+	if (!IsValid(capture_2D_depth_)) {
+		async_capture_in_flight_ = false;
+		return;
+	}
+
+	const int32 cur_fov = pending_capture_fov_;
+	capture_2D_depth_->FOVAngle = cur_fov;
+	if (generate_groundtruth_ && IsValid(capture_2D_segmentation_)) {
+		capture_2D_segmentation_->FOVAngle = cur_fov;
+	}
+	if (generate_intensity_ && IsValid(capture_2D_intensity_)) {
+		capture_2D_intensity_->FOVAngle = cur_fov;
+	}
+	RotateCamera(pending_capture_rotation_);
+
+	const bool targets_ok = capture_2D_depth_->TextureTarget != nullptr
+		&& (!generate_groundtruth_ || (IsValid(capture_2D_segmentation_) && capture_2D_segmentation_->TextureTarget != nullptr))
+		&& (!generate_intensity_ || (IsValid(capture_2D_intensity_) && capture_2D_intensity_->TextureTarget != nullptr));
+
+	if (pending_do_capture_ && targets_ok) {
+		capture_2D_depth_->CaptureScene();
+		if (generate_groundtruth_) {
+			capture_2D_segmentation_->CaptureScene();
+		}
+		if (generate_intensity_) {
+			capture_2D_intensity_->CaptureScene();
+		}
+
+		FTextureRenderTarget2DResource* render_target_2D_depth = (FTextureRenderTarget2DResource*)capture_2D_depth_->TextureTarget->GetResource();
+		if (render_target_2D_depth) {
+			render_target_2D_depth->ReadPixels(async_buffer_2D_depth_);
+		}
+		if (generate_groundtruth_) {
+			FTextureRenderTarget2DResource* render_target_2D_segmentation = (FTextureRenderTarget2DResource*)capture_2D_segmentation_->TextureTarget->GetResource();
+			if (render_target_2D_segmentation) {
+				FReadSurfaceDataFlags flags(RCM_UNorm, CubeFace_MAX);
+				flags.SetLinearToGamma(false);
+				render_target_2D_segmentation->ReadPixels(async_buffer_2D_segmentation_);
+			}
+		}
+		if (generate_intensity_) {
+			FTextureRenderTarget2DResource* render_target_2D_intensity = (FTextureRenderTarget2DResource*)capture_2D_intensity_->TextureTarget->GetResource();
+			if (render_target_2D_intensity) {
+				render_target_2D_intensity->ReadPixels(async_buffer_2D_intensity_);
+			}
+		}
+
+		async_capture_ready_ = true;
+	}
+
+	async_capture_in_flight_ = false;
+}
+
+bool ALidarCamera::ProcessCapturedBuffers(float sensor_rotation_angle, float fov,
+                                          msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final)
+{
+	return SampleRenders(sensor_rotation_angle, fov, point_cloud, point_cloud_final,
+		&async_buffer_2D_depth_,
+		generate_groundtruth_ ? &async_buffer_2D_segmentation_ : nullptr,
+		generate_intensity_ ? &async_buffer_2D_intensity_ : nullptr);
 }
 
 void ALidarCamera::updateInstanceSegmentationAnnotation(TArray<TWeakObjectPtr<UPrimitiveComponent> >& ComponentList) {
@@ -542,7 +686,8 @@ void ALidarCamera::RotateCamera(float sensor_rotation_angle)
 }
 
 // Perform the camera to LiDAR pointcloud conversion
-bool ALidarCamera::SampleRenders(float sensor_rotation_angle, float fov, msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final) {
+bool ALidarCamera::SampleRenders(float sensor_rotation_angle, float fov, msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final,
+	const TArray<FColor>* depth_override, const TArray<FColor>* segmentation_override, const TArray<FColor>* intensity_override) {
 
 	//CheckNotBlockedOnRenderThread();
 
@@ -594,26 +739,40 @@ bool ALidarCamera::SampleRenders(float sensor_rotation_angle, float fov, msr::ai
 	// Toggle to indicate to AirSim that the sensor has done a full measurement and that the point_cloud_final holds a new full measurement that can be given to the API
 	bool refresh_pointcloud = false;
 
-	// Declare the buffers for holding the RGB data from the cameras
-	TArray<FColor> buffer_2D_depth_;
-	TArray<FColor> buffer_2D_segmentation_;
-	TArray<FColor> buffer_2D_intensity_;
+	// Declare the buffers for holding the RGB data from the cameras (or use prefilled async buffers)
+	TArray<FColor> buffer_2D_depth_local;
+	TArray<FColor> buffer_2D_segmentation_local;
+	TArray<FColor> buffer_2D_intensity_local;
+	const TArray<FColor>* buffer_2D_depth_ptr = depth_override;
+	const TArray<FColor>* buffer_2D_segmentation_ptr = segmentation_override;
+	const TArray<FColor>* buffer_2D_intensity_ptr = intensity_override;
 
-	// Read the RGB data from the cameras and transfer them to the buffers
-	FTextureRenderTarget2DResource* render_target_2D_depth = (FTextureRenderTarget2DResource*)capture_2D_depth_->TextureTarget->GetResource();
-	render_target_2D_depth->ReadPixels(buffer_2D_depth_);
-	if (generate_groundtruth_) {
-		FTextureRenderTarget2DResource* render_target_2D_segmentation;
-		render_target_2D_segmentation = (FTextureRenderTarget2DResource*)capture_2D_segmentation_->TextureTarget->GetResource();
-		FReadSurfaceDataFlags flags(RCM_UNorm, CubeFace_MAX);
-		flags.SetLinearToGamma(false);
-		render_target_2D_segmentation->ReadPixels(buffer_2D_segmentation_);
+	if (!buffer_2D_depth_ptr) {
+		// Read the RGB data from the cameras and transfer them to the buffers
+		FTextureRenderTarget2DResource* render_target_2D_depth = (FTextureRenderTarget2DResource*)capture_2D_depth_->TextureTarget->GetResource();
+		render_target_2D_depth->ReadPixels(buffer_2D_depth_local);
+		buffer_2D_depth_ptr = &buffer_2D_depth_local;
+		if (generate_groundtruth_) {
+			FTextureRenderTarget2DResource* render_target_2D_segmentation;
+			render_target_2D_segmentation = (FTextureRenderTarget2DResource*)capture_2D_segmentation_->TextureTarget->GetResource();
+			FReadSurfaceDataFlags flags(RCM_UNorm, CubeFace_MAX);
+			flags.SetLinearToGamma(false);
+			render_target_2D_segmentation->ReadPixels(buffer_2D_segmentation_local);
+			buffer_2D_segmentation_ptr = &buffer_2D_segmentation_local;
+		}
+		if (generate_intensity_) {
+			FTextureRenderTarget2DResource* render_target_2D_intensity;
+			render_target_2D_intensity = (FTextureRenderTarget2DResource*)capture_2D_intensity_->TextureTarget->GetResource();
+			render_target_2D_intensity->ReadPixels(buffer_2D_intensity_local);
+			buffer_2D_intensity_ptr = &buffer_2D_intensity_local;
+		}
 	}
-	if (generate_intensity_) {
-		FTextureRenderTarget2DResource* render_target_2D_intensity;
-		render_target_2D_intensity = (FTextureRenderTarget2DResource*)capture_2D_intensity_->TextureTarget->GetResource();
-		render_target_2D_intensity->ReadPixels(buffer_2D_intensity_);
-	}
+
+	const TArray<FColor>& buffer_2D_depth_ = *buffer_2D_depth_ptr;
+	// Optional buffers may be empty when groundtruth/intensity are off.
+	static const TArray<FColor> kEmptyColorBuffer;
+	const TArray<FColor>& buffer_2D_segmentation_ = buffer_2D_segmentation_ptr ? *buffer_2D_segmentation_ptr : kEmptyColorBuffer;
+	const TArray<FColor>& buffer_2D_intensity_ = buffer_2D_intensity_ptr ? *buffer_2D_intensity_ptr : kEmptyColorBuffer;
 
 	// Calculate the camera intrensic parameters
 	float c_x = resolution_ / 2.0f;

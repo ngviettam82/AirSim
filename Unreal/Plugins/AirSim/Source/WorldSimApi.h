@@ -8,6 +8,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "AssetRegistry/AssetData.h"
 #include "Runtime/Engine/Classes/Engine/StaticMesh.h"
+#include "Runtime/Engine/Classes/Engine/SkeletalMesh.h"
+#include "Components/SkeletalMeshComponent.h"
 #include <string>
 #include <utility>
 
@@ -156,6 +158,7 @@ private:
     const UnrealImageCapture* getImageCaptureChecked(const std::string& vehicle_name) const;
 
     AActor* createNewStaticMeshActor(const FActorSpawnParameters& spawn_params, const FTransform& actor_transform, const Vector3r& scale, UStaticMesh* static_mesh);
+    AActor* createNewSkeletalMeshActor(const FActorSpawnParameters& spawn_params, const FTransform& actor_transform, const Vector3r& scale, USkeletalMesh* skeletal_mesh);
     AActor* createNewBPActor(const FActorSpawnParameters& spawn_params, const FTransform& actor_transform, const Vector3r& scale, UBlueprint* blueprint);
     void spawnPlayer();
 

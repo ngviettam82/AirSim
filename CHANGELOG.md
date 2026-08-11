@@ -8,6 +8,14 @@
 * Updated segmentation Python examples for the source-stencil ID range and actual object-ID lookup behavior.
 * Fixed RGB annotation initialization and dynamic updates to reject malformed/out-of-range tags, preserved proxy annotation hiding in Scene/Lighting captures, and kept custom annotation off the built-in stencil plane.
 * Fixed duplicate indexes for annotation system causing meshes to not show up in annotation masks.
+* Ported Cosys GPU LiDAR Multirotor support: settings no longer ban Multirotor+GPULiDAR; `LidarCamera` uses async game-thread capture/readback when `SimMode` is Multirotor (Cosys `cc6e4c7f`).
+* Ported Cosys skeletal annotation stale-`MeshObject` guard so proxy annotation skips draw when the parent skinned mesh recreates render state (Cosys `3eed4867`).
+* Ported Cosys Nanite skeletal / instanced-skinned annotation proxies (`FNaniteSkeletalAnnotationSceneProxy`, foliage classification, MATUSAGE_Nanite) for custom annotation layers while keeping landscape + source-stencil built-in segmentation.
+* Ported Cosys annotation tag policy: store merged actor + component tags (component tags no longer ignored when actor tags exist).
+* Ported Cosys annotation log quieting (high-volume `Log` spam commented out; warnings retained).
+* Ported Cosys default non-manual camera focus (`ECameraFocusMethod::Disable`); manual focus remains available via API.
+* Ported Cosys EndPlay hardening: call `Super::EndPlay` from vehicle/camera paths that cleared components without base teardown (Cosys `e4bad64c`).
+* Ported Cosys ROS2 (GPU)LiDAR timestamp de-dup, TF hierarchy world→odom→vehicle→sensors, camera TF fix, and `.hpp` includes for newer ROS 2 distros (Cosys `fa1ec289` / TF / Jazzy-related).
 
 ### April 2025 (version 3.3)
 * The latest available stable Unreal Engine version that is now targeted for release is 5.5. This means 5.4 will no longer be actively maintained. 

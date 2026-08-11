@@ -12,9 +12,12 @@
 #include "vehicles/multirotor/MultiRotorPhysicsBody.hpp"
 #include "sensors/gps/GpsSimple.hpp"
 #include "sensors/imu/ImuSimple.hpp"
+#include "sensors/lidar/GPULidarSimpleParams.hpp"
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
+#include <map>
 
 namespace msr
 {
@@ -40,6 +43,8 @@ namespace airlib
             testWindTurbulenceConfig();
             std::cout << "  battery..." << std::endl;
             testBatteryDrainIntegration();
+            std::cout << "  gpulidar multirotor..." << std::endl;
+            testGpuLidarMultirotorAllowed();
             std::cout << "MultirotorPhysicsTest: all assertions passed" << std::endl;
         }
 
@@ -282,6 +287,38 @@ namespace airlib
             testAssert(batt.voltage < cfg.battery_max_voltage, "voltage sag or discharge");
             testAssert(batt.thrustScale() < 1.0f + 1e-3f, "thrust scale not above 1");
             testAssert(batt.thrustScale() > 0.0f, "thrust scale positive while SOC remains");
+        }
+
+        void testGpuLidarMultirotorAllowed()
+        {
+            // Drive real shipped GPULidarSimpleParams::initializeFromSettings under Multirotor
+            // simmode: async_capture_mode must enable (Multirotor game-thread capture path).
+            const std::string prev_mode = AirSimSettings::singleton().simmode_name;
+            AirSimSettings::singleton().simmode_name = AirSimSettings::kSimModeTypeMultirotor;
+
+            Settings::loadJSonString(R"({
+                "SensorType": 8,
+                "Enabled": true,
+                "NumberOfChannels": 16,
+                "Range": 40
+            })");
+
+            AirSimSettings::GPULidarSetting setting;
+            setting.sensor_name = "gpulidar1";
+            setting.sensor_type = SensorBase::SensorType::GPULidar;
+            setting.enabled = true;
+            setting.settings = Settings::singleton();
+
+            GPULidarSimpleParams params;
+            params.initializeFromSettings(setting);
+            testAssert(params.async_capture_mode, "Multirotor GPU LiDAR must use async_capture_mode");
+
+            AirSimSettings::singleton().simmode_name = AirSimSettings::kSimModeTypeCar;
+            GPULidarSimpleParams car_params;
+            car_params.initializeFromSettings(setting);
+            testAssert(!car_params.async_capture_mode, "Car GPU LiDAR keeps sync capture path");
+
+            AirSimSettings::singleton().simmode_name = prev_mode;
         }
     };
 
