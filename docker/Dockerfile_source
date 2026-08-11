@@ -9,17 +9,22 @@ RUN apt-get install -y --no-install-recommends \
 	python3-pip \
 	rsync \
 	wget \
-	sudo
+	sudo \
+	git
 
 RUN apt-get install -y --upgrade cmake
 
+# Build context must be the repository root (see build_airsim_image.py).
+# Install this fork's client only — never PyPI cosysairsim / unrelated airsim wheels.
+COPY PythonClient /tmp/PythonClient
 RUN python3 -m pip install --upgrade pip && \
-pip3 install cosysairsim
+	pip3 install /tmp/PythonClient && \
+	rm -rf /tmp/PythonClient
 
 USER ue4
 RUN cd /home/ue4 && \
-	git clone --progress https://github.com/Cosys-Lab/Cosys-AirSim.git && \
-	cd Cosys-AirSim && \
+	git clone --progress https://github.com/ngviettam82/Airsim.git && \
+	cd Airsim && \
 	./setup.sh && \
 	./build.sh
 

@@ -6,8 +6,14 @@ This can be used from source or installed as a toolbox (install from [File Excha
 ## Prerequisites
 
 These instructions are for Matlab 2024a (with toolboxes for the client: Computer Vision, Aerospace, Signal Processing Toolbox) UE 5.X and latest AirSim release.
-It also requires the AirSim python package to be installed. 
-For this go into the _PythonClient_ folder and use pip to install it to your python environment that is also used in Matlab with `pip install .`
+It also requires **this repository's** AirSim Python package (`import airsim`).
+Do not install Cosys/PyPI wheels. From a clone of this repo, go into the
+_PythonClient_ folder and install into the same Python environment Matlab uses:
+
+```bash
+cd PythonClient
+pip install .
+```
 You can find out in Matlab what Python version is used with 
 ```matlab
 pe = pyenv;
@@ -18,12 +24,13 @@ You should have these components installed and working before proceeding.
 
 ## Usage
 
-This a client implementation of the RPC API for Matlab for the Cosys\-AirSim simulation framework. A main class AirSimClient is available which implements all API calls.
-Do note that at this point not all functions have been tested and most function documentation was auto\-generated. This is still a WIP client.
+This is a Matlab client for the RPC API of this AirSim fork. A main class
+AirSimClient implements the API calls. Not all functions have been fully tested;
+much of the function documentation was auto-generated. This is still a WIP client.
 
 ### **Initial setup**
 
-When starting with this wrapper, first try to make a connection to the Cosys\-AirSim simulation. 
+When starting with this wrapper, first try to make a connection to the AirSim simulation. 
 
 ```matlab
 vehicle_name = "airsimvehicle";

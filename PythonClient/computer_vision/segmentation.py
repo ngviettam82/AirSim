@@ -7,7 +7,7 @@
 #   "InitialInstanceSegmentation": true
 # }
 
-import cosysairsim as airsim
+import airsim
 import cv2
 import numpy as np
 import setup_path 

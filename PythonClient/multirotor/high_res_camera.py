@@ -1,4 +1,4 @@
-import cosysairsim as airsim
+import airsim
 from datetime import datetime
 
 '''

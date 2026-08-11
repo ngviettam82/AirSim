@@ -1,4 +1,4 @@
-import cosysairsim as airsim
+import airsim
 import time
 
 def RunConsoleCmd(client, cmd):

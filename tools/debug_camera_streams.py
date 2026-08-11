@@ -32,7 +32,7 @@ try:
 except ImportError as exc:
     raise SystemExit("OpenCV is required for this viewer. Install it with: pip install opencv-python") from exc
 
-import cosysairsim as airsim  # noqa: E402
+import airsim  # noqa: E402
 
 
 IMAGE_TYPES = {

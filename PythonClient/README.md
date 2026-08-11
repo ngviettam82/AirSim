@@ -1,26 +1,62 @@
 # Python API for AirSim
 
-This package contains simple Python client for [Cosys-AirSim](https://github.com/Cosys-Lab/Cosys-AirSim). 
-It can also be installed as a Python module. This integrates most API functions over RPC.
+Python client for **this** AirSim repository (RPC over the sim API). It is the
+modified client that matches the plugins and APIs in this tree — not the
+Cosys-Lab or Microsoft PyPI packages.
 
-Note that this is renamed `cosysairsim` from the original `airsim` module. 
+Import name:
+
+```python
+import airsim
+```
 
 ## Dependencies
-This package depends on `numpy` and `msgpack` and would automatically install `numpy` and `rpc-msgpack` (this may need administrator/sudo prompt):
+
+`numpy` and `rpc-msgpack` are pulled in automatically when you install from
+`PythonClient`. You can also install them yourself:
+
+```bash
+pip install numpy rpc-msgpack
 ```
-pip install numpy
-pip install rpc-msgpack
+
+## Install from this repository (required)
+
+Do **not** use `pip install cosysairsim` or other PyPI AirSim packages with this
+fork. Those wheels do not match our API surface.
+
+From a clone of this repo:
+
+```bash
+cd PythonClient
+pip install .
 ```
 
-## Installing from pip
+Editable install (recommended while developing APIs):
 
-You can install the Cosys-AirSim Python client from pip with `pip install cosysairsim`
+```bash
+cd PythonClient
+pip install -e .
+```
 
-## Installing Python Module from source
-For this go into the _PythonClient_ folder of the Cosys-AirSim repository and use pip to install it to your python environment with `pip install .`
+Then:
 
-## More Info
+```python
+import airsim
+client = airsim.MultirotorClient()
+client.confirmConnection()
+```
 
-More information on AirSim can be found at:
-https://cosys-lab.github.io/Cosys-AirSim/
+## Running examples without installing
 
+Example scripts under `PythonClient/car`, `multirotor`, and so on import
+`setup_path` first so the in-tree `airsim` package is preferred:
+
+```bash
+cd PythonClient/multirotor
+python hello_drone.py
+```
+
+## More info
+
+- API guide: [docs/apis.md](../docs/apis.md)
+- Repository: https://github.com/ngviettam82/Airsim

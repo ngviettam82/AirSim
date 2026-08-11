@@ -20,13 +20,28 @@ python hello_car.py
 
 If you are using Visual Studio 2019 then just open AirSim.sln, set PythonClient as startup project and choose `car\hello_car.py` as your startup script.
 
-### Installing AirSim Package
+### Installing the AirSim Python package
 
-You can also install the AirSim python module to your Python environment to use anywhere by running  `pip install .` in the _PythonClient_ folder. 
+Install the client **from this repository's `PythonClient` folder**. Do not use
+PyPI packages such as `cosysairsim` or unrelated `airsim` wheels — they do not
+match this fork.
+
+```bash
+cd PythonClient
+pip install .
+# or, while developing APIs:
+# pip install -e .
+```
+
+Then import as:
+
+```python
+import airsim
+```
 
 **Notes**
-1. You may notice a file `setup_path.py` in our example folders. This file has simple code to detect if `airsim` package is available in parent folder and in that case we use that instead of pip installed package so you always use latest code.
-2. AirSim is still under heavy development which means you might frequently need to update the package to use new APIs.
+1. Example folders include `setup_path.py`, which prefers the in-tree `PythonClient/airsim` package so scripts work even without a global install.
+2. After pulling API changes, reinstall from `PythonClient` (or use `pip install -e .`) so your environment matches the sim you are running.
 
 ## C++ Users
 If you want to use C++ APIs and examples, please see [C++ APIs Guide](apis_cpp.md).
@@ -37,7 +52,7 @@ Here's how to use AirSim APIs using Python to control simulated car (see also [C
 
 ```python
 # ready to run example: PythonClient/car/hello_car.py
-import cosysairsim as airsim
+import airsim
 import time
 
 # connect to the AirSim simulator 
@@ -81,7 +96,7 @@ Here's how to use AirSim APIs using Python to control simulated quadrotor (see a
 
 ```python
 # ready to run example: PythonClient/multirotor/hello_drone.py
-import cosysairsim as airsim
+import airsim
 import os
 
 # connect to the AirSim simulator

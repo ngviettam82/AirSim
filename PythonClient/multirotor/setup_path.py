@@ -42,11 +42,11 @@ class SetupPath:
 
         parent = SetupPath.getParentDir()
         if parent !=  '':
-            airsim_path = os.path.join(parent, 'cosysairsim')
+            airsim_path = os.path.join(parent, 'airsim')
             client_path = os.path.join(airsim_path, 'client.py')
             if os.path.exists(client_path):
                 sys.path.insert(0, parent)
         else:
-            logging.warning("airsim module not found in parent folder. Using installed package (pip install airsim).")
+            logging.warning("airsim module not found in parent folder. Install from this repo: cd PythonClient && pip install .")
 
 SetupPath.addAirSimModulePath()

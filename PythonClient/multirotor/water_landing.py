@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import setup_path 
-import cosysairsim as airsim
+import airsim
 
 import sys
 import time

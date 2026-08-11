@@ -251,7 +251,7 @@ Important intentional changes:
 Code checks:
 
 - `git diff --check` passed.
-- `python -m py_compile PythonClient/cosysairsim/client.py` passed.
+- `python -m py_compile PythonClient/airsim/client.py` passed.
 - Active EVN plugin source files hash-match the repository plugin for touched files.
 - UE 5.5 source verification confirmed `CustomDepthStencilValue` is one 0..255 value per primitive, and disabled manual scene captures should avoid persistent view state unless they need temporal history.
 - Stale generated mirror symbol search was clean.

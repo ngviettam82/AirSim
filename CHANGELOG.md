@@ -1,4 +1,5 @@
 ### Development (version 3.4)
+* Renamed the Python client package from `cosysairsim` back to `airsim` (`PythonClient/airsim`). Install only from this repository (`cd PythonClient && pip install .` or `pip install -e .`); do not use PyPI `cosysairsim` or unrelated wheels with this fork.
 * Added multirotor `Physics` settings: mass, arms, rotor coefficients, angular drag, ground effect, axial-flow thrust loss, optional battery model, wind turbulence, GPS noise, and IMU vibration. See `docs/multirotor_physics.md`.
 * When `EnableBattery` is true, AirSim publishes plant battery as MAVLink `BATTERY_STATUS` to PX4 on the control link so voltage/SOC can drive PX4 failsafes (RTL/land).
 * Updated built-in instance segmentation and infrared to use source CustomStencil labels instead of generated annotation mirror geometry. This avoids duplicating dense ISM/HISM instance buffers in large Unreal environments.
@@ -97,7 +98,7 @@
 * Updated settings with new parameter `MoveWorldOrigin` to move the world origin to the player start location when starting the simulator. Disabled by default. This affects things like setting the sensors to external!
 * Updated LiDAR sensor with parallelization to speed up pointcloud generation.
 * Updated Echo sensor with optional parallelization to speed up pointcloud generation. See echo documentation for more info.
-* Updated Python API module to be named AirSim and be installable from pip (`pip install cosysairsim`)
+* Updated Python API module to be named AirSim and be installable from pip (`pip install .`)
 * Updated Python API to now loads colormap from disk instead of regenerating each time and being very slow.
 * Updated [Matlab API Client](docs/matlab.md) implementation as an easy to install Matlab toolbox and completed all possible API functions (many untested!)
 * Fixed passive echo beacons data structure.

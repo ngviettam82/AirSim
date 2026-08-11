@@ -41,7 +41,7 @@ For equirectangular captures:
 For example, `Height: 720` returns `1440x720`. To capture scene, depth, and segmentation from the same configured camera:
 
 ```python
-import cosysairsim as airsim
+import airsim
 
 client = airsim.MultirotorClient()
 client.confirmConnection()

@@ -7,7 +7,7 @@ import statistics
 import time
 from pathlib import Path
 
-import cosysairsim as airsim
+import airsim
 
 DOC = Path(os.environ.get("AIRSIM_RECORDING_DIR", os.path.expanduser("~/Documents/AirSim")))
 

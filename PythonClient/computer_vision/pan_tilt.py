@@ -1,5 +1,5 @@
 import setup_path
-import cosysairsim as airsim
+import airsim
 import math
 import time
 import numpy as np

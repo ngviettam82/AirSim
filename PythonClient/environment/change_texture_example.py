@@ -1,4 +1,4 @@
-import cosysairsim as airsim
+import airsim
 
 c = airsim.MultirotorClient()
 c.confirmConnection()

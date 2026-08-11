@@ -2,7 +2,7 @@
 # https://github.com/Cosys-Lab/Cosys-AirSim/blob/main/docs/image_apis.md#computer-vision-mode
 
 import setup_path 
-import cosysairsim as airsim
+import airsim
 
 import pprint
 
