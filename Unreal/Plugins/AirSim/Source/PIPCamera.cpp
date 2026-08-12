@@ -44,8 +44,10 @@ namespace
             return;
         }
 
-        capture->bCaptureEveryFrame = false;
-        capture->bCaptureOnMovement = false;
+        // Label/isolation profile only. Do not force bCaptureEveryFrame /
+        // bCaptureOnMovement here — setCameraTypeUpdate() / setCaptureUpdate()
+        // own those for subwindow and API display. Overwriting them to false
+        // left Segmentation/Infrared frozen on the first (often black) frame.
         capture->bAlwaysPersistRenderingState = true;
         capture->bMainViewFamily = false;
         capture->bMainViewResolution = false;
@@ -60,8 +62,7 @@ namespace
             return;
         }
 
-        capture->bCaptureEveryFrame = false;
-        capture->bCaptureOnMovement = false;
+        // Same as 2D: never clobber continuous-capture flags owned by setCameraTypeUpdate.
         capture->bAlwaysPersistRenderingState = true;
         capture->bUseRayTracingIfEnabled = false;
     }
@@ -907,6 +908,8 @@ void APIPCamera::setCameraTypeUpdate(ImageType type, bool nodisplay, std::string
         setEquirectangularCaptureUpdate(cube_capture, nodisplay);
         if ((uses_label_capture || uses_source_stencil) && cube_capture != nullptr) {
             ConfigureSourceStencilCaptureState(cube_capture);
+            // Re-apply display capture flags after stencil isolation setup.
+            setEquirectangularCaptureUpdate(cube_capture, nodisplay);
         }
         int render_index = Utils::toNumeric(type);
         if (type == ImageType::Annotation && annotator_name_to_index_map_.Contains(FString(annotation_name.c_str()))) {
@@ -920,6 +923,9 @@ void APIPCamera::setCameraTypeUpdate(ImageType type, bool nodisplay, std::string
             setCaptureUpdate(capture, nodisplay);
             if (uses_label_capture || uses_source_stencil) {
                 ConfigureSourceStencilCaptureState(capture);
+                // Re-apply so continuous subwindow capture is not left disabled
+                // if a future path reintroduces rate flags in configure.
+                setCaptureUpdate(capture, nodisplay);
             }
         }
     }

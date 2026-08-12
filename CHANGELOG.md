@@ -1,4 +1,5 @@
 ### Development (version 3.4)
+* Fixed Segmentation/Infrared subwindows staying pitch black: source-stencil capture setup no longer forces `bCaptureEveryFrame=false` after the HUD enables continuous preview.
 * Hardened Cosys Multirotor GPU LiDAR async capture: pause sector integration while a game-thread capture is in flight, mutex-guard pixel buffers, and ignore empty depth readbacks.
 * Hardened `simSpawnObject` soft-path loading: resolve assets only on the game thread via `FSoftObjectPath::TryLoad`, avoid mutating shared mesh Nanite settings, and unique-name without open regex.
 * Physics `ArmLength` expands to the frame rotor count (quad/hex/octo); optional `ArmLengths` array for per-arm values. See `docs/multirotor_physics.md`.
