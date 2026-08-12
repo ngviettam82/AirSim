@@ -44,7 +44,7 @@ Seconds-long checks that fail fast on mistakes which never need a compiler:
 ### python_client
 
 Builds the sdist and wheel from `PythonClient/pyproject.toml`, then installs
-the wheel into a clean virtualenv and imports `cosysairsim` from it. A wheel
+the wheel into a clean virtualenv and imports `airsim` from it. A wheel
 that builds but cannot be installed or imported is not a passing result. The
 distribution is uploaded as the `python-client-dist` artifact.
 

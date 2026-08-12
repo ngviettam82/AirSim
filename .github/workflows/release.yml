@@ -45,6 +45,12 @@ jobs:
       - name: Build sdist and wheel
         run: python -m build PythonClient
 
+      - name: Install the wheel into a clean virtualenv and import it
+        run: |
+          python -m venv "${RUNNER_TEMP}/wheelcheck"
+          "${RUNNER_TEMP}/wheelcheck/bin/python" -m pip install --quiet PythonClient/dist/*.whl
+          "${RUNNER_TEMP}/wheelcheck/bin/python" -c "import airsim; print(airsim.__file__)"
+
       - name: Upload distribution
         uses: actions/upload-artifact@v7
         with:

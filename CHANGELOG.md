@@ -1,4 +1,5 @@
 ### Development (version 3.4)
+* Fixed CI/release Python wheel smoke tests to import `airsim` after the client package rename (they still imported `cosysairsim` and would fail on main).
 * Fixed Segmentation/Infrared subwindows staying pitch black: source-stencil capture setup no longer forces `bCaptureEveryFrame=false` after the HUD enables continuous preview.
 * Hardened Cosys Multirotor GPU LiDAR async capture: pause sector integration while a game-thread capture is in flight, mutex-guard pixel buffers, and ignore empty depth readbacks.
 * Hardened `simSpawnObject` soft-path loading: resolve assets only on the game thread via `FSoftObjectPath::TryLoad`, avoid mutating shared mesh Nanite settings, and unique-name without open regex.

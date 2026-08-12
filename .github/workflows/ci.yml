@@ -90,7 +90,8 @@ jobs:
         run: |
           python -m venv "${RUNNER_TEMP}/wheelcheck"
           "${RUNNER_TEMP}/wheelcheck/bin/python" -m pip install --quiet PythonClient/dist/*.whl
-          "${RUNNER_TEMP}/wheelcheck/bin/python" -c "import cosysairsim; print(cosysairsim.__file__)"
+          # Package name is airsim (PythonClient/airsim); never PyPI cosysairsim.
+          "${RUNNER_TEMP}/wheelcheck/bin/python" -c "import airsim; print(airsim.__file__)"
 
       - name: Upload distribution
         uses: actions/upload-artifact@v7
