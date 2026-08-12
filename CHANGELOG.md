@@ -1,4 +1,7 @@
 ### Development (version 3.4)
+* Hardened Cosys Multirotor GPU LiDAR async capture: pause sector integration while a game-thread capture is in flight, mutex-guard pixel buffers, and ignore empty depth readbacks.
+* Hardened `simSpawnObject` soft-path loading: resolve assets only on the game thread via `FSoftObjectPath::TryLoad`, avoid mutating shared mesh Nanite settings, and unique-name without open regex.
+* Physics `ArmLength` expands to the frame rotor count (quad/hex/octo); optional `ArmLengths` array for per-arm values. See `docs/multirotor_physics.md`.
 * Renamed the Python client package from `cosysairsim` back to `airsim` (`PythonClient/airsim`). Install only from this repository (`cd PythonClient && pip install .` or `pip install -e .`); do not use PyPI `cosysairsim` or unrelated wheels with this fork.
 * Added multirotor `Physics` settings: mass, arms, rotor coefficients, angular drag, ground effect, axial-flow thrust loss, optional battery model, wind turbulence, GPS noise, and IMU vibration. See `docs/multirotor_physics.md`.
 * When `EnableBattery` is true, AirSim publishes plant battery as MAVLink `BATTERY_STATUS` to PX4 on the control link so voltage/SOC can drive PX4 failsafes (RTL/land).

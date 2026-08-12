@@ -222,49 +222,81 @@ std::vector<std::string> WorldSimApi::listAssets() const
 
 std::string WorldSimApi::spawnObject(const std::string& object_name, const std::string& load_object, const WorldSimApi::Pose& pose, const WorldSimApi::Vector3r& scale, bool physics_enabled, bool is_blueprint)
 {
-    FString asset_name(load_object.c_str());
-    FAssetData* load_asset = simmode_->asset_map.Find(asset_name);
-
-    // Registry hit, or soft-load Engine/project path (e.g. /Engine/EngineMeshes/SkeletalCube.SkeletalCube).
-    UObject* resolved_asset = nullptr;
-    if (load_asset && load_asset->IsValid()) {
-        resolved_asset = load_asset->GetAsset();
-    }
-    else {
-        resolved_asset = StaticLoadObject(UObject::StaticClass(), nullptr, *asset_name);
-        if (!IsValid(resolved_asset)) {
-            // Also try common asset registry short names under Engine paths.
-            const FString engine_static = FString::Printf(TEXT("/Engine/BasicShapes/%s.%s"), *asset_name, *asset_name);
-            const FString engine_mesh = FString::Printf(TEXT("/Engine/EngineMeshes/%s.%s"), *asset_name, *asset_name);
-            resolved_asset = StaticLoadObject(UObject::StaticClass(), nullptr, *engine_static);
-            if (!IsValid(resolved_asset)) {
-                resolved_asset = StaticLoadObject(UObject::StaticClass(), nullptr, *engine_mesh);
-            }
-        }
-    }
-
-    if (!IsValid(resolved_asset)) {
-        throw std::invalid_argument("There were no objects with name " + load_object + " found in the Registry or loadable soft path");
-    }
-
     // Create struct for Location and Rotation of actor in Unreal
     FTransform actor_transform = simmode_->getGlobalNedTransform().fromGlobalNed(pose);
 
     bool spawned_object = false;
+    bool asset_found = false;
     std::string final_object_name = object_name;
+    // Capture load path by value: RPC worker must not touch UObject APIs (Find/GetAsset/StaticLoadObject).
+    const FString asset_name(load_object.c_str());
 
-    UAirBlueprintLib::RunCommandOnGameThread([this, resolved_asset, &final_object_name, &spawned_object, &actor_transform, &scale, &physics_enabled, &is_blueprint]() {
-        // Ensure new non-matching name for the object
-        std::vector<std::string> matching_names = UAirBlueprintLib::ListMatchingActors(simmode_, ".*" + final_object_name + ".*");
-        if (matching_names.size() > 0) {
-            int greatest_num{ 0 };
-            for (const auto& match : matching_names) {
-                std::string number_extension = match.substr(match.find_last_not_of("0123456789") + 1);
-                if (number_extension != "") {
-                    greatest_num = std::max(greatest_num, std::stoi(number_extension));
+    UAirBlueprintLib::RunCommandOnGameThread([this, asset_name, &final_object_name, &spawned_object, &asset_found, &actor_transform, &scale, &physics_enabled, &is_blueprint]() {
+        // Registry hit, or soft-load Engine/project path (e.g. /Engine/EngineMeshes/SkeletalCube.SkeletalCube).
+        // Must run on the game thread — StaticLoadObject/GetAsset assert IsInGameThread().
+        UObject* resolved_asset = nullptr;
+        FAssetData* load_asset = simmode_->asset_map.Find(asset_name);
+        if (load_asset && load_asset->IsValid()) {
+            resolved_asset = load_asset->GetAsset();
+        }
+        if (!IsValid(resolved_asset)) {
+            // Prefer FSoftObjectPath::TryLoad — missing packages return null instead of
+            // fatal-asserting on garbage paths (StaticLoadObject can appError).
+            auto tryLoadPath = [](const FString& path) -> UObject* {
+                if (path.IsEmpty()) {
+                    return nullptr;
+                }
+                const FSoftObjectPath soft(path);
+                if (!soft.IsValid()) {
+                    return nullptr;
+                }
+                return soft.TryLoad();
+            };
+
+            if (asset_name.StartsWith(TEXT("/"))) {
+                // Full object path from caller (Engine/project). Do not re-wrap as BasicShapes.
+                resolved_asset = tryLoadPath(asset_name);
+            }
+            else {
+                // Short asset name: probe registry-style Engine paths only.
+                resolved_asset = tryLoadPath(asset_name);
+                if (!IsValid(resolved_asset)) {
+                    resolved_asset = tryLoadPath(FString::Printf(TEXT("/Engine/BasicShapes/%s.%s"), *asset_name, *asset_name));
+                }
+                if (!IsValid(resolved_asset)) {
+                    resolved_asset = tryLoadPath(FString::Printf(TEXT("/Engine/EngineMeshes/%s.%s"), *asset_name, *asset_name));
                 }
             }
-            final_object_name += std::to_string(greatest_num + 1);
+        }
+        if (!IsValid(resolved_asset)) {
+            asset_found = false;
+            return;
+        }
+        asset_found = true;
+
+        // Ensure a unique actor name without open-ended regex (special characters
+        // in names previously broke ListMatchingActors(".*" + name + ".*")).
+        {
+            int greatest_num = 0;
+            bool found = false;
+            const FString base_name(final_object_name.c_str());
+            for (const TPair<FString, AActor*>& pair : simmode_->scene_object_map) {
+                const FString& key = pair.Key;
+                if (!key.Equals(base_name) && !key.StartsWith(base_name)) {
+                    continue;
+                }
+                // Accept exact base or base + numeric suffix only (avoid "CubeExtra" matching "Cube").
+                FString suffix = key.RightChop(base_name.Len());
+                if (key.Equals(base_name) || suffix.IsNumeric()) {
+                    found = true;
+                    if (suffix.IsNumeric()) {
+                        greatest_num = FMath::Max(greatest_num, FCString::Atoi(*suffix));
+                    }
+                }
+            }
+            if (found) {
+                final_object_name += std::to_string(greatest_num + 1);
+            }
         }
 
         FActorSpawnParameters new_actor_spawn_params;
@@ -289,14 +321,14 @@ std::string WorldSimApi::spawnObject(const std::string& object_name, const std::
             simmode_->scene_object_map.Add(FString(final_object_name.c_str()), NewActor);
             // Register for built-in instance segmentation so newly spawned meshes appear in masks.
             simmode_->AddNewActorToInstanceSegmentation(NewActor, true);
-        }
-
-        if (IsValid(NewActor)) {
             UAirBlueprintLib::setSimulatePhysics(NewActor, physics_enabled);
         }
     },
                                              true);
 
+    if (!asset_found) {
+        throw std::invalid_argument("There were no objects with name " + load_object + " found in the Registry or loadable soft path");
+    }
     if (!spawned_object) {
         throw std::invalid_argument(
             "Engine could not spawn " + load_object + " because of a stale reference of same name or unsupported asset type");
@@ -310,15 +342,8 @@ AActor* WorldSimApi::createNewStaticMeshActor(const FActorSpawnParameters& spawn
 
     if (IsValid(NewActor)) {
         UStaticMeshComponent* ObjectComponent = NewObject<UStaticMeshComponent>(NewActor);
-        // Prefer Nanite when the mesh has valid Nanite data (Engine cubes often do in UE5).
-        if (IsValid(static_mesh) && static_mesh->HasValidNaniteData()) {
-            FMeshNaniteSettings NaniteSettings = static_mesh->NaniteSettings;
-            if (!NaniteSettings.bEnabled) {
-                NaniteSettings.bEnabled = true;
-                static_mesh->NaniteSettings = NaniteSettings;
-                static_mesh->InitResources();
-            }
-        }
+        // Do not mutate shared UStaticMesh::NaniteSettings (process-wide side effect).
+        // Use the mesh as authored; Nanite renders when the asset already enables it.
         ObjectComponent->SetStaticMesh(static_mesh);
         ObjectComponent->SetRelativeLocation(FVector(0, 0, 0));
         ObjectComponent->SetWorldScale3D(FVector(scale[0], scale[1], scale[2]));
@@ -327,9 +352,8 @@ AActor* WorldSimApi::createNewStaticMeshActor(const FActorSpawnParameters& spawn
         ObjectComponent->RegisterComponent();
         NewActor->SetRootComponent(ObjectComponent);
         NewActor->SetActorLocationAndRotation(actor_transform.GetLocation(), actor_transform.GetRotation(), false, nullptr, ETeleportType::TeleportPhysics);
-        UE_LOG(LogTemp, Log, TEXT("AirSim spawnObject: static mesh %s NaniteData=%d NaniteEnabled=%d"),
+        UE_LOG(LogTemp, Verbose, TEXT("AirSim spawnObject: static mesh %s NaniteEnabled=%d"),
             static_mesh ? *static_mesh->GetName() : TEXT("null"),
-            static_mesh && static_mesh->HasValidNaniteData() ? 1 : 0,
             static_mesh && static_mesh->IsNaniteEnabled() ? 1 : 0);
     }
     return NewActor;
@@ -351,12 +375,10 @@ AActor* WorldSimApi::createNewSkeletalMeshActor(const FActorSpawnParameters& spa
         NewActor->SetRootComponent(MeshComponent);
         NewActor->SetActorLocationAndRotation(actor_transform.GetLocation(), actor_transform.GetRotation(), false, nullptr, ETeleportType::TeleportPhysics);
 
-        // MeshObject is valid only after render-state creation; force a refresh so Nanite path can bind.
+        // MeshObject is valid only after render-state creation; defer to the normal render-state path
+        // (RecreateRenderState_Concurrent is not safe to call from arbitrary spawn contexts).
         MeshComponent->MarkRenderStateDirty();
-        MeshComponent->RecreateRenderState_Concurrent();
-        const bool bNaniteMeshObject = MeshComponent->MeshObject && MeshComponent->MeshObject->IsNaniteMesh();
-        UE_LOG(LogTemp, Log, TEXT("AirSim spawnObject: skeletal mesh %s MeshObjectNanite=%d (FNaniteSkeletalAnnotationSceneProxy when 1)"),
-            *skeletal_mesh->GetName(), bNaniteMeshObject ? 1 : 0);
+        UE_LOG(LogTemp, Verbose, TEXT("AirSim spawnObject: skeletal mesh %s"), *skeletal_mesh->GetName());
     }
     return NewActor;
 }

@@ -43,6 +43,12 @@ namespace airlib
             testWindTurbulenceConfig();
             std::cout << "  battery..." << std::endl;
             testBatteryDrainIntegration();
+            std::cout << "  battery empty thrust..." << std::endl;
+            testBatteryEmptyThrustScale();
+            std::cout << "  ground effect edges..." << std::endl;
+            testGroundEffectEdges();
+            std::cout << "  arm length expand..." << std::endl;
+            testArmLengthExpandsToRotorCount();
             std::cout << "  gpulidar multirotor..." << std::endl;
             testGpuLidarMultirotorAllowed();
             std::cout << "MultirotorPhysicsTest: all assertions passed" << std::endl;
@@ -87,7 +93,7 @@ namespace airlib
             Settings::loadJSonString(json);
             const auto cfg = MultirotorPhysicsConfig::fromSettingsJson(Settings::singleton());
             testAssert(std::abs(cfg.mass - 1.25f) < 1e-4f, "parse Mass");
-            testAssert(cfg.arm_lengths.size() == 4 && std::abs(cfg.arm_lengths[0] - 0.25f) < 1e-4f, "parse ArmLength");
+            testAssert(std::abs(cfg.arm_length - 0.25f) < 1e-4f, "parse ArmLength into arm_length");
             testAssert(cfg.enable_battery, "parse EnableBattery");
             testAssert(std::abs(cfg.battery_capacity_mah - 4000.f) < 1e-3f, "parse capacity");
 
@@ -287,6 +293,53 @@ namespace airlib
             testAssert(batt.voltage < cfg.battery_max_voltage, "voltage sag or discharge");
             testAssert(batt.thrustScale() < 1.0f + 1e-3f, "thrust scale not above 1");
             testAssert(batt.thrustScale() > 0.0f, "thrust scale positive while SOC remains");
+        }
+
+        void testBatteryEmptyThrustScale()
+        {
+            BatteryState batt;
+            MultirotorPhysicsConfig cfg;
+            cfg.enable_battery = true;
+            cfg.battery_capacity_mah = 100;
+            cfg.battery_max_voltage = 16.8f;
+            cfg.battery_min_voltage = 13.2f;
+            cfg.battery_max_current_per_motor_a = 50.f;
+            batt.reset(cfg);
+            for (int i = 0; i < 5000; ++i)
+                batt.update(0.1f, 4.0f, 4);
+            testAssert(batt.soc <= 1e-3f, "SOC reaches empty");
+            const real_T scale = batt.thrustScale();
+            testAssert(scale > 0.0f && scale < 0.7f, "empty battery reduces thrust scale");
+        }
+
+        void testGroundEffectEdges()
+        {
+            const real_T disabled = MultirotorPhysicsConfig::groundEffectScale(0.1f, 0.0f, 0.25f, 0.02f);
+            testAssert(std::abs(disabled - 1.0f) < 1e-6f, "max_height 0 disables GE");
+            const real_T neg = MultirotorPhysicsConfig::groundEffectScale(-1.0f, 2.0f, 0.25f, 0.02f);
+            testAssert(neg >= 1.0f, "negative AGL clamped via min_height still boosts");
+            const real_T mid = MultirotorPhysicsConfig::groundEffectScale(1.0f, 2.0f, 0.25f, 0.02f);
+            testAssert(mid > 1.0f && mid < 1.25f, "mid AGL partial boost");
+        }
+
+        void testArmLengthExpandsToRotorCount()
+        {
+            Settings::loadJSonString(R"({ "ArmLength": 0.3 })");
+            const auto cfg = MultirotorPhysicsConfig::fromSettingsJson(Settings::singleton());
+            testAssert(std::abs(cfg.arm_length - 0.3f) < 1e-5f, "arm_length parsed");
+            testAssert(cfg.arm_lengths.empty(), "arm_lengths not prefilled to 4");
+            // Expansion happens in applyPhysicsConfig against concrete frame rotor_count.
+            // Smoke the expansion logic here:
+            const uint n = 6;
+            std::vector<real_T> arms;
+            if (arms.empty() && !std::isnan(cfg.arm_length) && cfg.arm_length > 0)
+                arms.assign(n, cfg.arm_length);
+            testAssert(arms.size() == 6 && std::abs(arms[0] - 0.3f) < 1e-5f, "expand to hex count");
+
+            Settings::loadJSonString(R"({ "ArmLengths": [0.2, 0.21, 0.22, 0.23, 0.24, 0.25] })");
+            const auto cfg2 = MultirotorPhysicsConfig::fromSettingsJson(Settings::singleton());
+            testAssert(cfg2.arm_lengths.size() == 6, "ArmLengths array size");
+            testAssert(std::abs(cfg2.arm_lengths[5] - 0.25f) < 1e-5f, "ArmLengths last value");
         }
 
         void testGpuLidarMultirotorAllowed()

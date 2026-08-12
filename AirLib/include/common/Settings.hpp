@@ -16,6 +16,7 @@ STRICT_MODE_ON
 
 #include <string>
 #include <mutex>
+#include <vector>
 #include "common_utils/FileSystem.hpp"
 
 namespace msr
@@ -191,6 +192,20 @@ namespace airlib
             else {
                 return defaultValue;
             }
+        }
+
+        /** Numeric JSON array as floats; empty if missing or not an array. */
+        std::vector<float> getFloatArray(const std::string& name) const
+        {
+            std::vector<float> values;
+            if (doc_.count(name) == 1 && doc_[name].is_array()) {
+                for (const auto& element : doc_[name]) {
+                    if (element.is_number()) {
+                        values.push_back(element.get<float>());
+                    }
+                }
+            }
+            return values;
         }
 
         bool getBool(const std::string& name, bool defaultValue) const

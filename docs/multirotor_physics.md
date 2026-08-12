@@ -1,8 +1,14 @@
 # AirSim multirotor physics settings
 
-Vehicle plant parameters can be set under each multirotor entry in `settings.json` via a `Physics` object. Omitted fields keep the frame defaults (Generic, Blacksheep, Flamewheel, Hex, Octo).
+Vehicle plant parameters can be set under each multirotor entry in `settings.json` via a `Physics` object. Omitted **numeric** fields keep the frame defaults (Generic, Blacksheep, Flamewheel, Hex, Octo).
+
+**Defaults that apply even without a `Physics` block:** `EnableGroundEffect` and `EnableThrustAirSpeed` default to **true** (realism). Set them to `false` explicitly if you want the older plant feel. `EnableBattery` defaults to **false**.
+
+**Frame types:** PX4 `Model` selects the frame first (`Hexacopter` / `Octocopter` / default quad, etc.). SimpleFlight is always a **quad**. `ArmLength` rebuilds arms for 4/6/8 rotors; optional `ArmLengths` array must match the frame's rotor count. Tri/bi frames are not shipped.
 
 For live PX4 with ROS 2 vision, use `"ClockType": "ScalableClock"`, `"ClockSpeed": 1`, and `"LockStep": false`. Physics settings do not depend on lockstep.
+
+**ROS 2 note:** Cosys-port TF hierarchy in `airsim_ros_pkgs` is world→odom→vehicle→sensors (not the older vehicle/odom parent layout). Retarget consumers if you upgrade.
 
 ## Vehicle `Physics` block
 
@@ -13,6 +19,7 @@ For live PX4 with ROS 2 vision, use `"ClockType": "ScalableClock"`, `"ClockSpeed
     "Mass": 1.0,
     "MotorAssemblyWeight": 0.055,
     "ArmLength": 0.2275,
+    "ArmLengths": [0.2275, 0.2275, 0.2275, 0.2275],
     "RotorZ": 0.025,
     "BodyBox": { "X": 0.18, "Y": 0.11, "Z": 0.04 },
     "LinearDragCoefficient": 0.325,

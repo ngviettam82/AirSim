@@ -422,19 +422,45 @@ bool ALidarCamera::UpdateAsync(float delta_time, msr::airlib::vector<msr::airlib
 {
 	bool refresh_pointcloud = false;
 
+	// Take ownership of completed capture buffers under the mutex, then sample unlocked.
 	if (async_capture_ready_.load()) {
-		refresh_pointcloud = ProcessCapturedBuffers(async_job_rotation_angle_, async_job_fov_, point_cloud, point_cloud_final);
-		async_capture_ready_ = false;
+		TArray<FColor> depth_local;
+		TArray<FColor> seg_local;
+		TArray<FColor> intensity_local;
+		float job_rot = 0.f;
+		float job_fov = 0.f;
+		bool have_depth = false;
+		{
+			std::lock_guard<std::mutex> lock(async_capture_mutex_);
+			if (async_buffer_2D_depth_.Num() > 0) {
+				depth_local = MoveTemp(async_buffer_2D_depth_);
+				seg_local = MoveTemp(async_buffer_2D_segmentation_);
+				intensity_local = MoveTemp(async_buffer_2D_intensity_);
+				job_rot = async_job_rotation_angle_;
+				job_fov = async_job_fov_;
+				have_depth = true;
+			}
+			async_capture_ready_ = false;
+		}
+		if (have_depth) {
+			refresh_pointcloud = SampleRenders(job_rot, job_fov, point_cloud, point_cloud_final,
+				&depth_local,
+				generate_groundtruth_ ? &seg_local : nullptr,
+				generate_intensity_ ? &intensity_local : nullptr);
+		}
+	}
+
+	// Physics may call Update many times while a game-thread capture is pending.
+	// Do not keep integrating rotation in that window — otherwise the next FOV
+	// request balloons and sectors are skipped when the capture finally returns.
+	if (async_capture_in_flight_.load()) {
+		return refresh_pointcloud;
 	}
 
 	float sensor_rotation_angle_ = hfov_ * delta_time * sensor_rotation_frequency_;
 	sensor_sum_rotation_angle_ += sensor_rotation_angle_;
 
 	if (sensor_sum_rotation_angle_ > h_delta_angle_) {
-
-		if (async_capture_in_flight_.load()) {
-			return refresh_pointcloud;
-		}
 
 		if (reset_hfov_) {
 			sensor_cur_angle_ = FMath::Fmod(horizontal_fov_min_, 360);
@@ -462,9 +488,15 @@ bool ALidarCamera::UpdateAsync(float delta_time, msr::airlib::vector<msr::airlib
 		bool do_capture = waited_frames_ >= wait_frames_;
 		if (!do_capture) waited_frames_++;
 
-		async_job_rotation_angle_ = sensor_sum_rotation_angle_;
-		async_job_fov_ = static_cast<float>(cur_fov);
-		StartAsyncCapture(capture_rotation, cur_fov, do_capture);
+		{
+			std::lock_guard<std::mutex> lock(async_capture_mutex_);
+			async_job_rotation_angle_ = sensor_sum_rotation_angle_;
+			async_job_fov_ = static_cast<float>(cur_fov);
+			pending_capture_rotation_ = capture_rotation;
+			pending_capture_fov_ = cur_fov;
+			pending_do_capture_ = do_capture;
+		}
+		async_capture_in_flight_ = true;
 
 		sensor_prev_rotation_angle_ = sensor_sum_rotation_angle_;
 		sensor_sum_rotation_angle_ = 0;
@@ -474,6 +506,8 @@ bool ALidarCamera::UpdateAsync(float delta_time, msr::airlib::vector<msr::airlib
 
 void ALidarCamera::StartAsyncCapture(float capture_rotation, int32 cur_fov, bool do_capture)
 {
+	// Kept for call sites; UpdateAsync now schedules under the mutex directly.
+	std::lock_guard<std::mutex> lock(async_capture_mutex_);
 	pending_capture_rotation_ = capture_rotation;
 	pending_capture_fov_ = cur_fov;
 	pending_do_capture_ = do_capture;
@@ -487,7 +521,16 @@ void ALidarCamera::ServiceAsyncCapture()
 		return;
 	}
 
-	const int32 cur_fov = pending_capture_fov_;
+	float pending_rot = 0.f;
+	int32 cur_fov = 0;
+	bool do_capture = false;
+	{
+		std::lock_guard<std::mutex> lock(async_capture_mutex_);
+		pending_rot = pending_capture_rotation_;
+		cur_fov = pending_capture_fov_;
+		do_capture = pending_do_capture_;
+	}
+
 	capture_2D_depth_->FOVAngle = cur_fov;
 	if (generate_groundtruth_ && IsValid(capture_2D_segmentation_)) {
 		capture_2D_segmentation_->FOVAngle = cur_fov;
@@ -495,13 +538,13 @@ void ALidarCamera::ServiceAsyncCapture()
 	if (generate_intensity_ && IsValid(capture_2D_intensity_)) {
 		capture_2D_intensity_->FOVAngle = cur_fov;
 	}
-	RotateCamera(pending_capture_rotation_);
+	RotateCamera(pending_rot);
 
 	const bool targets_ok = capture_2D_depth_->TextureTarget != nullptr
 		&& (!generate_groundtruth_ || (IsValid(capture_2D_segmentation_) && capture_2D_segmentation_->TextureTarget != nullptr))
 		&& (!generate_intensity_ || (IsValid(capture_2D_intensity_) && capture_2D_intensity_->TextureTarget != nullptr));
 
-	if (pending_do_capture_ && targets_ok) {
+	if (do_capture && targets_ok) {
 		capture_2D_depth_->CaptureScene();
 		if (generate_groundtruth_) {
 			capture_2D_segmentation_->CaptureScene();
@@ -510,26 +553,37 @@ void ALidarCamera::ServiceAsyncCapture()
 			capture_2D_intensity_->CaptureScene();
 		}
 
+		TArray<FColor> depth_local;
+		TArray<FColor> seg_local;
+		TArray<FColor> intensity_local;
+
 		FTextureRenderTarget2DResource* render_target_2D_depth = (FTextureRenderTarget2DResource*)capture_2D_depth_->TextureTarget->GetResource();
 		if (render_target_2D_depth) {
-			render_target_2D_depth->ReadPixels(async_buffer_2D_depth_);
+			render_target_2D_depth->ReadPixels(depth_local);
 		}
 		if (generate_groundtruth_) {
 			FTextureRenderTarget2DResource* render_target_2D_segmentation = (FTextureRenderTarget2DResource*)capture_2D_segmentation_->TextureTarget->GetResource();
 			if (render_target_2D_segmentation) {
 				FReadSurfaceDataFlags flags(RCM_UNorm, CubeFace_MAX);
 				flags.SetLinearToGamma(false);
-				render_target_2D_segmentation->ReadPixels(async_buffer_2D_segmentation_);
+				render_target_2D_segmentation->ReadPixels(seg_local);
 			}
 		}
 		if (generate_intensity_) {
 			FTextureRenderTarget2DResource* render_target_2D_intensity = (FTextureRenderTarget2DResource*)capture_2D_intensity_->TextureTarget->GetResource();
 			if (render_target_2D_intensity) {
-				render_target_2D_intensity->ReadPixels(async_buffer_2D_intensity_);
+				render_target_2D_intensity->ReadPixels(intensity_local);
 			}
 		}
 
-		async_capture_ready_ = true;
+		{
+			std::lock_guard<std::mutex> lock(async_capture_mutex_);
+			async_buffer_2D_depth_ = MoveTemp(depth_local);
+			async_buffer_2D_segmentation_ = MoveTemp(seg_local);
+			async_buffer_2D_intensity_ = MoveTemp(intensity_local);
+			// Only mark ready when depth readback actually produced samples.
+			async_capture_ready_ = async_buffer_2D_depth_.Num() > 0;
+		}
 	}
 
 	async_capture_in_flight_ = false;
@@ -538,6 +592,8 @@ void ALidarCamera::ServiceAsyncCapture()
 bool ALidarCamera::ProcessCapturedBuffers(float sensor_rotation_angle, float fov,
                                           msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final)
 {
+	// Legacy helper: process currently locked-out shared buffers (prefer UpdateAsync path).
+	std::lock_guard<std::mutex> lock(async_capture_mutex_);
 	return SampleRenders(sensor_rotation_angle, fov, point_cloud, point_cloud_final,
 		&async_buffer_2D_depth_,
 		generate_groundtruth_ ? &async_buffer_2D_segmentation_ : nullptr,
@@ -768,6 +824,10 @@ bool ALidarCamera::SampleRenders(float sensor_rotation_angle, float fov, msr::ai
 		}
 	}
 
+	if (!buffer_2D_depth_ptr || buffer_2D_depth_ptr->Num() <= 0) {
+		return false;
+	}
+
 	const TArray<FColor>& buffer_2D_depth_ = *buffer_2D_depth_ptr;
 	// Optional buffers may be empty when groundtruth/intensity are off.
 	static const TArray<FColor> kEmptyColorBuffer;
@@ -795,7 +855,7 @@ bool ALidarCamera::SampleRenders(float sensor_rotation_angle, float fov, msr::ai
 	}
 
 	// get the current rain intensity from the AirSim API
-	float rain_value;
+	float rain_value = 0.f;
 	if (generate_intensity_) {
 		rain_value = UWeatherLib::getWeatherParamScalar(this->GetWorld(), msr::airlib::Utils::toEnum<EWeatherParamScalar>(0));
 	}

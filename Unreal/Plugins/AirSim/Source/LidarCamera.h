@@ -23,6 +23,7 @@
 #include "sensors/lidar/GPULidarSimple.hpp"
 #include "common/Common.hpp"
 #include <atomic>
+#include <mutex>
 #include <random>
 
 #include "LidarCamera.generated.h"
@@ -150,6 +151,8 @@ private:
 	bool async_capture_mode_ = false;
 	std::atomic<bool> async_capture_in_flight_{ false };
 	std::atomic<bool> async_capture_ready_{ false };
+	// Guards job metadata + pixel buffers shared between physics UpdateAsync and game-thread Tick.
+	mutable std::mutex async_capture_mutex_;
 	float pending_capture_rotation_ = 0;
 	int32 pending_capture_fov_ = 0;
 	bool pending_do_capture_ = false;

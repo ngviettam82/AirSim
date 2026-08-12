@@ -609,9 +609,12 @@ namespace airlib
             else if (p.rotor_params.tip_speed <= 0)
                 p.rotor_params.calculateMaxThrust();
 
-            // Rebuild symmetric arm layout if ArmLength provided and rotor count matches
-            if (!cfg.arm_lengths.empty() && cfg.arm_lengths.size() == p.rotor_count) {
-                std::vector<real_T> arms = cfg.arm_lengths;
+            // Rebuild symmetric arm layout when ArmLength or explicit arm_lengths match rotor count.
+            std::vector<real_T> arms = cfg.arm_lengths;
+            if (arms.empty() && !std::isnan(cfg.arm_length) && cfg.arm_length > 0 && p.rotor_count > 0) {
+                arms.assign(p.rotor_count, cfg.arm_length);
+            }
+            if (!arms.empty() && arms.size() == p.rotor_count) {
                 const real_T rz = !std::isnan(cfg.rotor_z) ? cfg.rotor_z
                     : (p.rotor_poses.empty() ? 0.025f : p.rotor_poses[0].position.z());
                 if (p.rotor_count == 4)
@@ -630,7 +633,7 @@ namespace airlib
             const bool recompute_inertia =
                 !std::isnan(cfg.mass) || !std::isnan(cfg.motor_assembly_weight) ||
                 (!std::isnan(cfg.body_box.x()) && !std::isnan(cfg.body_box.y()) && !std::isnan(cfg.body_box.z())) ||
-                !cfg.arm_lengths.empty();
+                !arms.empty() || !std::isnan(cfg.arm_length);
 
             if (recompute_inertia &&
                 (std::isnan(cfg.inertia_diagonal.x()) || std::isnan(cfg.inertia_diagonal.y()) ||

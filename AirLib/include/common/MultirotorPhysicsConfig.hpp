@@ -24,6 +24,8 @@ namespace airlib
         Vector3r body_box = Vector3r(Utils::nan<real_T>(), Utils::nan<real_T>(), Utils::nan<real_T>());
         Vector3r inertia_diagonal = Vector3r(Utils::nan<real_T>(), Utils::nan<real_T>(), Utils::nan<real_T>());
         std::vector<real_T> arm_lengths; // if size matches rotor_count, rebuild poses
+        /** Symmetric ArmLength from settings; expanded to rotor_count in applyPhysicsConfig. */
+        real_T arm_length = Utils::nan<real_T>();
         real_T rotor_z = Utils::nan<real_T>();
 
         real_T linear_drag_coefficient = Utils::nan<real_T>();
@@ -108,11 +110,14 @@ namespace airlib
                 cfg.inertia_diagonal.z() = inertia.getFloat("Z", cfg.inertia_diagonal.z());
             }
 
-            // ArmLengths: [0.2275, 0.2275, 0.2275, 0.2275]
-            // Settings API may not expose arrays uniformly; support ArmLength for symmetric frames.
-            const real_T arm = json.getFloat("ArmLength", Utils::nan<real_T>());
-            if (!std::isnan(arm)) {
-                cfg.arm_lengths.assign(4, arm);
+            // Symmetric ArmLength (expanded to rotor_count in applyPhysicsConfig) and optional
+            // per-rotor ArmLengths array (must match frame rotor_count for rebuild).
+            cfg.arm_length = json.getFloat("ArmLength", cfg.arm_length);
+            {
+                const std::vector<float> arms = json.getFloatArray("ArmLengths");
+                if (!arms.empty()) {
+                    cfg.arm_lengths.assign(arms.begin(), arms.end());
+                }
             }
 
             return cfg;
