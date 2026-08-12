@@ -352,9 +352,10 @@ AActor* WorldSimApi::createNewStaticMeshActor(const FActorSpawnParameters& spawn
         ObjectComponent->RegisterComponent();
         NewActor->SetRootComponent(ObjectComponent);
         NewActor->SetActorLocationAndRotation(actor_transform.GetLocation(), actor_transform.GetRotation(), false, nullptr, ETeleportType::TeleportPhysics);
-        UE_LOG(LogTemp, Verbose, TEXT("AirSim spawnObject: static mesh %s NaniteEnabled=%d"),
-            static_mesh ? *static_mesh->GetName() : TEXT("null"),
-            static_mesh && static_mesh->IsNaniteEnabled() ? 1 : 0);
+        // Avoid UStaticMesh::IsNaniteEnabled — not available on all UE 5.5 target/API surfaces
+        // (RunUAT BuildPlugin / non-editor compile fails with C2039).
+        UE_LOG(LogTemp, Verbose, TEXT("AirSim spawnObject: static mesh %s"),
+            static_mesh ? *static_mesh->GetName() : TEXT("null"));
     }
     return NewActor;
 }
