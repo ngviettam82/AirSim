@@ -1,6 +1,9 @@
 name: Unreal Plugin Package
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       ue_root:
@@ -11,9 +14,6 @@ on:
         description: RunUAT BuildPlugin target platforms
         required: true
         default: Win64
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: write
@@ -31,85 +31,190 @@ jobs:
       - X64
       - unreal
 
+    timeout-minutes: 180
+
+    # Windows PowerShell rather than pwsh: PowerShell 7 is present on
+    # GitHub-hosted runners but not on an ordinary Windows machine.
+    defaults:
+      run:
+        shell: powershell
+
     env:
-      UE_ROOT: ${{ github.event.inputs.ue_root || 'C:\Program Files\Epic Games\UE_5.5' }}
-      TARGET_PLATFORMS: ${{ github.event.inputs.target_platforms || 'Win64' }}
-      PACKAGE_DIR: ${{ github.workspace }}\artifacts\AirSimPlugin
+      UE_ROOT: ${{ inputs.ue_root || 'C:\Program Files\Epic Games\UE_5.5' }}
+      TARGET_PLATFORMS: ${{ inputs.target_platforms || 'Win64' }}
+      # The plugins are packaged into a directory literally named Plugins so the
+      # archive extracts to Plugins/AirSim and Plugins/AirSimShaders, which is
+      # the layout an Unreal project expects. Dropping the extracted folder into
+      # the project root is then the whole installation.
+      PACKAGE_DIR: ${{ github.workspace }}\artifacts\AirSimPlugin\Plugins
       PACKAGE_ZIP: ${{ github.workspace }}\artifacts\AirSimPlugin-Win64.zip
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          lfs: true
+        uses: actions/checkout@v7
 
-      - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Verify Unreal Engine
-        shell: pwsh
+      - name: Verify the toolchain
         run: |
           $batchFiles = Join-Path $env:UE_ROOT "Engine\Build\BatchFiles"
-          $runUat = Join-Path $batchFiles "RunUAT.bat"
-          $build = Join-Path $batchFiles "Build.bat"
-          if (-not (Test-Path $runUat)) {
-            throw "RunUAT.bat not found at $runUat"
+          foreach ($file in @("RunUAT.bat")) {
+            $path = Join-Path $batchFiles $file
+            if (-not (Test-Path $path)) {
+              throw "$file not found at $path. Set UE_ROOT to the Unreal Engine 5.5 installation."
+            }
           }
-          if (-not (Test-Path $build)) {
-            throw "Build.bat not found at $build"
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe not found at $vswhere. Visual Studio 2022 does not appear to be installed."
+          }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) {
+            throw "No Visual Studio installation carrying the x64 C++ toolset was found."
+          }
+          Write-Host "Visual Studio: $vs"
+
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+            throw "The GitHub CLI is required to attach the package to a release. Install it with: winget install --id GitHub.cli"
           }
 
       - name: Build AirLib
         shell: cmd
-        run: build.cmd --no-full-poly-car --Release
+        run: |
+          set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+          for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+          if not defined VSPATH exit /b 1
+          call "%VSPATH%\Common7\Tools\VsDevCmd.bat" -arch=x64 || exit /b 1
+          call build.cmd --no-full-poly-car --Release || exit /b 1
 
-      - name: Sync plugin into Blocks project
+      # update_from_git.bat performs this copy and then runs
+      # GenerateProjectFiles.bat, which locates UnrealVersionSelector through the
+      # .uproject file association in the registry. A build machine without that
+      # association fails there, and the generated .sln is only needed to open
+      # the project in an IDE, which RunUAT BuildPlugin does not require. The
+      # copy is therefore done directly. robocopy reports success with exit
+      # codes below 8, so only 8 and above are treated as failure.
+      - name: Sync plugins into the Blocks project
         shell: cmd
         working-directory: Unreal\Environments\Blocks
-        run: update_from_git.bat ..\..\..
-
-      - name: Build Blocks editor target
-        shell: pwsh
-        working-directory: Unreal\Environments\Blocks
         run: |
-          $build = Join-Path $env:UE_ROOT "Engine\Build\BatchFiles\Build.bat"
-          & $build BlocksEditor Win64 Development -Project="$PWD\Blocks.uproject" -WaitMutex -NoHotReload
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
+          robocopy "%GITHUB_WORKSPACE%\Unreal\Plugins\AirSim" "Plugins\AirSim" /MIR /XD temp /njh /njs /ndl /np
+          if errorlevel 8 exit /b 1
+          robocopy "%GITHUB_WORKSPACE%\Unreal\Plugins\AirSimShaders" "Plugins\AirSimShaders" /MIR /XD temp /njh /njs /ndl /np
+          if errorlevel 8 exit /b 1
+          robocopy "%GITHUB_WORKSPACE%\AirLib" "Plugins\AirSim\Source\AirLib" /MIR /XD temp /njh /njs /ndl /np
+          if errorlevel 8 exit /b 1
+          exit /b 0
 
-      - name: Package plugin
-        shell: pwsh
+      # Both plugins are packaged: docs/packaging.md states that an AirSim-only
+      # set is incomplete because the equirectangular preview shaders live in
+      # AirSimShaders.
+      #
+      # AirSim.uplugin lists AirSimShaders under "Plugins", and BuildPlugin
+      # compiles inside a temporary host project that contains only the plugin
+      # being packaged, so AirSim on its own fails with "Unable to find plugin
+      # 'AirSimShaders'". The host project directory is wiped at the start of
+      # every BuildPlugin run, so the dependency cannot be placed there and is
+      # staged in the engine's plugin directory instead. AirSimShaders is
+      # packaged first, while no copy of it exists in the engine, because two
+      # plugins of the same name visible at once is itself an error.
+      - name: Package the plugins
         run: |
           $runUat = Join-Path $env:UE_ROOT "Engine\Build\BatchFiles\RunUAT.bat"
-          $plugin = Join-Path $PWD "Unreal\Environments\Blocks\Plugins\AirSim\AirSim.uplugin"
-          if (Test-Path $env:PACKAGE_DIR) {
-            Remove-Item -LiteralPath $env:PACKAGE_DIR -Recurse -Force
-          }
-          & $runUat BuildPlugin -Plugin="$plugin" -Package="$env:PACKAGE_DIR" -Rocket -TargetPlatforms="$env:TARGET_PLATFORMS"
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+          $blocksPlugins = Join-Path $PWD "Unreal\Environments\Blocks\Plugins"
+          $marketplace = Join-Path $env:UE_ROOT "Engine\Plugins\Marketplace"
+          $engineStage = Join-Path $marketplace "AirSimShaders"
+
+          if (Test-Path $env:PACKAGE_DIR) { Remove-Item -LiteralPath $env:PACKAGE_DIR -Recurse -Force }
+          if (Test-Path $engineStage) { Remove-Item -LiteralPath $engineStage -Recurse -Force }
+
+          foreach ($name in @("AirSim", "AirSimShaders")) {
+            $descriptor = Join-Path $blocksPlugins "$name\$name.uplugin"
+            if (-not (Test-Path $descriptor)) { throw "Plugin descriptor not found at $descriptor" }
           }
 
-      - name: Compress package
-        shell: pwsh
+          Write-Host "Packaging AirSimShaders"
+          & $runUat BuildPlugin "-Plugin=$blocksPlugins\AirSimShaders\AirSimShaders.uplugin" "-Package=$env:PACKAGE_DIR\AirSimShaders" -Rocket "-TargetPlatforms=$env:TARGET_PLATFORMS"
+          if ($LASTEXITCODE -ne 0) { throw "BuildPlugin failed for AirSimShaders with exit code $LASTEXITCODE" }
+
+          try {
+            # The packaged output is staged rather than the sources. An
+            # installed engine never compiles its own plugins, so a source-only
+            # copy leaves the linker looking for an import library nobody built:
+            # LNK1181 on
+            # Plugins\Marketplace\AirSimShaders\Intermediate\Build\Win64\x64\UnrealEditor\Development\AirSimShaders\UnrealEditor-AirSimShaders.lib
+            # The packaged plugin carries that exact path already.
+            if (-not (Test-Path $marketplace)) { New-Item -ItemType Directory -Path $marketplace | Out-Null }
+            Write-Host "Staging AirSimShaders at $engineStage"
+            Copy-Item -Path (Join-Path $env:PACKAGE_DIR "AirSimShaders") -Destination $engineStage -Recurse -Force
+
+            Write-Host "Packaging AirSim"
+            & $runUat BuildPlugin "-Plugin=$blocksPlugins\AirSim\AirSim.uplugin" "-Package=$env:PACKAGE_DIR\AirSim" -Rocket "-TargetPlatforms=$env:TARGET_PLATFORMS"
+            if ($LASTEXITCODE -ne 0) { throw "BuildPlugin failed for AirSim with exit code $LASTEXITCODE" }
+          }
+          finally {
+            if (Test-Path $engineStage) {
+              Write-Host "Removing staged AirSimShaders from the engine"
+              Remove-Item -LiteralPath $engineStage -Recurse -Force
+            }
+          }
+
+      - name: Verify the packaged plugins
         run: |
-          if (Test-Path $env:PACKAGE_ZIP) {
-            Remove-Item -LiteralPath $env:PACKAGE_ZIP -Force
+          foreach ($name in @("AirSim", "AirSimShaders")) {
+            $dir = Join-Path $env:PACKAGE_DIR $name
+            $descriptor = Join-Path $dir "$name.uplugin"
+            if (-not (Test-Path $descriptor)) { throw "Packaged $name is missing $name.uplugin" }
+            if (-not (Test-Path (Join-Path $dir "Binaries"))) { throw "Packaged $name contains no Binaries directory" }
           }
-          Compress-Archive -Path "$env:PACKAGE_DIR\*" -DestinationPath $env:PACKAGE_ZIP
+          $size = (Get-ChildItem -LiteralPath $env:PACKAGE_DIR -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          Write-Host "Packaged plugin set size: $([math]::Round($size / 1MB, 1)) MB"
+          if ($size -lt 1MB) { throw "Packaged plugin set is implausibly small" }
 
+      # -Path on the directory itself, not on its contents: that is what puts the
+      # Plugins folder inside the archive instead of its two children at the top
+      # level.
+      - name: Compress the package
+        run: |
+          if (Test-Path $env:PACKAGE_ZIP) { Remove-Item -LiteralPath $env:PACKAGE_ZIP -Force }
+          Compress-Archive -Path $env:PACKAGE_DIR -DestinationPath $env:PACKAGE_ZIP
+
+      # Only for manually dispatched runs. On a tag the archive goes to the
+      # release, and keeping a second copy in the artifact store cost a measured
+      # 16 minutes of upload for no benefit.
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v7
         with:
           name: AirSimPlugin-Win64
           path: ${{ env.PACKAGE_ZIP }}
           if-no-files-found: error
 
-      - name: Attach package to GitHub release
+      # Uploading roughly 780 MB takes long enough that gh can time out waiting
+      # for the response and retry, and the retry fails with HTTP 422
+      # "ReleaseAsset.name already exists" even though the first attempt landed.
+      # The exit code therefore does not describe the outcome, so the end state
+      # is checked directly.
+      - name: Attach the package to the release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ env.PACKAGE_ZIP }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $name = Split-Path $env:PACKAGE_ZIP -Leaf
+          $expected = (Get-Item -LiteralPath $env:PACKAGE_ZIP).Length
+
+          gh release upload "$env:GITHUB_REF_NAME" "$env:PACKAGE_ZIP" --clobber
+          $uploadExit = $LASTEXITCODE
+
+          $assets = (gh release view "$env:GITHUB_REF_NAME" --json assets | ConvertFrom-Json).assets
+          $match = $assets | Where-Object { $_.name -eq $name }
+
+          if ($match -and $match.size -eq $expected) {
+            Write-Host "$name is attached at $($match.size) bytes"
+          }
+          elseif ($match) {
+            throw "$name is attached but its size is $($match.size), expected $expected"
+          }
+          else {
+            throw "$name was not attached to $env:GITHUB_REF_NAME (gh exited $uploadExit)"
+          }

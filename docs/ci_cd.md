@@ -1,60 +1,520 @@
 # CI/CD
 
-This repository includes both GitLab CI/CD and GitHub Actions workflow files. The current `origin` remote is GitLab, so `.gitlab-ci.yml` is the pipeline that runs after pushes to the project remote.
+Automation for this repository is GitHub Actions only. Three workflows live in
+`.github/workflows`:
 
-The automation has two levels:
+| Workflow | File | Runs on |
+| --- | --- | --- |
+| CI | `ci.yml` | every pull request, every push to `main`, nightly, manual dispatch |
+| Release | `release.yml` | every `v*` tag, manual dispatch |
+| Unreal Plugin Package | `unreal-package.yml` | every `v*` tag, manual dispatch |
 
-1. Hosted or Docker CI validates text hygiene, Python packaging, documentation, and Linux AirLib builds.
-2. Windows runner jobs can build AirLib and package the Unreal plugin with Unreal Engine 5.5.
+`.github/dependabot.yml` opens the pull requests that keep the pinned action
+and tooling versions from going stale.
 
-## GitLab CI
+CI and Release run entirely on GitHub-hosted runners. No self-hosted machine,
+no GPU and no Unreal Engine installation is required to get a green pipeline;
+only the plugin package needs one, and it is kept out of the release path for
+exactly that reason.
 
-The GitLab pipeline runs for merge requests, pushes to the default branch, tags, and manually started web pipelines. It performs:
+## CI
 
-- repository text checks for unresolved merge markers and mixed line endings inside individual files;
-- GitHub Actions and GitLab CI YAML parsing;
-- Python bytecode compilation for `PythonClient`;
-- Python package build from `PythonClient/pyproject.toml`;
-- MkDocs strict documentation build;
-- AirLib builds on Ubuntu 22.04 and Ubuntu 24.04.
+`ci.yml` defines three independent jobs. None of them declares `needs:`, so
+all three start at once and the total wall-clock time is the slowest job
+rather than the sum of all of them.
 
-The repository intentionally preserves both LF and CRLF files through `.gitattributes`. CI only fails a file when that single file mixes line endings.
+### static_checks
 
-## Windows Jobs
+Seconds-long checks that fail fast on mistakes which never need a compiler:
 
-The GitLab `build_windows` job is manual by default, or automatic when the pipeline variable `RUN_WINDOWS_CI` is set to `true`. It requires a Windows runner tagged with `windows` and `vs2022`.
+- `tools/ci/check_repo_text.py` rejects unresolved merge conflict markers and
+  files that mix LF and CRLF internally. The repository intentionally keeps
+  both endings across different files through `.gitattributes`, so only
+  mixing *inside a single file* is an error. Five legacy `LogViewer` files are
+  explicitly exempt.
+- `tools/ci/validate_ci_yaml.py` parses every workflow file and asserts the
+  structure GitHub expects: a `name`, an `on` trigger block, at least one job,
+  a `runs-on` per job, at least one step per job, and exactly one of `run` or
+  `uses` per step.
+- `python -m compileall` byte-compiles `PythonClient`, `tools/ci` and
+  `ros2/src`, which catches syntax errors without importing anything.
+- `mkdocs build --strict` renders this documentation and fails on broken
+  internal links.
 
-The `package_unreal_windows` job is manual for tags and manually started pipelines. It requires a Windows runner tagged with `windows` and `unreal`.
+### python_client
 
-Runner requirements:
+Builds the sdist and wheel from `PythonClient/pyproject.toml`, then installs
+the wheel into a clean virtualenv and imports `cosysairsim` from it. A wheel
+that builds but cannot be installed or imported is not a passing result. The
+distribution is uploaded as the `python-client-dist` artifact.
 
-- Windows x64 runner;
-- Unreal Engine 5.5 installed, by default at `C:\Program Files\Epic Games\UE_5.5`;
-- Visual Studio 2022 with Desktop Development with C++;
-- Git LFS enabled if release assets are needed.
+### ros2_humble
 
-The Unreal package job runs:
+Runs inside the official `ros:humble-ros-base` container so the ROS
+environment is pinned rather than inherited from whichever tools the GitHub
+runner image happens to ship.
 
-1. `build.cmd --no-full-poly-car --Release`
-2. `Unreal/Environments/Blocks/update_from_git.bat`
-3. `Build.bat BlocksEditor Win64 Development`
-4. `RunUAT.bat BuildPlugin`
-5. artifact upload as `AirSimPlugin-Win64.zip`
+`px4_msgs` is generated from the PX4 firmware source tree and is not published
+to any apt repository, so the job fetches and builds it from source.
 
-## GitHub Actions
+The reference is pinned to the commit
+`b9bf3f9f76a6a5004880e2894fe94d1e43837e40` (2025-09-24) rather than to a
+branch, because **no released `px4_msgs` branch satisfies the layouts that
+`airsim_px4_offboard/px4_schema.py` validates against**:
 
-The `.github/workflows` files mirror the same checks for GitHub-hosted usage. They are useful if the repository is mirrored to GitHub, but GitLab will not execute them.
+| Message | `px4_schema.py` requires | `release/1.16` | `main` | pinned commit |
+| --- | --- | --- | --- | --- |
+| `SensorGps` | `authentication_state`, `system_error` | absent | present | present |
+| `VehicleStatus` | `MESSAGE_VERSION` 1 | 1 | 4 | 1 |
+| `VehicleAttitude` | `MESSAGE_VERSION` 0 | 0 | - | 0 |
+| `VehicleOdometry` | `MESSAGE_VERSION` 0 | 0 | - | 0 |
+| `VehicleRatesSetpoint` | `MESSAGE_VERSION` 0 | 0 | - | 0 |
 
-## Local Checks
+`release/1.16` fails the `SensorGps` contract and `main` fails the
+`VehicleStatus` one, so the supported revision is a point on `main` after
+`SensorGps` gained those fields and before `VehicleStatus` was versioned past
+1. The documentation elsewhere in this repository describes the supported set
+as "PX4 v1.16.x", which is approximately but not exactly true.
 
-Before pushing CI/CD changes, run:
+Because the pin is a commit rather than a branch, the job cannot use
+`git clone --branch`; it initialises the repository and fetches the single
+commit by sha instead. A manual `workflow_dispatch` run accepts a different
+`px4_msgs_ref` input, which may be a commit, branch or tag.
+
+Pinning a commit also keeps the pipeline reproducible. A branch is a moving
+target: a build that passes today can fail tomorrow with no change on this
+side.
+
+`rosdep install` runs with `--skip-keys ament_python`. The
+`airsim_px4_offboard` manifest declares `ament_python` as a `buildtool_depend`,
+but `ament_python` is a colcon build type rather than a released package, so no
+rosdep key of that name exists and resolution fails without the skip. Removing
+that line from `package.xml` would be the deeper fix; the export block already
+declares the build type correctly.
+
+The job builds `--packages-up-to airsim_px4_offboard px4_msgs`, which covers
+`airsim_interfaces`, `px4_msgs` and `airsim_px4_offboard`. It deliberately
+does not build `airsim_ros_pkgs`: that package is C++, depends on PCL and
+MAVROS, and needs a compiled AirLib, which belongs in a heavier job.
+
+### Build caching
+
+Building the workspace from scratch takes around six minutes, roughly 87% of
+the run, and almost all of it is `rosidl` generating code for the several
+hundred `px4_msgs` message types. Those messages are pinned to a fixed commit
+and never change between runs, so `ros2/build` and `ros2/install` are cached.
+
+The cache key is composed of everything that can legitimately invalidate the
+tree:
+
+| Key component | Invalidates when |
+| --- | --- |
+| `runner.os` | the runner platform changes |
+| `ROS_DISTRO` | the distribution changes |
+| `ros-<distro>-ros-base` package version | the container's ROS packages are updated upstream |
+| `PX4_MSGS_REF` | the pinned `px4_msgs` commit is changed |
+| hash of the two package source trees | any source file changes |
+
+The container image tag `ros:humble-ros-base` is mutable, so the base package
+version is read at runtime with `dpkg-query` and folded into the key. Without
+it a cached tree could outlive the toolchain it was built with.
+
+`restore-keys` provides the partial-hit fallback that produces most of the
+saving: when only the AirSim sources change, the exact key misses but the
+prefix key still matches, the `px4_msgs` build is restored, and colcon rebuilds
+only the two small packages.
+
+The trade-off is real. A restored build tree can let a run pass where a clean
+build would fail, because a stale artifact satisfies something that no longer
+builds. The `clean_build` input on `workflow_dispatch` exists for that: it
+skips the cache entirely, which is worth running before cutting a release and
+whenever a result looks suspicious.
+
+That input is compared as a string in a separate step rather than tested
+directly with `if: ${{ !inputs.clean_build }}`. A `workflow_dispatch` input
+declared as `type: boolean` arrives in the expression context as the string
+`"false"`, and every non-empty string is truthy, so the negation was false and
+the cache step was silently skipped on every manually triggered run. Nothing
+failed; the build was simply six minutes slower with no indication why. The
+step now logs which branch it took, so the same mistake cannot hide again.
+
+### Tests
+
+Tests then run with `colcon test`, followed by `colcon test-result --verbose`.
+The second command is not redundant. `colcon test` exits 0 even when
+individual test cases fail; `colcon test-result` is what turns a failing test
+into a red pipeline. Test reports are uploaded as `ros2-test-results` whether
+the job passed or failed.
+
+### The nightly run
+
+Every trigger above is caused by a person. That leaves a gap, because the
+pipeline depends on state that no commit here controls:
+
+| Dependency | Moves without a commit |
+| --- | --- |
+| `ros:humble-ros-base` | a mutable tag; Ubuntu and ROS packages are rebuilt into it |
+| `rosdep install` | resolves against live apt indexes at run time |
+| `actions/*` | GitHub retires runner images and Node versions on its own schedule |
+| `pip install` | resolves the CI tooling from PyPI |
+
+Without a scheduled run the first person to push after any of those changes
+inherits the failure, and the obvious suspect is their own diff. `ci.yml`
+therefore runs at 18:27 UTC daily. The value is not that it catches more
+breakage; it is that it dates the breakage.
+
+That run ignores the build cache. A restored `ros2/build` tree is precisely
+what would hide a workspace that no longer compiles against current upstream
+state, so `github.event_name == 'schedule'` takes the same branch as the
+`clean_build` input. It costs the full six minutes, once a night.
+
+Two properties of scheduled workflows are worth knowing. They only ever run on
+the repository's default branch, so a change to the `cron` line does nothing
+until it is merged. And GitHub disables them automatically after 60 days with
+no repository activity, which is a reasonable default and a surprising one the
+first time a nightly run stops silently.
+
+### Dependency updates
+
+`.github/dependabot.yml` raises pull requests for the pinned action versions
+weekly and for `tools/ci/requirements.txt` monthly. Both are grouped, so a week
+of updates arrives as one pull request that runs CI once rather than four that
+each run it separately.
+
+This exists because the alternative was already tried: the action versions in
+this repository were last raised by hand, in a single commit, after a
+deprecation warning appeared in a run log. By then the pins had been stale for
+months. Dependabot moves the trigger from "somebody noticed a warning" to a
+schedule, and CI still decides whether the update is safe to take.
+
+## Verifying that the checks fail
+
+A green pipeline only means nothing reported a problem, which is also what a
+pipeline that checks nothing looks like. Each check was therefore given a fault
+it is supposed to catch, and confirmed to reject it.
+
+| Injected fault | Caught by | Result |
+| --- | --- | --- |
+| A file containing `<<<<<<< HEAD` | `check_repo_text.py` | exit 1 |
+| A workflow job with no `runs-on` | `validate_ci_yaml.py` | exit 1 |
+| A Python file with a syntax error | `compileall` | exit 1 |
+| A `nav` entry pointing at a missing page | `mkdocs build --strict` | exit 1 |
+| An unresolvable dependency in `pyproject.toml` | installing the wheel | exit 1 |
+
+The last one is the most informative. `python -m build` still succeeded and
+produced a wheel; only the step that installs that wheel into a clean
+virtualenv rejected it. A pipeline that stopped at "the package builds" would
+have published something nobody could install.
+
+Every check was then run again against the unmodified tree and passed, which is
+the half of the experiment that is easy to skip: a check that always fails
+would also have caught all five faults.
+
+The ROS 2 side needed no injection. During development `px4_msgs` was pinned to
+a revision whose `SensorGps` layout did not match `px4_schema.py`, eleven tests
+failed, and the job went red - a live demonstration that `colcon test-result`
+does what it is there for, since `colcon test` alone exits 0 on failing tests.
+
+## Release
+
+`release.yml` is triggered by pushing a `v*` tag. A tag rather than a branch is
+the trigger because a tag names exactly one commit, so every published artifact
+is traceable back to a single source state.
+
+It has four jobs. The two build jobs run in parallel; the two publishing jobs
+wait on them through `needs:`.
+
+| Job | Produces |
+| --- | --- |
+| `python_client` | sdist and wheel from `PythonClient` |
+| `ros2_image` | container image published to GitHub Container Registry |
+| `promote_field` | retags the verified image as `:field` behind an approval gate |
+| `publish_release` | the GitHub Release itself |
+
+Documentation is not published by this pipeline. It is still validated on every
+push and pull request, because `static_checks` runs `mkdocs build --strict`, so
+a broken link or a missing page fails CI exactly as before. Only the publishing
+step is absent, and the Markdown sources render on GitHub anyway.
+
+Two earlier attempts are worth recording, because both were abandoned for
+reasons rather than for difficulty. Attaching the rendered site to the release
+as `docs-site.tar.gz` produced a 127 MB asset on every release, since the `docs`
+directory is almost entirely images, and a tarball is a poor way to read
+documentation. Deploying to GitHub Pages instead requires Pages to be enabled
+with its source set to GitHub Actions, which the workflow cannot do for itself:
+`actions/configure-pages` with `enablement: true` fails as
+`Resource not accessible by integration`, because `GITHUB_TOKEN` can deploy to
+Pages but not create the site, and automating it would mean keeping a
+long-lived admin-scoped token in secrets.
+
+That episode did leave one lasting correction. `publish_release` had listed the
+documentation job in `needs:` from the days when the release carried the
+tarball, so when the docs job failed the entire release was skipped and a tag
+produced nothing at all. A `needs:` entry states that a job consumes another
+job's output, not that it would like that job to have passed; a stale one
+quietly widens the blast radius of unrelated failures.
+
+### ros2_image
+
+The primary deliverable. `docker/Dockerfile_ros2` builds the ROS 2 workspace -
+`airsim_interfaces`, `px4_msgs` and `airsim_px4_offboard` - into an image that
+carries a prebuilt `install/` tree and an entrypoint that sources it. Anything
+that can run a container then has the exact environment CI validated, with no
+`colcon build` on the target machine.
+
+Before the image is pushed it is started twice: once to assert the three
+packages appear in `ros2 pkg list`, and once to run the package test suite
+inside the image. An image that builds but cannot run its own tests is not a
+publishable result, and neither check requires the registry, so a failure never
+leaves a broken tag behind.
+
+Images are tagged with the release version and with `sim`. The image name is
+derived as `ghcr.io/<repository>/ros2` and lowercased in the workflow, because
+GHCR rejects references containing uppercase characters while a GitHub
+repository name may contain them.
+
+The registry login uses the automatic `GITHUB_TOKEN` with `packages: write`
+granted to that single job. No personal access token is involved.
+
+Note that GHCR packages are private on first publish even when the repository
+is public. Make the package public under its package settings if the image is
+meant to be pullable anonymously.
+
+### promote_field
+
+A deliberate model of staged rollout. `ros2_image` publishes the version tag
+and `sim` automatically, but moving the same digest to `:field` runs in the
+`field-drones` environment, so a required reviewer configured on that
+environment must approve before a build reaches hardware. Nothing is rebuilt:
+`docker buildx imagetools create` retags the digest that was already tested.
+
+Until the environment is created with protection rules under Settings ->
+Environments, the job runs without waiting. Adding the reviewer is what turns
+this from Continuous Deployment into Continuous Delivery.
+
+### publish_release
+
+Downloads the artifacts the build jobs produced rather than rebuilding them, so
+what is published is what was tested. It creates the Release through the
+preinstalled `gh` CLI with the automatic token instead of a third-party action,
+and prepends the `docker pull` reference for the image to the auto-generated
+notes.
+
+The job deliberately does not check out the repository, because it only needs
+the artifacts. `gh` normally identifies the target repository by reading the
+git remotes of the working directory, which does not exist here, so `GH_REPO`
+is set explicitly instead. Without it the release step fails even though the
+token and permissions are correct.
+
+A tag whose name contains a hyphen is published with `--prerelease`, following
+the semver rule that anything after the hyphen is a pre-release identifier.
+GitHub does not infer this: without the flag, `v0.0.1-rc2` was published as a
+full release and labelled Latest, so anything reading `releases/latest` would
+have been handed a release candidate.
+
+`permissions: contents: write` is scoped to this one job. Every other job in
+the workflow, and all of CI, stays read-only.
+
+A `workflow_dispatch` run performs every build and verification step but skips
+`promote_field` and `publish_release`, so the pipeline can be exercised end to
+end without publishing a release.
+
+## Unreal Plugin Package
+
+`unreal-package.yml` builds the AirSim Unreal plugin and attaches
+`AirSimPlugin-Win64.zip` to the release for the same tag. It is the artifact
+described in
+[Download and install precompiled Plugin](install_precompiled.md): a user who
+already has Unreal Engine 5.5 unzips it into their own project instead of
+building from source.
+
+It is a separate workflow rather than a job inside `release.yml` on purpose. It
+runs on a self-hosted machine and takes an hour or more, while the rest of the
+release finishes in minutes. Keeping it apart means an unavailable runner
+delays only the plugin, and the wheel, the container image and the release
+itself are published regardless. The upload assumes the release already exists,
+which holds comfortably: `release.yml` creates it within about eight minutes
+and this workflow reaches the upload step much later.
+
+### Runner requirements
+
+The job targets a runner labelled `self-hosted`, `Windows`, `X64` and `unreal`.
+That machine needs:
+
+- Windows 10 or 11 x64;
+- Unreal Engine 5.5, by default at `C:\Program Files\Epic Games\UE_5.5`,
+  overridable through the `ue_root` input;
+- Visual Studio 2022 with the Desktop development with C++ workload, since
+  `build.cmd` refuses to run unless `VisualStudioVersion` and `VCINSTALLDIR`
+  are set;
+- the GitHub CLI, used to attach the asset;
+- roughly 150-200 GB of free disk.
+
+Register the runner as a Windows service rather than leaving `run.cmd` in a
+console window:
 
 ```powershell
-python tools\ci\check_repo_text.py
-python -m compileall -q PythonClient tools\ci
-python -m build PythonClient
-python -m mkdocs build --strict
-build.cmd --no-full-poly-car --Release
+.\svc.cmd install
+.\svc.cmd start
 ```
 
-Use `C:\Program Files\Epic Games\UE_5.5` or override `UE_ROOT` in the GitLab pipeline variables if Unreal is installed somewhere else.
+Run from an elevated prompt in the runner directory. `run.cmd` stops listening
+the moment the window closes or the user logs out, and the failure it produces
+is not an error: the tag creates a run that sits at "Waiting for a runner to
+pick up this job" until somebody notices. One such run queued for two hours.
+`timeout-minutes` does not help, because queue time is not job time.
+
+The job does not run `update_from_git.bat`, even though
+[Packaging](packaging.md) describes it as the way to refresh the Blocks
+project. That script copies the plugins and then calls
+`GenerateProjectFiles.bat`, which finds UnrealVersionSelector through the
+`.uproject` file association in the registry; a build machine where Unreal was
+never registered as the handler for `.uproject` fails there. The generated
+`.sln` only matters for opening the project in an IDE, and
+`RunUAT BuildPlugin` does not need it, so the workflow performs the copy
+directly with `robocopy` instead. Note that `robocopy` signals success with
+exit codes below 8, so only 8 and above are treated as a failure.
+
+Both `AirSim` and `AirSimShaders` are packaged. [Packaging](packaging.md) is
+explicit that an `AirSim`-only set is incomplete, because the equirectangular
+preview shaders live in the second plugin.
+
+The archive contains a single `Plugins` directory holding both:
+
+```
+AirSimPlugin-Win64.zip
+└── Plugins/
+    ├── AirSim/
+    └── AirSimShaders/
+```
+
+Installing is then moving that one extracted folder into the project root next
+to the `.uproject`, rather than creating `Plugins` by hand and remembering to
+move two folders into it. The layout comes from passing the directory itself to
+`Compress-Archive`; passing `<directory>\*` instead would place the two plugins
+at the root of the archive.
+
+The two are not interchangeable in order. `AirSim.uplugin` lists
+`AirSimShaders` under `Plugins`, and `RunUAT BuildPlugin` compiles inside a
+temporary host project containing only the plugin being packaged, so packaging
+`AirSim` by itself stops with `Unable to find plugin 'AirSimShaders'`. The
+command has no option for supplying an extra plugin directory, and it deletes
+the package directory at the start of every run, so the dependency cannot be
+placed in the host project either. The job therefore packages `AirSimShaders`
+first, copies it into the engine's `Plugins/Marketplace` directory so the
+second build can resolve it, and removes that copy afterwards in a `finally`
+block. `AirSimShaders` has to be packaged before the copy exists, because two
+plugins of the same name visible at once is itself an error.
+
+What gets staged is the packaged output, not the sources. An installed engine
+never compiles the plugins under its own `Plugins` directory, so a source-only
+copy leaves the linker looking for an import library that nothing produced, and
+the AirSim build fails with `LNK1181` on
+`Plugins\Marketplace\AirSimShaders\Intermediate\Build\...\UnrealEditor-AirSimShaders.lib`.
+The packaged plugin already contains that file at exactly that relative path.
+
+This means the runner needs write access to the engine's `Plugins` directory.
+An Epic Games Launcher install normally grants that to the installing user, so
+elevation is not required, but a machine where Unreal was installed by someone
+else may need the permission granted explicitly.
+
+There is no `Build.bat BlocksEditor` step. The documented procedure goes
+straight from the plugin sync to `RunUAT BuildPlugin`, which compiles the
+plugin itself; building the editor target first added twenty to forty minutes
+and another way to fail without changing the artifact.
+
+The first step verifies all of this and fails with a specific message rather
+than letting a missing tool surface as a confusing compiler error an hour in.
+Visual Studio is located with `vswhere` instead of a hardcoded path, so the
+edition and install location do not matter, and no third-party action is
+involved. That matters more here than on hosted runners: a marketplace action
+in this job would execute on a real machine that persists between runs.
+
+### Self-hosted runners on a public repository
+
+GitHub advises against attaching self-hosted runners to public repositories,
+because a workflow triggered by a fork's pull request would run that fork's
+code on the machine. This workflow triggers only on tag pushes and manual
+dispatch, and only accounts with push access can create a tag, so the exposure
+is closed. **Do not add a `pull_request` trigger to this workflow**, and do not
+move its job into a workflow that has one.
+
+### Uploading the archive
+
+The archive runs to roughly 780 MB, and on a domestic upstream link that takes
+about sixteen minutes per transfer. Two consequences shaped the last two steps.
+
+The workflow artifact is produced only for manually dispatched runs. On a tag
+the archive is attached to the release, where it is public and permanent, so a
+second copy in the artifact store bought nothing and cost a measured sixteen
+minutes.
+
+The release upload does not trust its own exit code. `gh` can time out waiting
+for the response on a transfer that long and retry, and the retry fails with
+`HTTP 422 ReleaseAsset.name already exists` even though the first attempt
+succeeded. The step therefore queries the release afterwards and compares the
+attached asset's size against the local file, which is the only statement that
+actually matters. This is worth generalising: for a slow, large, network-bound
+operation, verify the end state rather than believing the command.
+
+### Without a runner
+
+Until a machine is registered, a `v*` tag will create a run for this workflow
+that queues indefinitely. Cancel it, or package manually following
+[Packaging](packaging.md) and attach the result to the existing release:
+
+```bash
+gh release upload v0.1.0 AirSimPlugin-Win64.zip
+```
+
+That covers most of the value without any infrastructure, at the cost of
+depending on someone remembering, and with no guarantee that the uploaded zip
+was built from the tagged commit.
+
+## What is deliberately not automated
+
+- **AirLib C++ builds.** A full `build.sh` run costs roughly twenty minutes of
+  runner time per push. Add a job for it if the C++ sources start changing
+  regularly.
+- **Simulation-in-the-loop tests.** Anything that actually launches AirSim
+  needs a GPU, which GitHub-hosted runners do not provide.
+
+## Running the same checks locally
+
+Before pushing a change to CI, run what the `static_checks` job runs:
+
+```bash
+python -m pip install -r tools/ci/requirements.txt
+python tools/ci/check_repo_text.py
+python tools/ci/validate_ci_yaml.py
+python -m compileall -q PythonClient tools/ci ros2/src
+mkdocs build --strict
+```
+
+The ROS 2 job is reproducible locally with the same container the pipeline
+uses:
+
+```bash
+docker run --rm -it -v "$PWD:/repo" -w /repo ros:humble-ros-base bash
+```
+
+Then follow the same steps as the `ros2_humble` job: clone `px4_msgs` into
+`ros2/src`, run `rosdep install`, `colcon build` and `colcon test`.
+
+The release image is built and smoke-tested locally with the same arguments the
+pipeline uses:
+
+```bash
+./docker/build_ros2_image.sh
+```
+
+`ROS_DISTRO`, `PX4_MSGS_REF` and `IMAGE` are overridable as environment
+variables. A repository-root `.dockerignore` keeps the build context to the few
+megabytes the image actually needs instead of the full checkout, which is
+dominated by `Unreal` and `docs`.
+
+## Pinned versions
+
+`tools/ci/requirements.txt` pins the Python tooling used by CI. Bump those
+pins in their own commit so that a red pipeline is never ambiguous between a
+regression in this repository and a dependency that released the same day.

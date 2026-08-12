@@ -5,7 +5,24 @@ on:
   push:
     branches:
       - main
+  # The pipeline resolves apt packages, pulls a mutable base image tag and
+  # fetches px4_msgs at build time, so it can break with no commit to blame.
+  # A nightly run dates the breakage instead of leaving it for whoever pushes
+  # next. 18:27 UTC is early morning in Asia/Ho_Chi_Minh, and an off-the-hour
+  # minute avoids the queue that forms when every cron fires at :00.
+  schedule:
+    - cron: "27 18 * * *"
   workflow_dispatch:
+    inputs:
+      px4_msgs_ref:
+        description: px4_msgs commit, branch or tag to build the ROS 2 job against
+        required: false
+        default: b9bf3f9f76a6a5004880e2894fe94d1e43837e40
+      clean_build:
+        description: Ignore the colcon cache and build the workspace from scratch
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,88 +31,177 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHON_VERSION: "3.11"
+
 jobs:
-  repo_checks:
-    name: Repository checks
+  static_checks:
+    name: Static checks and docs
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: tools/ci/requirements.txt
 
-      - name: Install check dependencies
-        run: python -m pip install --upgrade pip build mkdocs PyYAML
+      - name: Install CI tooling
+        run: python -m pip install --upgrade pip -r tools/ci/requirements.txt
 
-      - name: Check repository text files
+      - name: Check repository text hygiene
         run: python tools/ci/check_repo_text.py
 
-      - name: Validate workflow YAML
+      - name: Validate workflow definitions
         run: python tools/ci/validate_ci_yaml.py
 
-      - name: Compile Python examples and client
-        run: python -m compileall -q PythonClient
-
-      - name: Build Python package
-        run: python -m build PythonClient
+      - name: Byte-compile Python sources
+        run: python -m compileall -q PythonClient tools/ci ros2/src
 
       - name: Build documentation
         run: mkdocs build --strict
 
-  build_linux:
-    name: AirLib Linux (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-22.04
-          - ubuntu-24.04
+  python_client:
+    name: Python client package
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Setup dependencies
-        run: ./setup.sh --no-full-poly-car
-
-      - name: Build AirLib
-        run: ./build.sh
-
-      - name: Verify MavLink test binary
-        run: ./build_release/output/bin/MavLinkTest --help
-
-  build_windows:
-    name: AirLib Windows
-    runs-on: windows-2022
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up Python
+        uses: actions/setup-python@v7
         with:
-          arch: x64
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: tools/ci/requirements.txt
 
-      - name: Build AirLib
-        shell: cmd
-        run: build.cmd --no-full-poly-car --Release
+      - name: Install CI tooling
+        run: python -m pip install --upgrade pip -r tools/ci/requirements.txt
 
-      - name: Verify build outputs
-        shell: pwsh
+      - name: Build sdist and wheel
+        run: python -m build PythonClient
+
+      - name: Install the wheel into a clean virtualenv and import it
         run: |
-          $paths = @(
-            "AirLib\deps\rpclib\lib\x64\Release",
-            "AirLib\deps\MavLinkCom\lib",
-            "Unreal\Plugins\AirSim\Source\AirLib\deps"
-          )
-          foreach ($path in $paths) {
-            if (-not (Test-Path $path)) {
-              throw "Missing build output: $path"
-            }
-          }
+          python -m venv "${RUNNER_TEMP}/wheelcheck"
+          "${RUNNER_TEMP}/wheelcheck/bin/python" -m pip install --quiet PythonClient/dist/*.whl
+          "${RUNNER_TEMP}/wheelcheck/bin/python" -c "import cosysairsim; print(cosysairsim.__file__)"
+
+      - name: Upload distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-client-dist
+          path: PythonClient/dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  ros2_humble:
+    name: ROS 2 Humble build and test
+    runs-on: ubuntu-22.04
+    container:
+      image: ros:humble-ros-base
+
+    env:
+      ROS_DISTRO: humble
+      PX4_MSGS_REF: ${{ inputs.px4_msgs_ref || 'b9bf3f9f76a6a5004880e2894fe94d1e43837e40' }}
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install build and test tooling
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git python3-pytest
+
+      - name: Fetch px4_msgs
+        run: |
+          echo "px4_msgs ref: ${PX4_MSGS_REF}"
+          git init -q ros2/src/px4_msgs
+          git -C ros2/src/px4_msgs remote add origin https://github.com/PX4/px4_msgs.git
+          git -C ros2/src/px4_msgs fetch -q --depth 1 origin "${PX4_MSGS_REF}"
+          git -C ros2/src/px4_msgs checkout -q --detach FETCH_HEAD
+
+      - name: Resolve ROS dependencies
+        run: |
+          rosdep update --rosdistro "${ROS_DISTRO}"
+          rosdep install -y --ignore-src --rosdistro "${ROS_DISTRO}" \
+            --skip-keys ament_python \
+            --from-paths \
+              ros2/src/airsim_interfaces \
+              ros2/src/airsim_px4_offboard \
+              ros2/src/px4_msgs
+
+      - name: Identify the ROS base packages
+        id: rosbase
+        run: |
+          version="$(dpkg-query -W -f='${Version}' "ros-${ROS_DISTRO}-ros-base" 2>/dev/null || echo unknown)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "ros-${ROS_DISTRO}-ros-base ${version}"
+
+      # The scheduled run never uses the cache. Its entire purpose is to notice
+      # that the workspace no longer builds against current upstream state, and
+      # a restored build tree is exactly the thing that hides that.
+      - name: Decide whether to use the build cache
+        id: cachegate
+        run: |
+          if [ "${{ inputs.clean_build }}" = "true" ]; then
+            echo "use_cache=false" >> "$GITHUB_OUTPUT"
+            echo "clean_build requested: building from scratch"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "use_cache=false" >> "$GITHUB_OUTPUT"
+            echo "scheduled run: building from scratch to detect upstream drift"
+          else
+            echo "use_cache=true" >> "$GITHUB_OUTPUT"
+            echo "using the colcon build cache"
+          fi
+
+      - name: Restore colcon build cache
+        if: steps.cachegate.outputs.use_cache == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ros2/build
+            ros2/install
+          key: colcon-${{ runner.os }}-${{ env.ROS_DISTRO }}-${{ steps.rosbase.outputs.version }}-px4_${{ env.PX4_MSGS_REF }}-src-${{ hashFiles('ros2/src/airsim_interfaces/**', 'ros2/src/airsim_px4_offboard/**') }}
+          restore-keys: |
+            colcon-${{ runner.os }}-${{ env.ROS_DISTRO }}-${{ steps.rosbase.outputs.version }}-px4_${{ env.PX4_MSGS_REF }}-src-
+
+      - name: Build workspace
+        working-directory: ros2
+        run: |
+          source "/opt/ros/${ROS_DISTRO}/setup.bash"
+          colcon build \
+            --packages-up-to airsim_px4_offboard px4_msgs \
+            --event-handlers console_direct+
+          du -sh build install
+
+      - name: Run tests
+        working-directory: ros2
+        run: |
+          source "/opt/ros/${ROS_DISTRO}/setup.bash"
+          source install/setup.bash
+          colcon test \
+            --packages-select airsim_px4_offboard \
+            --event-handlers console_direct+
+          colcon test-result --verbose
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ros2-test-results
+          path: |
+            ros2/build/**/pytest.xml
+            ros2/log/latest_test/**
+          if-no-files-found: ignore
+          retention-days: 14
