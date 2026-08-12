@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      px4_msgs_ref:
+        description: px4_msgs commit, branch or tag to build the ROS 2 image against
+        required: false
+        default: b9bf3f9f76a6a5004880e2894fe94d1e43837e40
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  ROS_DISTRO: humble
+  PX4_MSGS_REF: ${{ inputs.px4_msgs_ref || 'b9bf3f9f76a6a5004880e2894fe94d1e43837e40' }}
+
+jobs:
+  python_client:
+    name: Build Python client
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: tools/ci/requirements.txt
+
+      - name: Install CI tooling
+        run: python -m pip install --upgrade pip -r tools/ci/requirements.txt
+
+      - name: Build sdist and wheel
+        run: python -m build PythonClient
+
+      - name: Upload distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-client-dist
+          path: PythonClient/dist/*
+          if-no-files-found: error
+
+  ros2_image:
+    name: Build and publish ROS 2 image
+    runs-on: ubuntu-22.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      version: ${{ steps.meta.outputs.version }}
+      reference: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Derive image name and version
+        id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/ros2"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="0.0.0-dev.${GITHUB_SHA::7}"
+          fi
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          docker build \
+            --file docker/Dockerfile_ros2 \
+            --build-arg ROS_DISTRO="${ROS_DISTRO}" \
+            --build-arg PX4_MSGS_REF="${PX4_MSGS_REF}" \
+            --tag "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" \
+            --tag "${{ steps.meta.outputs.image }}:sim" \
+            .
+
+      - name: Verify the workspace is present
+        run: |
+          docker run --rm "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" \
+            ros2 pkg list | grep -E '^(airsim_interfaces|airsim_px4_offboard|px4_msgs)$'
+
+      - name: Run the package tests inside the image
+        run: |
+          docker run --rm \
+            --workdir /opt/airsim_ros2_ws/src/airsim_px4_offboard \
+            "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" \
+            python3 -m pytest test -q
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push image
+        run: |
+          docker push "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}"
+          docker push "${{ steps.meta.outputs.image }}:sim"
+
+  promote_field:
+    name: Promote image to field
+    needs: ros2_image
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    environment: field-drones
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Retag verified image as field
+        run: |
+          docker buildx imagetools create \
+            --tag "${{ needs.ros2_image.outputs.image }}:field" \
+            "${{ needs.ros2_image.outputs.reference }}"
+
+  publish_release:
+    name: Publish GitHub release
+    needs:
+      - python_client
+      - ros2_image
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Python client distribution
+        uses: actions/download-artifact@v8
+        with:
+          name: python-client-dist
+          path: dist
+
+      - name: Compose release notes header
+        run: |
+          {
+            echo "NOTES<<RELEASE_NOTES_EOF"
+            echo "### Container image"
+            echo
+            echo '```bash'
+            echo "docker pull ${{ needs.ros2_image.outputs.reference }}"
+            echo '```'
+            echo
+            echo "Built against px4_msgs \`${PX4_MSGS_REF}\` on ROS 2 \`${ROS_DISTRO}\`."
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Semver treats anything after a hyphen as a pre-release identifier.
+          prerelease=""
+          case "${GITHUB_REF_NAME}" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+          echo "tag ${GITHUB_REF_NAME} prerelease=${prerelease:-no}"
+
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "${NOTES}" \
+            --generate-notes \
+            ${prerelease} \
+            dist/*
