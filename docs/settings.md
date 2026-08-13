@@ -59,12 +59,25 @@ Note this does not include most sensor types.
   "LogMessagesVisible": true,
   "ShowLosDebugLines": false,
   "ViewMode": "",
-  "RpcEnabled": true,
-  "EngineSound": true,
+  "EnableRpc": true,
+  "EngineSound": false,
   "PhysicsEngineName": "",
   "SpeedUnitFactor": 1.0,
-  "SpeedUnitLabel": "m/s",
+  "SpeedUnitLabel": "m\\s",
   "Wind": { "X": 0, "Y": 0, "Z": 0 },
+  "WindTurbulence": {
+    "Enabled": false,
+    "Sigma": 1.5,
+    "Tau": 2.0
+  },
+  "CameraHost": {
+    "BindAddress": "127.0.0.1",
+    "Port": 8080,
+    "TargetFps": 30,
+    "JpegQuality": 85,
+    "FloatPreviewMax": 100,
+    "MaxConnections": 64
+  },
   "CameraDirector": {
     "FollowDistance": -3,
     "X": NaN, "Y": NaN, "Z": NaN,
@@ -106,8 +119,8 @@ Note this does not include most sensor types.
         "MotionBlurMax": 10,
         "ChromaticAberrationIntensity": 2,
         "IgnoreMarked": false,
-        "LumenGIEnable": true,
-        "LumenReflectionEnable": true,
+        "LumenGIEnable": false,
+        "LumenReflectionEnable": false,
         "LumenFinalQuality": 1,
         "LumenSceneDetail": 1,
         "LumenSceneLightningDetail": 1
@@ -266,10 +279,11 @@ Current annotation settings:
 Important defaults:
 
 * `InitialInstanceSegmentation` defaults to `false`. Set it to `true` when you want AirSim to scan and label supported objects at startup for `ImageType::Segmentation` and `ImageType::Infrared`.
-* Annotation `Default` defaults to `false`. A custom annotation layer will not annotate the whole level unless you explicitly set `"Default": true`.
-* Annotation `Backend` defaults to `Auto`. Custom annotation layers use the proxy backend. `SourceStencil` is reserved for built-in segmentation/infrared because Unreal has one custom stencil value per primitive; custom layers that request `SourceStencil` fall back to proxy annotation.
-* Annotation `ProxyComponentBudget` defaults to `5000` per layer. Use `0` to prevent proxy creation for a layer, or `-1` for no limit.
+* **This build is stencil-only for labeling:** custom `Annotation[]` layers are **ignored at runtime**. Use built-in `ImageType::Segmentation` and `ImageType::Infrared` (shared 8-bit object IDs). Proxy multi-layer RGB/greyscale/texture annotation is disabled.
+* Annotation settings such as `Backend` / `ProxyComponentBudget` may still parse for compatibility, but custom layers are not created.
 * GPU LiDAR material-stencil initialization, optional intensity material setup, and `materials.csv` parsing run only when an enabled GPU LiDAR has `"GenerateIntensity": true`. GPU LiDAR intensity and source-stencil segmentation share Unreal's single per-primitive stencil value, so avoid combining `"GenerateIntensity": true` with `"InitialInstanceSegmentation": true` when material-accurate intensity is required.
+* RPC is controlled by **`EnableRpc`** (not `RpcEnabled`). Default is `true`. Unauthenticated RPC is full sim control if the API port is reachable on the LAN.
+* Multirotor plant realism: see [Multirotor physics](multirotor_physics.md). `EnableGroundEffect` and `EnableThrustAirSpeed` default to **true** even without a `Physics` block.
 
 ## TimeOfDay
 This setting controls the position of Sun in the environment. By default `Enabled` is false which means Sun's position is left at whatever was the default in the environment and it doesn't change over the time. If `Enabled` is true then Sun position is computed using longitude, latitude and altitude specified in `OriginGeopoint` section for the date specified in `StartDateTime` in the string format as [%Y-%m-%d %H:%M:%S](https://en.cppreference.com/w/cpp/io/manip/get_time), for example, `2018-02-12 15:20:00`. If this string is empty then current date and time is used. If `StartDateTimeDst` is true then we adjust for day light savings time. The Sun's position is then continuously updated at the interval specified in `UpdateIntervalSecs`. In some cases, it might be desirable to have celestial clock run faster or slower than simulation clock. This can be specified using `CelestialClockSpeed`, for example, value 100 means for every 1 second of simulation clock, Sun's position is advanced by 100 seconds so Sun will move in sky much faster.
@@ -723,8 +737,11 @@ PX4 connection. See [Setting up PX4 Software-in-Loop](px4_sitl.md) for an exampl
 
 ## Other Settings
 
+### EnableRpc
+Master switch for the msgpack API server (default port 41451). Key is **`EnableRpc`** (not `RpcEnabled`). Default: `true`. Treat an open API port as unauthenticated full control of the sim (and vehicles). Prefer firewall / loopback for production LAN setups.
+
 ### EngineSound
-To turn off the engine sound use [setting](settings.md) `"EngineSound": false`. Currently this setting applies only to car.
+Default is **`false`**. To enable the engine sound use `"EngineSound": true`. Currently this setting applies only to car.
 
 ### PawnPaths
 This allows you to specify your own vehicle pawn blueprints, for example, you can replace the default car in AirSim with your own car. Your vehicle BP can reside in Content folder of your own Unreal project (i.e. outside of AirSim plugin folder). For example, if you have a car BP located in file `Content\MyCar\MySedanBP.uasset` in your project then you can set `"DefaultCar": {"PawnBP":"Class'/Game/MyCar/MySedanBP.MySedanBP_C'"}`. The `XYZ.XYZ_C` is a special notation required to specify class for BP `XYZ`. Please note that your BP must be derived from CarPawn class. By default this is not the case but you can re-parent the BP using the "Class Settings" button in toolbar in UE editor after you open the BP and then choosing "Car Pawn" for Parent Class settings in Class Options. It is also a good idea to disable "Auto Possess Player" and "Auto Possess AI" as well as set AI Controller Class to None in BP details. Please make sure your asset is included for cooking in packaging options if you are creating binary.

@@ -145,12 +145,18 @@ private:
 	void StartAsyncCapture(float capture_rotation, int32 cur_fov, bool do_capture);
 	void ServiceAsyncCapture();
 	bool ProcessCapturedBuffers(float sensor_rotation_angle, float fov, msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final);
+	// Game-thread cached pose for Multirotor physics-thread consumers.
+	FTransform GetCachedWorldTransform() const;
 	//void ExecuteScanTask();
 	std::shared_ptr<msr::airlib::WorkerThreadSignal> wait_signal_;
 
 	bool async_capture_mode_ = false;
 	std::atomic<bool> async_capture_in_flight_{ false };
 	std::atomic<bool> async_capture_ready_{ false };
+	// Written only on game thread Tick; read from physics for getLocalPose.
+	FTransform cached_world_transform_;
+	bool cached_pose_valid_ = false;
+	int32 async_empty_depth_retries_ = 0;
 	// Guards job metadata + pixel buffers shared between physics UpdateAsync and game-thread Tick.
 	mutable std::mutex async_capture_mutex_;
 	float pending_capture_rotation_ = 0;

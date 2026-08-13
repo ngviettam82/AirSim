@@ -1,6 +1,9 @@
 ### Development (version 3.4)
+* Production polish from audit: stencil view extension fails closed to black when CustomDepth is missing (no scene-color label leak); safer view-extension delegate; Multirotor GPU LiDAR retries empty depth sectors and caches pose on the game thread; Physics warns on ArmLengths/rotor-count mismatch.
+* Docs/settings honesty: `EnableRpc` (not `RpcEnabled`), correct EngineSound/Lumen defaults, stencil-only annotation status, CameraHost network safety, dual-plugin packaging/install precompiled, multirotor physics + GPU LiDAR Multirotor notes, mkdocs rebrand to this fork.
 * Fixed CI/release Python wheel smoke tests to import `airsim` after the client package rename (they still imported `cosysairsim` and would fail on main).
 * Fixed Segmentation/Infrared subwindows staying pitch black: source-stencil capture setup no longer forces `bCaptureEveryFrame=false` after the HUD enables continuous preview.
+* Clarified CHANGELOG: custom multi-layer proxy annotation settings exist historically but this build ignores custom `Annotation[]` layers at runtime (stencil-only).
 * Hardened Cosys Multirotor GPU LiDAR async capture: pause sector integration while a game-thread capture is in flight, mutex-guard pixel buffers, and ignore empty depth readbacks.
 * Hardened `simSpawnObject` soft-path loading: resolve assets only on the game thread via `FSoftObjectPath::TryLoad`, avoid mutating shared mesh Nanite settings, and unique-name without open regex.
 * Physics `ArmLength` expands to the frame rotor count (quad/hex/octo); optional `ArmLengths` array for per-arm values. See `docs/multirotor_physics.md`.
@@ -9,7 +12,7 @@
 * When `EnableBattery` is true, AirSim publishes plant battery as MAVLink `BATTERY_STATUS` to PX4 on the control link so voltage/SOC can drive PX4 failsafes (RTL/land).
 * Updated built-in instance segmentation and infrared to use source CustomStencil labels instead of generated annotation mirror geometry. This avoids duplicating dense ISM/HISM instance buffers in large Unreal environments.
 * Changed `InitialInstanceSegmentation` default to false; set it explicitly to true when startup segmentation labels are needed.
-* Added annotation `Backend` and `ProxyComponentBudget` settings, and changed annotation `Default` to false by default so optional custom annotation layers do not proxy the whole level unless requested. Custom annotation layers use proxy rendering; source stencil is reserved for built-in segmentation/infrared.
+* Added annotation `Backend` and `ProxyComponentBudget` settings, and changed annotation `Default` to false by default. **In this fork, custom `Annotation[]` layers are not activated** (stencil-only build); source stencil is used for built-in segmentation/infrared only.
 * Optimized source-stencil and GPU LiDAR paths: built-in segmentation no longer builds the full RGB colormap during startup, GPU LiDAR skips unused segmentation/intensity captures and resources, and material stencil initialization/material CSV parsing run only when GPU LiDAR intensity is enabled.
 * Updated segmentation Python examples for the source-stencil ID range and actual object-ID lookup behavior.
 * Fixed RGB annotation initialization and dynamic updates to reject malformed/out-of-range tags, preserved proxy annotation hiding in Scene/Lighting captures, and kept custom annotation off the built-in stencil plane.

@@ -37,6 +37,23 @@ Set `Host` on each `CaptureSettings` entry that should be exposed:
 
 `BindAddress` is a local interface on the simulator machine. Use `127.0.0.1` for local-only access, a specific local adapter address to bind one network, or `0.0.0.0` to accept connections on every adapter. A remote client connects to the simulator machine's reachable IP address, not to `0.0.0.0`.
 
+### Network safety (production)
+
+There is **no authentication and no TLS**. Anyone who can reach the port can:
+
+* Stream every hosted camera (including Segmentation if hosted)
+* **POST gimbal commands** and move vehicle-mounted cameras
+
+**Recommendations:**
+
+| Bind | Use |
+|------|-----|
+| `127.0.0.1` (default in code) | Local browser / same-machine tools only |
+| LAN IP | Single-machine NIC; still firewall the port |
+| `0.0.0.0` | Only on trusted networks with OS firewall; never on public internet |
+
+Prefer `127.0.0.1` for day-to-day work. The JSON example above uses `0.0.0.0` only for multi-machine demos.
+
 The server starts only when at least one capture setting has `Host: true`. All routes share the configured port, while the vehicle name, camera name, and image type make each route independently addressable.
 
 | Setting | Default | Purpose |

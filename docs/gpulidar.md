@@ -5,7 +5,43 @@ AirSim supports a GPU accelerated Lidar for multirotors and cars. It uses a dept
 The enablement of a GPU lidar and the other lidar settings can be configured via AirSimSettings json.
 Please see [general sensors](sensors.md) for information on configuration of general/shared sensor settings.
 
-Multirotor mode is supported via an async game-thread capture path (enabled automatically when `SimMode` is Multirotor). On Multirotor, `DrawDebugPoints` is ignored for the capture path.
+## Multirotor support (async capture)
+
+Multirotor mode is supported via an **async game-thread capture** path (enabled automatically when `SimMode` is Multirotor):
+
+* `CaptureScene` / `ReadPixels` run on the **game thread** only.
+* Physics threads schedule sector jobs and sample completed buffers.
+* While a capture is in flight, scan rotation **does not** keep integrating (avoids FOV balloon / skipped sectors).
+* **Effective scan rate is limited by render FPS + physics**, not only `RotationsPerSecond`. Expect full 360° clouds slower than the configured RPS under load.
+* Empty depth readbacks **retry the same sector** rather than silently advancing.
+* Pose for point transforms is taken from a **game-thread-cached** actor transform.
+* On Multirotor, `DrawDebugPoints` is **ignored** (unsafe on the physics thread).
+
+## Multirotor example
+
+```json
+{
+  "SettingsVersion": 2.0,
+  "SimMode": "Multirotor",
+  "Vehicles": {
+    "drone1": {
+      "VehicleType": "SimpleFlight",
+      "Sensors": {
+        "GPULidar1": {
+          "SensorType": 8,
+          "Enabled": true,
+          "NumberOfChannels": 16,
+          "Range": 100,
+          "RotationsPerSecond": 10,
+          "MeasurementsPerCycle": 1024,
+          "DrawDebugPoints": false
+        }
+      }
+    }
+  }
+}
+```
+
 ## Enabling GPU lidar on a vehicle
 * By default, GPU lidars are not enabled. To enable the sensor, set the SensorType and Enabled attributes in settings json.
 ```

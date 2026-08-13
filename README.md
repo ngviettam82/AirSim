@@ -56,28 +56,30 @@ Unreal [5.2.1](https://github.com/ngviettam82/Airsim/tree/5.2.1) is also availab
 }
 ```
 
-## Cosys-Lab Modifications
-* Updated for Unreal 5.
-* Added [multi-layer annotation](https://cosys-lab.github.io/AirSim/annotation) for groundtruth label generation with RGB, greyscale and texture options. Extensive API integration and available for camera and GPU-LiDAR sensors.
-* Added [Instance Segmentation](https://cosys-lab.github.io/AirSim/instance_segmentation). 
-* Added [Echo sensor type](https://cosys-lab.github.io/AirSim/echo) for simulation of sensors like sonar and radar.
-* Added [GPU LIDAR sensor type](https://cosys-lab.github.io/AirSim/gpulidar): Uses GPU acceleration to simulate a LiDAR sensor. Can support much higher point density then normal LiDAR and behaves more authentic and has realistic intensity generation.
-* Added [skid steering SimMode and vehicle type](https://cosys-lab.github.io/AirSim/skid_steer_vehicle). ClearPath Husky and Pioneer P3DX implemented as vehicle types using this new vehicle model. 
-* Added [Matlab API Client](https://cosys-lab.github.io/AirSim/matlab) implementation as an easy to install Matlab toolbox.
-* Added various [random but deterministic dynamic object types and world configuration options](https://cosys-lab.github.io/AirSim/dynamic_objects).
-* Added [Artificial Lights](https://cosys-lab.github.io/AirSim/lights). 
-* Added BoxCar vehicle model to the Car SimMode to have a smaller vehicle to use in indoor spaces.
-* Added a new image type called [Lighting](https://cosys-lab.github.io/AirSim/image_apis) which only shows the light information and no materials.
-* Updated [ComputerVision mode](https://cosys-lab.github.io/AirSim/image_apis#computer-vision-mode-1): Now has full API and Simulation just like other vehicle types. It mostly means it can now have sensors attached (outside of IMU). Improved handling and camera operation.
-* Updated [LIDAR sensor type](https://cosys-lab.github.io/AirSim/lidar): Fixed not tracing correctly, added ground truth (point labels) generation, added range-noise generation. Improved API pointcloud delivery to be full scan instead of being frame-rate dependent and partial.
-* Updated the camera, Echo and (GPU-)LiDAR sensors to be uncoupled from the vehicle and be placed as external world sensors.
-* Updated sensors like cameras, Echo sensor and GPU-LiDAR to ignore certain objects with the _MarkedIgnore_ Unreal tag and enabling the "IgnoreMarked" setting in [the settings file](https://cosys-lab.github.io/AirSim/settings).
-* Updated cameras sensor with more distortion features such as chromatic aberration, motion blur and lens distortion. 
-* Updated Python [ROS implementation](https://cosys-lab.github.io/AirSim/ros_python) with completely new implementation and feature set.
-* Updated C++ [ROS2 implementation](https://cosys-lab.github.io/AirSim/ros_cplusplus) to support custom AirSim features.
-* Dropped support for Unity Environments.
+## How to get it
 
-Some more details on our changes can be found in the [changelog](https://github.com/ngviettam82/Airsim/blob/main/CHANGELOG.md).
+* **Source / this fork:** [github.com/ngviettam82/AirSim](https://github.com/ngviettam82/AirSim)
+* **Precompiled UE 5.5 plugin (Win64):** [Releases](https://github.com/ngviettam82/AirSim/releases) → `AirSimPlugin-Win64.zip` (install [guide](docs/install_precompiled.md))
+* **Python client:** install from `PythonClient` in this repo only (`pip install .` → `import airsim`). Do not use PyPI `cosysairsim` / unrelated `airsim` wheels.
+* **Docs:** [docs/](docs/) in this repository (`mkdocs build` from repo root)
+
+## Cosys-Lab lineage (and this fork)
+
+Upstream Cosys-Lab expanded AirSim for industrial sensing. This fork keeps that lineage and adds field-oriented work (source-stencil Seg/IR, CameraHost, multirotor physics, PX4 battery, Multirotor GPU LiDAR, ROS 2 live control). See [CHANGELOG](CHANGELOG.md).
+
+**Note:** Built-in labeling is **source-stencil Segmentation/Infrared** only. Custom multi-layer proxy annotation from Cosys is **disabled** in this build (see [annotation](docs/annotation.md)).
+
+Notable inherited capabilities (docs in-tree):
+
+* [Instance segmentation](docs/instance_segmentation.md) / [annotation notes](docs/annotation.md)
+* [GPU LiDAR](docs/gpulidar.md) (including Multirotor async path)
+* [Echo](docs/echo.md), [skid steer](docs/skid_steer_vehicle.md), [dynamic objects](docs/dynamic_objects.md), [lights](docs/lights.md)
+* [Camera host](docs/camera_host.md), [multirotor physics](docs/multirotor_physics.md)
+* [ROS Python](docs/ros_python.md) / [ROS 2 C++](docs/ros_cplusplus.md)
+
+## Network note
+
+RPC (`EnableRpc`, default port 41451) and CameraHost have **no authentication**. Prefer loopback or a firewalled LAN for production; see [camera_host](docs/camera_host.md) and [settings](docs/settings.md).
 
 ## How to Get It
 #### Download and run from packaged binary - Windows/Linux

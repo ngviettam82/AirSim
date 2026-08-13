@@ -5,6 +5,7 @@
 #include "PixelShaderUtils.h"
 #include "PostProcess/PostProcessMaterialInputs.h"
 #include "RenderGraphBuilder.h"
+#include "RenderGraphUtils.h"
 #include "SceneView.h"
 #include "SceneViewExtension.h"
 #include "ScreenPass.h"
@@ -66,21 +67,58 @@ namespace
         {
             if (pass == EPostProcessingPass::Tonemap)
             {
-                callbacks.Add(FAfterPassCallbackDelegate::CreateRaw(
+                // Shared-ptr safe: extension is removed on EndPlay after this shared ref is held by the capture.
+                callbacks.Add(FAfterPassCallbackDelegate::CreateSP(
                     this,
                     &FAirSimStencilViewExtension::PostProcessAfterTonemap_RenderThread));
             }
         }
 
     private:
+        static FScreenPassTexture FailClosedBlack(
+            FRDGBuilder& graph_builder,
+            const FSceneView& view,
+            const FPostProcessMaterialInputs& inputs)
+        {
+            // Never return tonemapped scene color as "labels" — that looks alive but is wrong for ML.
+            const FScreenPassTexture scene_color = FScreenPassTexture::CopyFromSlice(
+                graph_builder,
+                inputs.GetInput(EPostProcessMaterialInput::SceneColor));
+            if (!scene_color.IsValid())
+            {
+                return inputs.ReturnUntouchedSceneColorForPostProcessing(graph_builder);
+            }
+
+            FScreenPassRenderTarget output = inputs.OverrideOutput;
+            if (!output.IsValid())
+            {
+                output = FScreenPassRenderTarget::CreateFromInput(
+                    graph_builder,
+                    scene_color,
+                    view.GetOverwriteLoadAction(),
+                    TEXT("AirSimStencilOutputBlack"));
+            }
+
+            if (output.IsValid() && output.Texture != nullptr)
+            {
+                AddClearRenderTargetPass(graph_builder, output.Texture, FLinearColor::Black);
+            }
+            return MoveTemp(output);
+        }
+
         FScreenPassTexture PostProcessAfterTonemap_RenderThread(
             FRDGBuilder& graph_builder,
             const FSceneView& view,
             const FPostProcessMaterialInputs& inputs)
         {
-            if (inputs.CustomDepthTexture == nullptr || view.Family == nullptr)
+            if (view.Family == nullptr)
             {
-                return inputs.ReturnUntouchedSceneColorForPostProcessing(graph_builder);
+                return FailClosedBlack(graph_builder, view, inputs);
+            }
+
+            if (inputs.CustomDepthTexture == nullptr)
+            {
+                return FailClosedBlack(graph_builder, view, inputs);
             }
 
             const FScreenPassTexture scene_color = FScreenPassTexture::CopyFromSlice(
@@ -88,7 +126,7 @@ namespace
                 inputs.GetInput(EPostProcessMaterialInput::SceneColor));
             if (!scene_color.IsValid())
             {
-                return inputs.ReturnUntouchedSceneColorForPostProcessing(graph_builder);
+                return FailClosedBlack(graph_builder, view, inputs);
             }
 
             FScreenPassRenderTarget output = inputs.OverrideOutput;

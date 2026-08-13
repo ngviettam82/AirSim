@@ -10,7 +10,7 @@
     "LogMessagesVisible": true,
     "ShowLosDebugLines": false,
     "ViewMode": "",
-    "RpcEnabled": true,
+    "EnableRpc": true,
     "EngineSound": false,
     "PhysicsEngineName": "",
     "SpeedUnitFactor": 1,

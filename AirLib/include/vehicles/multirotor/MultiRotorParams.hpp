@@ -611,10 +611,26 @@ namespace airlib
 
             // Rebuild symmetric arm layout when ArmLength or explicit arm_lengths match rotor count.
             std::vector<real_T> arms = cfg.arm_lengths;
+            if (!cfg.arm_lengths.empty() && cfg.arm_lengths.size() != p.rotor_count) {
+                Utils::log(Utils::stringf(
+                               "Physics.ArmLengths has %zu values but frame has %d rotors; ignoring ArmLengths "
+                               "(and ArmLength when ArmLengths is non-empty). Use %d entries, or omit ArmLengths "
+                               "and set ArmLength alone.",
+                               cfg.arm_lengths.size(),
+                               p.rotor_count,
+                               p.rotor_count),
+                           Utils::kLogLevelWarn);
+            }
             if (arms.empty() && !std::isnan(cfg.arm_length) && cfg.arm_length > 0 && p.rotor_count > 0) {
                 arms.assign(p.rotor_count, cfg.arm_length);
             }
             if (!arms.empty() && arms.size() == p.rotor_count) {
+                if (p.rotor_count != 4 && p.rotor_count != 6 && p.rotor_count != 8) {
+                    Utils::log(Utils::stringf(
+                                   "Physics arm rebuild supports only 4/6/8 rotors; frame has %d — arm layout unchanged.",
+                                   p.rotor_count),
+                               Utils::kLogLevelWarn);
+                }
                 const real_T rz = !std::isnan(cfg.rotor_z) ? cfg.rotor_z
                     : (p.rotor_poses.empty() ? 0.025f : p.rotor_poses[0].position.z());
                 if (p.rotor_count == 4)

@@ -4,7 +4,9 @@ Vehicle plant parameters can be set under each multirotor entry in `settings.jso
 
 **Defaults that apply even without a `Physics` block:** `EnableGroundEffect` and `EnableThrustAirSpeed` default to **true** (realism). Set them to `false` explicitly if you want the older plant feel. `EnableBattery` defaults to **false**.
 
-**Frame types:** PX4 `Model` selects the frame first (`Hexacopter` / `Octocopter` / default quad, etc.). SimpleFlight is always a **quad**. `ArmLength` rebuilds arms for 4/6/8 rotors; optional `ArmLengths` array must match the frame's rotor count. Tri/bi frames are not shipped.
+**Frame types:** PX4 `Model` selects the frame first (`Hexacopter` / `Octocopter` / default quad, etc.). SimpleFlight is always a **quad**. `ArmLength` rebuilds arms for 4/6/8 rotors; optional `ArmLengths` array must match the frame's rotor count (wrong length is **ignored with a warning**). Using only `ArmLength` expands to the full rotor count. Symmetric rebuild (`ArmLength` / matching `ArmLengths`) replaces asymmetric layouts such as Blacksheep with a regular QuadX/Hex/Octo arm pattern. Tri/bi frames are not shipped.
+
+**Empty battery plant:** With `EnableBattery: true`, thrust scales with voltage; at empty SOC the plant still produces roughly ~0.6× max thrust (not a hard cut). PX4 failsafes need external battery acceptance (`SIM_BAT_ENABLE: 0`, thresholds, etc.) — see below.
 
 For live PX4 with ROS 2 vision, use `"ClockType": "ScalableClock"`, `"ClockSpeed": 1`, and `"LockStep": false`. Physics settings do not depend on lockstep.
 

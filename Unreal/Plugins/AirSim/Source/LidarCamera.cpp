@@ -134,6 +134,10 @@ void ALidarCamera::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Cache pose on the game thread so physics-thread getLocalPose does not read UObject transforms.
+	cached_world_transform_ = GetActorTransform();
+	cached_pose_valid_ = true;
+
 	// Multirotor path: finish CaptureScene/ReadPixels on the game thread.
 	if (async_capture_mode_ && async_capture_in_flight_.load()) {
 		ServiceAsyncCapture();
@@ -143,6 +147,11 @@ void ALidarCamera::Tick(float DeltaTime)
 		msr::airlib::vector<msr::airlib::real_T> point_cloud_empty;
 		Update(DeltaTime, point_cloud_empty, point_cloud_empty);
 	}
+}
+
+FTransform ALidarCamera::GetCachedWorldTransform() const
+{
+	return cached_pose_valid_ ? cached_world_transform_ : GetActorTransform();
 }
 
 void ALidarCamera::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -583,6 +592,18 @@ void ALidarCamera::ServiceAsyncCapture()
 			async_buffer_2D_intensity_ = MoveTemp(intensity_local);
 			// Only mark ready when depth readback actually produced samples.
 			async_capture_ready_ = async_buffer_2D_depth_.Num() > 0;
+			if (!async_capture_ready_ && do_capture) {
+				// Empty readback: retry same sector a few times (do not free in_flight).
+				// Scan angles already advanced when the job was scheduled.
+				if (async_empty_depth_retries_ < 3) {
+					++async_empty_depth_retries_;
+					return;
+				}
+				async_empty_depth_retries_ = 0;
+			}
+			else {
+				async_empty_depth_retries_ = 0;
+			}
 		}
 	}
 

@@ -41,10 +41,13 @@ void UnrealGPULidarSensor::pause(const bool is_paused) {
 
 // returns a point-cloud for the tick
 bool UnrealGPULidarSensor::getPointCloud(float delta_time, msr::airlib::vector<msr::airlib::real_T>& point_cloud, msr::airlib::vector<msr::airlib::real_T>& point_cloud_final)
-{	
-	if (sensor_params_.draw_sensor) {
-		UAirBlueprintLib::DrawPoint(actor_->GetWorld(), lidar_camera_->GetActorTransform().GetLocation(), 5, FColor::Black, false, draw_time_);
-		UAirBlueprintLib::DrawCoordinateSystem(actor_->GetWorld(), lidar_camera_->GetActorLocation(), lidar_camera_->GetActorRotation(), 25, false, draw_time_, 10);
+{
+	// Multirotor async path runs on the physics thread — never draw/debug from here.
+	// DrawDebugPoints is ignored for Multirotor in InitializeSettingsFromAirSim.
+	if (sensor_params_.draw_sensor && !sensor_params_.async_capture_mode) {
+		UAirBlueprintLib::DrawPoint(actor_->GetWorld(), lidar_camera_->GetCachedWorldTransform().GetLocation(), 5, FColor::Black, false, draw_time_);
+		UAirBlueprintLib::DrawCoordinateSystem(actor_->GetWorld(), lidar_camera_->GetCachedWorldTransform().GetLocation(),
+			lidar_camera_->GetCachedWorldTransform().Rotator(), 25, false, draw_time_, 10);
 	}
 	return lidar_camera_->Update(delta_time, point_cloud, point_cloud_final);
 }
@@ -52,6 +55,7 @@ bool UnrealGPULidarSensor::getPointCloud(float delta_time, msr::airlib::vector<m
 // Get echo pose in Local NED
 void UnrealGPULidarSensor::getLocalPose(msr::airlib::Pose& sensor_pose)
 {
-	sensor_pose = ned_transform_->toLocalNed(lidar_camera_->GetActorTransform());
+	// Prefer game-thread-cached transform (safe for Multirotor physics Update).
+	sensor_pose = ned_transform_->toLocalNed(lidar_camera_->GetCachedWorldTransform());
 }
 

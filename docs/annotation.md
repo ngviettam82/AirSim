@@ -1,14 +1,23 @@
 # Annotation in AirSim
 
-A multi-layer annotation system is implemented into AirSim. Annotation can render custom RGB, greyscale, or texture layers for actors and components in the world.
+## Current product path (this fork)
 
-There are two rendering paths:
+**This build is source-stencil only for labeling.**
 
-* Built-in `InstanceSegmentation` and `Infrared` use source stencil. AirSim writes labels directly to the original Unreal source primitives through CustomDepth/CustomStencil. This is lightweight and avoids proxy mesh components, but it is limited to 8-bit labels (`0..255`).
-* Custom RGB, greyscale, and texture annotation layers use proxy annotation components. This supports direct RGB colors, RGB index colors from the larger AirSim colormap, greyscale values, and textures, but it can be expensive in very dense environments.
+| Path | Status |
+|------|--------|
+| Built-in `ImageType::Segmentation` and `ImageType::Infrared` | **Supported** — CustomDepth/CustomStencil on source primitives, 8-bit IDs `0..255` |
+| Custom `Annotation[]` layers (RGB / greyscale / texture proxies) | **Disabled** — settings may still list layers; runtime ignores them and logs a warning |
 
-Built-in `InstanceSegmentation` and `Infrared` use the source-stencil backend. Optional custom annotation layers are only created when they are listed in `settings.json`.
-An annotation layer allows the user to tag individual actors and/or their child-components with a certain annotation value. This can be used to create ground truth data for machine learning models or to create a visual representation of the environment.
+Do not plan production pipelines on multi-layer proxy annotation until it is re-enabled. Use Segmentation/Infrared plus object-ID APIs instead.
+
+### Historical / Cosys design note
+
+Cosys-AirSim described two rendering paths (source stencil for built-ins, proxy components for custom layers). Proxy multi-layer annotation remains in source for possible future work but **is not activated** in this tree (`CanCreateProxyAnnotationComponent` always false).
+
+---
+
+An annotation system tags actors/components for ground-truth labels. Built-in instance segmentation and infrared share one object-ID plane.
 
 Let's say you want to train a model to detect cars or pedestrians, you create an RGB annotation layer where  you can tag all the cars and pedestrians in the environment with a certain RGB color respectively.
 Through the API you can then get the image of this RGB annotation layer (GPU LiDAR is also supported next to cameras).
@@ -26,12 +35,12 @@ The annotation system uses actor and/or component tags to set these values for t
   * Brush objects aren't supported. In Unreal Engine 5.5, `UBrushComponent` derives from `UPrimitiveComponent`, not `UMeshComponent`, so brushes are skipped by the current object discovery path. As a work-around, convert them to StaticMesh assets.
   * Other unsupported primitive types, such as decals, text, non-instanced foliage systems, and non-mesh custom primitives, generally will not render in annotation captures unless they are added to a supported backend.
 
-## Usage
+## Usage (custom layers — currently ignored)
+
+> **Note:** Custom `Annotation[]` layers are **not created** in this stencil-only build. The JSON schema below is retained for compatibility with Cosys docs and older settings files; it will not enable proxy layers at runtime.
 
 ### Settings JSON definition of layers
-To use custom annotation layers, define them in the `Annotation` array in `settings.json`. You can define as many as you want and use them simultaneously. Each layer is addressed by its `Name`.
-Here you define each layer with a name, the type and some other settings, often specific to the type.
-For example:
+Historically, custom layers were defined in the `Annotation` array. Example of the **legacy** schema:
 ```json
 {
   ...
