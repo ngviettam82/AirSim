@@ -20,9 +20,12 @@ nav:
     - "Install from Source on Windows": 'install_windows.md'
     - "Install from Source on Linux": 'install_linux.md'
     - "Using Docker on Ubuntu": 'docker_ubuntu.md'
-    - "Custom Unreal Environment": 'unreal_custenv.md'
-    - "Dynamic Objects": 'dynamic_objects.md'
-    - "CI/CD": 'ci_cd.md'
+    - "Building and Packaging Plugin": 'packaging.md'
+    - "Unreal Environments":
+      - "Overview": 'unreal_proj.md'
+      - "Blocks Environment": 'unreal_blocks.md'
+      - "Custom Unreal Environment": 'unreal_custenv.md'
+      - "Working with Plugin Contents": 'working_with_plugin_contents.md'
   - "Using AirSim":
     - "Core APIs": 'apis.md'
     - "Image APIs": 'image_apis.md'
@@ -40,6 +43,8 @@ nav:
     - "Steering Wheel": 'steering_wheel_installation.md'
     - "Multiple Vehicles": 'multi_vehicle.md'
     - "Skid Steer Vehicles": 'skid_steer_vehicle.md'
+    - "Dynamic Objects": 'dynamic_objects.md'
+    - "Object Detection": 'object_detection.md'
     - "Import Gazebo models": "gazebo_drone.md"
     - "Domain Randomization": "retexturing.md"
     - "Mesh Vertex Buffers": "meshes.md"
@@ -63,7 +68,7 @@ nav:
     - "Flight Controller": 'flight_controller.md'
     - "Adding new APIs": 'adding_new_apis.md'
     - "Simple Flight": 'simple_flight.md'
-    - "Production audit (ba483f01..HEAD)": 'production_audit_ba483f01_to_HEAD.md'
+    - "CI/CD": 'ci_cd.md'
   - "External Flight Controllers":
     - "MavLink and PX4":
       - "PX4 Setup for AirSim": 'px4_setup.md'
@@ -91,14 +96,8 @@ nav:
     - "Building Hexacopter": 'https://github.com/Microsoft/AirSim/wiki/hexacopter'
     - "Moving on Path Demo": 'https://github.com/Microsoft/AirSim/wiki/moveOnPath-demo'
     - "Importing a custom multirotor mesh": 'https://youtu.be/Bp86WiLUC80'
-    - "Object Detection": "object_detection.md"
     - "AirSim with MAVROS and PX4": 'https://youtu.be/ZonkdMcwXH4'
   - "Misc":
-    - "CI/CD": 'ci_cd.md'
     - "AirSim on Real Drones": 'custom_drone.md'
     - "pfm format": 'pfm.md'
-    - "Setting up Unreal Environment": 'unreal_proj.md'
-    - "Building and Packaging Cosys-AirSim Plugin and/or Unreal Projects": 'packaging.md'
-    - "Blocks Environment": 'unreal_blocks.md'
-    - "Working with UE Plugin Contents": 'working_with_plugin_contents.md'
     - "Formula Student Technion Self-drive": 'https://github.com/Microsoft/AirSim/wiki/technion'

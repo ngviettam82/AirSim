@@ -20,8 +20,6 @@ Some basic launch files are available for the ROS node in these two configuratio
  - `record_route.launch` : This is a variant of the one above but only exposing and enabling those to create a _route_ rosbag for the second configuration. It will automatically record a rosbag as well.
  - `replay_route_record_sensors.launch`: This is the script to use a _route_ rosbag created with the previous launch file type to replay it and record all sensor and TF data and create a single merged rosbag.
 
-## Setup
-
 ## Setup workspace and Airsim package
 
 #### Option A: Create a new ROS package in your catkin workspace following these instructions.  
@@ -44,7 +42,7 @@ Change directory to your top level catkin workspace folder i.e. ```cd ~/catkin_w
 This will build the AirSim package.  Next, run ```source devel/setup.bash``` so ROS can find the new package.
 You can add this command to your _~/.bashrc_ to load your catkin workspace automatically.
 
-s## How to run ROS AirSim nodes
+## How to run ROS AirSim nodes
 
 First make sure you are running an AirSim project and that the simulation is playing.
 

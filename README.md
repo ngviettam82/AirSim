@@ -60,6 +60,8 @@ Unreal [5.2.1](https://github.com/ngviettam82/Airsim/tree/5.2.1) is also availab
 
 * **Source / this fork:** [github.com/ngviettam82/AirSim](https://github.com/ngviettam82/AirSim)
 * **Precompiled UE 5.5 plugin (Win64):** [Releases](https://github.com/ngviettam82/AirSim/releases) → `AirSimPlugin-Win64.zip` (install [guide](docs/install_precompiled.md))
+* **Packaged binary (Blocks):** [Releases](https://github.com/ngviettam82/AirSim/releases) (run [guide](docs/run_packaged.md))
+* **Build from Source:** [Windows](docs/install_windows.md) / [Linux](docs/install_linux.md)
 * **Python client:** install from `PythonClient` in this repo only (`pip install .` → `import airsim`). Do not use PyPI `cosysairsim` / unrelated `airsim` wheels.
 * **Docs:** [docs/](docs/) in this repository (`mkdocs build` from repo root)
 
@@ -80,22 +82,6 @@ Notable inherited capabilities (docs in-tree):
 ## Network note
 
 RPC (`EnableRpc`, default port 41451) and CameraHost have **no authentication**. Prefer loopback or a firewalled LAN for production; see [camera_host](docs/camera_host.md) and [settings](docs/settings.md).
-
-## How to Get It
-#### Download and run from packaged binary - Windows/Linux
-* [Download and run it](https://cosys-lab.github.io/AirSim/run_packaged)
-#### Download and install from precompiled plugin - Windows/Linux
-* [Download and install it](https://cosys-lab.github.io/AirSim/install_precompiled)
-#### Install and use from source - Windows
-* [Install/Build it](https://cosys-lab.github.io/AirSim/install_windows)
-#### Install and use from source - Linux
-* [Install/Build it](https://cosys-lab.github.io/AirSim/install_linux)
-
-## How to Use It
-
-### Documentation
-
-View our [detailed documentation](https://cosys-lab.github.io/AirSim/) on all aspects of AirSim.
 
 ## Original AirSim Paper
 

@@ -352,25 +352,24 @@ These image types return information about motion perceived by the point of view
 This feature lets you generate object detection using existing cameras in AirSim, find more info [here](object_detection.md).
 
 ### Annotation
-The annotation system allows you to choose different groundtruth labeling techniques to create more data from your simulation. Find more info [here](annotation.md).
-When enabling annotation layers, one can choose to render images as well from these layers. The image type if set to annotation does usually require to also supply the name of the annotation layer as defined in the settings.
+The annotation system allows you to tag scene objects for groundtruth labeling. Find more info in [annotation documentation](annotation.md). Note that built-in `ImageType::Segmentation` and `ImageType::Infrared` use source-stencil labels (`0..255`), while custom proxy annotation layers are disabled in this build.
 
-For example with Python, you can use the following examples for RGB and greyscale annotation layers.
+For example with Python, you can fetch annotation captures using:
 ```python
-    responses = client.simGetImages([airsim.ImageRequest( "front_center", airsim.ImageType.Annotation, False, False, "RGBTest")])
-    img_rgb_string = responses[0].image_data_uint8
-    rgbarray = np.frombuffer(img_rgb_string, np.uint8)
-    rgbarray_shaped = rgbarray.reshape((540,960,3))
-    img = Image.fromarray(rgbarray_shaped, 'RGB')
-    img.show()
+responses = client.simGetImages([airsim.ImageRequest("front_center", airsim.ImageType.Annotation, False, False, "RGBTest")])
+img_rgb_string = responses[0].image_data_uint8
+rgbarray = np.frombuffer(img_rgb_string, np.uint8)
+rgbarray_shaped = rgbarray.reshape((540, 960, 3))
+img = Image.fromarray(rgbarray_shaped, 'RGB')
+img.show()
 
-    responses = client.simGetImages([airsim.ImageRequest( "front_center", airsim.ImageType.Annotation, False, False, "GreyscaleTest")])
-    img_rgb_string = responses[0].image_data_uint8
-    rgbarray = np.frombuffer(img_rgb_string, np.uint8)
-    rgbarray_shaped = rgbarray.reshape((540,960,3))
-    greyscale_values = np.divide(rgbarray_shaped[:,:,0], 255)
-    img = Image.fromarray(rgbarray_shaped[:,:,0])
-    img.show()
+responses = client.simGetImages([airsim.ImageRequest("front_center", airsim.ImageType.Annotation, False, False, "GreyscaleTest")])
+img_rgb_string = responses[0].image_data_uint8
+rgbarray = np.frombuffer(img_rgb_string, np.uint8)
+rgbarray_shaped = rgbarray.reshape((540, 960, 3))
+greyscale_values = np.divide(rgbarray_shaped[:, :, 0], 255)
+img = Image.fromarray(rgbarray_shaped[:, :, 0])
+img.show()
 ```
 
 ### Lighting
@@ -379,6 +378,6 @@ It shows a neutral material only affected by lighting.
 Note that objects using transparent materials may still show their full diffuse color due to engine limitations.
 This can be useful to indicate what parts of an image are in shadow or how much light is received on certain objects by artificial or natural light sources.
 
-## Lumen Lightning for Scene camera
+## Lumen Lighting for Scene camera
 Unreal Engine 5 introduces Lumen lighting. Because these cameras use scene capture components, enabling Lumen can be costly for performance. Settings have been added specifically for the scene camera to customize the usage of Lumen for Global Illumination and Reflections.
 The `LumenGIEnable` and `LumenReflectionEnable` settings enable or disable Lumen for the camera. The `LumenFinalQuality`(0.25-2) setting determines the quality of the final image. The `LumenSceneDetail`(0.25-4) setting determines the quality of the scene. The `LumenSceneLightningDetail`(0.25-2) setting determines the quality of the lighting in the scene.

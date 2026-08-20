@@ -4,21 +4,7 @@
 AirSim exposes APIs so you can interact with vehicle in the simulation programmatically. You can use these APIs to retrieve images, get state, control the vehicle and so on.
 
 ## Python Quickstart
-If you want to use Python to call AirSim APIs, we recommend using Anaconda with Python 3.5 or later versions however some code may also work with Python 2.7.
-
-First install this package:
-
-```
-pip install rpc-msgpack
-```
-
-Once you can run AirSim, choose Car as vehicle and then navigate to `PythonClient\car\` folder and run:
-
-```
-python hello_car.py
-```
-
-If you are using Visual Studio 2019 then just open AirSim.sln, set PythonClient as startup project and choose `car\hello_car.py` as your startup script.
+To use Python to call AirSim APIs, we recommend using Python 3.10 or later.
 
 ### Installing the AirSim Python package
 
@@ -33,7 +19,15 @@ pip install .
 # pip install -e .
 ```
 
-Then import as:
+Once you can run AirSim, choose Car as vehicle and then navigate to `PythonClient/car/` folder and run:
+
+```bash
+python hello_car.py
+```
+
+If you are using Visual Studio 2022 then just open AirSim.sln, set PythonClient as startup project and choose `car/hello_car.py` as your startup script.
+
+Then import in your scripts as:
 
 ```python
 import airsim
@@ -269,7 +263,7 @@ Many API methods has parameters named `duration` or `max_wait_seconds` and they 
 client.takeoffAsync()->waitOnLastTask();
 ```
 
-```cpp
+```python
 # Python
 client.takeoffAsync().join()
 ```
@@ -319,19 +313,17 @@ See the [Adding New APIs](adding_new_apis.md) page
 If you see Unreal getting slowed down dramatically when Unreal Engine window loses focus then go to 'Edit->Editor Preferences' in Unreal Editor, in the 'Search' box type 'CPU' and ensure that the 'Use Less CPU when in Background' is unchecked.
 
 #### Do I need anything else on Windows?
-You should install VS2019 with VC++, Windows SDK 10.0 and Python. To use Python APIs you will need Python 3.5 or later (install it using Anaconda).
+You should install Visual Studio 2022 with Desktop C++, Windows 10/11 SDK and Python 3.10+.
 
 #### Which version of Python should I use?
-We recommend [Anaconda](https://www.anaconda.com/download/) to get Python tools and libraries. Our code is tested with Python 3.5.3 :: Anaconda 4.4.0. This is important because older version have been known to have [problems](https://stackoverflow.com/a/45934992/207661).
+We recommend Python 3.10 or later. Install the Python client directly via `pip install .` from `PythonClient`.
 
 #### I get error on `import cv2`
 You can install OpenCV using:
-```
-conda install opencv
+```bash
 pip install opencv-python
 ```
 
 #### TypeError: unsupported operand type(s) for *: 'AsyncIOLoop' and 'float'
 
-This error happens if you install Jupyter, which somehow breaks the msgpackrpc library.  Create a new python environment
-which the minimal required packages.
+This error happens if you install Jupyter, which can conflict with the msgpackrpc event loop. Create a clean virtualenv or conda environment with the minimal required packages.
