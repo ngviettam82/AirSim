@@ -1,0 +1,12 @@
+#!/bin/sh
+#
+# @name Gazebo uav0 (project airframe, x500-derived)
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=uav0}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=uav_arena}
+
+# Rotor geometry and control allocation are inherited, not duplicated.
+. ${R}etc/init.d-posix/airframes/4001_gz_x500

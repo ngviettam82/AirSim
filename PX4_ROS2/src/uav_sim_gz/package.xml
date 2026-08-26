@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>uav_sim_gz</name>
+  <version>0.1.0</version>
+  <description>Gazebo simulation assets: world, layered drone models, sensor modules and the Gazebo-to-ROS bridge.</description>
+  <maintainer email="ng.chi.nghi@gmail.com">PX4_ROS2 team</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+
+  <!-- generate_ground_texture.py runs at BUILD time. Undeclared until 2026-08-25, when a
+       clean container build failed on "No module named 'PIL'". The host had Pillow
+       installed system-wide, so the omission was invisible from here. -->
+  <build_depend>python3-pil</build_depend>
+
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_image</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

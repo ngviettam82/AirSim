@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# @name Gazebo uav0 full sensor suite
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=uav0_full}
+
+. ${R}etc/init.d-posix/airframes/4100_gz_uav0

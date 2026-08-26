@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- No usable GPS; NavSat kept on purpose (SIM_GPS_USED=0), README 3b. -->
+<sdf version="1.9">
+  <world name="uav_arena_indoor">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <plugin name="gz::sim::systems::Physics" filename="gz-sim-physics-system"/>
+    <plugin name="gz::sim::systems::UserCommands" filename="gz-sim-user-commands-system"/>
+    <plugin name="gz::sim::systems::SceneBroadcaster" filename="gz-sim-scene-broadcaster-system"/>
+    <plugin name="gz::sim::systems::Contact" filename="gz-sim-contact-system"/>
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"/>
+    <plugin name="gz::sim::systems::AirPressure" filename="gz-sim-air-pressure-system"/>
+    <plugin name="gz::sim::systems::ApplyLinkWrench" filename="gz-sim-apply-link-wrench-system"/>
+    <plugin name="gz::sim::systems::NavSat" filename="gz-sim-navsat-system"/>
+    <plugin name="gz::sim::systems::Sensors" filename="gz-sim-sensors-system">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <gui fullscreen="false">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.5 0.5 0.5</ambient_light>
+        <background_color>0.5 0.5 0.55</background_color>
+        <camera_pose>-9 -7 5 0 0.4 0.7</camera_pose>
+        <camera_clip><near>0.15</near><far>500</far></camera_clip>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <gz-gui><property key="showTitleBar" type="bool">false</property></gz-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <gz-gui><property key="showTitleBar" type="bool">false</property></gz-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <gz-gui><property key="showTitleBar" type="bool">false</property></gz-gui>
+      </plugin>
+      <plugin name="World control" filename="WorldControl">
+        <gz-gui>
+          <property type="bool" key="showTitleBar">0</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <play_pause>1</play_pause><step>1</step><start_paused>1</start_paused>
+      </plugin>
+      <plugin name="World stats" filename="WorldStats">
+        <gz-gui>
+          <property type="bool" key="showTitleBar">0</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <sim_time>1</sim_time><real_time>1</real_time>
+        <real_time_factor>1</real_time_factor><iterations>1</iterations>
+      </plugin>
+      <plugin name="Entity tree" filename="EntityTree"/>
+    </gui>
+
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.5 0.5 0.55 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <!-- Dimmer than outdoor sun on purpose, stresses the camera more. -->
+    <light name="ceiling_light_a" type="point">
+      <pose>-3 -3 3.6 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1.2</intensity>
+      <diffuse>0.85 0.85 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation><range>18</range><linear>0.05</linear><constant>0.4</constant><quadratic>0.008</quadratic></attenuation>
+    </light>
+    <light name="ceiling_light_b" type="point">
+      <pose>3 3 3.6 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1.2</intensity>
+      <diffuse>0.85 0.85 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation><range>18</range><linear>0.05</linear><constant>0.4</constant><quadratic>0.008</quadratic></attenuation>
+    </light>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg> 8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>1 1</size></plane></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <mesh><uri>model://ground_textured/materials/meshes/ground_rich.obj</uri></mesh>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 12x12x4 m room; walls give lidar/camera real geometry, not sky. -->
+    <model name="room">
+      <static>true</static>
+      <link name="link">
+        <collision name="wall_north_c"><pose>0 6 2 0 0 0</pose>
+          <geometry><box><size>12.2 0.2 4</size></box></geometry></collision>
+        <visual name="wall_north_v"><pose>0 6 2 0 0 0</pose>
+          <geometry><box><size>12.2 0.2 4</size></box></geometry>
+          <material><ambient>0.7 0.7 0.68 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+
+        <collision name="wall_south_c"><pose>0 -6 2 0 0 0</pose>
+          <geometry><box><size>12.2 0.2 4</size></box></geometry></collision>
+        <visual name="wall_south_v"><pose>0 -6 2 0 0 0</pose>
+          <geometry><box><size>12.2 0.2 4</size></box></geometry>
+          <material><ambient>0.7 0.7 0.68 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+
+        <collision name="wall_east_c"><pose>6 0 2 0 0 0</pose>
+          <geometry><box><size>0.2 12.2 4</size></box></geometry></collision>
+        <visual name="wall_east_v"><pose>6 0 2 0 0 0</pose>
+          <geometry><box><size>0.2 12.2 4</size></box></geometry>
+          <material><ambient>0.7 0.7 0.68 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+
+        <collision name="wall_west_c"><pose>-6 0 2 0 0 0</pose>
+          <geometry><box><size>0.2 12.2 4</size></box></geometry></collision>
+        <visual name="wall_west_v"><pose>-6 0 2 0 0 0</pose>
+          <geometry><box><size>0.2 12.2 4</size></box></geometry>
+          <material><ambient>0.7 0.7 0.68 1</ambient><diffuse>0.75 0.75 0.72 1</diffuse></material></visual>
+
+        <collision name="ceiling_c"><pose>0 0 4.1 0 0 0</pose>
+          <geometry><box><size>12.2 12.2 0.2</size></box></geometry></collision>
+        <visual name="ceiling_v"><pose>0 0 4.1 0 0 0</pose>
+          <geometry><box><size>12.2 12.2 0.2</size></box></geometry>
+          <material><ambient>0.6 0.6 0.6 1</ambient><diffuse>0.65 0.65 0.65 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Obstacles, clear of the regression corridor x 0..3, y~0. -->
+    <model name="crate_stack">
+      <static>true</static>
+      <pose>-3 3 0.6 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.2 1.2 1.2</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.2 1.2 1.2</size></box></geometry>
+          <material><ambient>0.5 0.38 0.22 1</ambient><diffuse>0.6 0.45 0.26 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="shelf">
+      <static>true</static>
+      <pose>4.5 -3 1.0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.6 3.0 2.0</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.6 3.0 2.0</size></box></geometry>
+          <material><ambient>0.3 0.32 0.35 1</ambient><diffuse>0.35 0.38 0.42 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="landing_pad">
+      <static>true</static>
+      <pose>3 0 0.005 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.0 1.0 0.01</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>1.0 1.0 0.01</size></box></geometry>
+          <material><ambient>0.9 0.9 0.9 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

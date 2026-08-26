@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <model name='sensor_camera_front'>
+    <pose>0 0 0 0 0 0</pose>
+    <self_collide>false</self_collide>
+    <static>false</static>
+    <link name="sensor_camera_front/base_link">
+      <inertial>
+        <!-- OakD-Lite class device, 91x28x17.5 mm. Not yet chosen. -->
+        <mass>0.061</mass>
+        <inertia>
+          <ixx>0.000006</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000043</iyy>
+          <iyz>0</iyz>
+          <izz>0.000045</izz>
+        </inertia>
+      </inertial>
+      <!-- Reuses PX4's mesh instead of copying it; see model-sources.md 2.3. -->
+      <visual name="sensor_camera_front/visual">
+        <geometry>
+          <mesh>
+            <uri>model://OakD-Lite/meshes/OakDLite.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <sensor name="camera_front" type="camera">
+        <!-- Own topic parent avoids camera_info collision; README pitfall 6. -->
+        <topic>uav0/camera_front/image</topic>
+        <!-- Matched to depth camera's rate on purpose; model-sources.md 2.3. -->
+        <update_rate>15</update_rate>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>1.274</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>100</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+        </camera>
+      </sensor>
+    </link>
+  </model>
+</sdf>

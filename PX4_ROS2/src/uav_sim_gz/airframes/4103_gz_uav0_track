@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# @name Gazebo uav0 tracker sensors (front RGB + depth only)
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=uav0_track}
+
+. ${R}etc/init.d-posix/airframes/4100_gz_uav0
+
+# Same VISION-PRIMARY profile as 4102_gz_uav0_nav (see its rationale block).
+# Without it this variant runs GPS-primary while the external-odometry node
+# still injects vision: the EKF vertical state wobbles, the land detector
+# stays latched, and a leash-capped navigator climb never lifts (2026-08-20).
+param set-default EKF2_GPS_CTRL 8
+param set-default EKF2_HGT_REF 3

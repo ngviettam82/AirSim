@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!-- Body only (plan P9 S:1): MissionGuard wraps this SubTree in C++, never
+     a tag in this file. mission_registry fixes total_steps=4 for this
+     mission (approach, find_marker, goto_over_marker, dwell -- see
+     mission_registry.hpp; "ghi pose" is a bookkeeping side effect of the
+     dwell step completing, not a separate BT leaf). InspectMarker.action is
+     NOT used (D-5, no server in navigator) -- composed from primitives. -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <Sequence name="inspect_point">
+      <NavAction name="goto_approach" nav_type="GotoPose" x="{approach_x}" y="{approach_y}"
+                 z="{approach_z}" frame_id="odom" acceptance_radius="0.3" max_speed="0.55"/>
+      <Fallback name="find_marker">
+        <MarkerSeen name="marker_visible_check" marker_id="{marker_id}"
+                    marker_x="{marker_x}" marker_y="{marker_y}"/>
+        <Sequence name="search_for_marker">
+          <NavAction name="search_point_1" nav_type="GotoPose" x="{search_x1}" y="{search_y1}"
+                     z="{approach_z}" frame_id="odom" acceptance_radius="0.5" max_speed="0.4"/>
+          <NavAction name="search_point_2" nav_type="GotoPose" x="{search_x2}" y="{search_y2}"
+                     z="{approach_z}" frame_id="odom" acceptance_radius="0.5" max_speed="0.4"/>
+          <MarkerSeen name="marker_visible_recheck" marker_id="{marker_id}"
+                      marker_x="{marker_x}" marker_y="{marker_y}"/>
+        </Sequence>
+      </Fallback>
+      <NavAction name="goto_over_marker" nav_type="GotoPose" x="{marker_x}" y="{marker_y}"
+                 z="{approach_z}" frame_id="odom" acceptance_radius="0.2" max_speed="0.3"/>
+      <Dwell name="dwell_over_marker" duration_sec="{dwell_sec}"/>
+    </Sequence>
+  </BehaviorTree>
+</root>

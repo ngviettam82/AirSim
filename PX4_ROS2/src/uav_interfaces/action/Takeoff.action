@@ -1,0 +1,9 @@
+float32 target_altitude             # m, above takeoff point
+---
+bool success
+uint8 result_code
+string message
+float32 final_altitude              # m
+---
+float32 current_altitude            # m
+float32 distance_to_target          # m

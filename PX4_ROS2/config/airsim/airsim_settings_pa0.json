@@ -1,0 +1,30 @@
+{
+  "SettingsVersion": 2.0,
+  "SimMode": "Multirotor",
+  "ClockType": "ScalableClock",
+  "ClockSpeed": 1,
+  "OriginGeopoint": {
+    "Latitude": 10.7729,
+    "Longitude": 106.6577,
+    "Altitude": 10
+  },
+  "Vehicles": {
+    "uav0": {
+      "VehicleType": "PX4Multirotor",
+      "UseSerial": false,
+      "UseTcp": true,
+      "TcpPort": 4560,
+      "LockStep": false,
+      "LocalHostIp": "0.0.0.0",
+      "ControlIp": "172.22.77.129",
+      "ControlPortLocal": 14540,
+      "ControlPortRemote": 14580,
+      "X": 0.0,
+      "Y": 0.0,
+      "Z": 0.0,
+      "Pitch": 0.0,
+      "Roll": 0.0,
+      "Yaw": 0.0
+    }
+  }
+}

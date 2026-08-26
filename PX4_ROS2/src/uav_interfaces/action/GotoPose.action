@@ -1,0 +1,13 @@
+geometry_msgs/Pose target_pose      # ENU
+string frame_id                     # must be "odom"; else REJECT (v0.1)
+float32 acceptance_radius           # m
+float32 max_speed                   # m/s
+---
+bool success
+uint8 result_code
+string message
+float32 final_distance_error        # m
+---
+geometry_msgs/Point current_position
+float32 distance_remaining          # m
+float32 estimated_time_remaining    # s
