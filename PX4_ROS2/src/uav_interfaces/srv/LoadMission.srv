@@ -1,0 +1,9 @@
+# Load a registered mission without starting it.
+
+string mission_id
+string mission_params           # JSON or YAML, empty when not needed
+---
+bool success
+uint8 result_code               # see ResultCode.msg
+string message
+uint32 total_steps

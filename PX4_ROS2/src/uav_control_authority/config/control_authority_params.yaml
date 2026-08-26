@@ -1,0 +1,76 @@
+control_authority_manager_node:
+  ros__parameters:
+    uav_id: uav0
+    # PAIRED with navigator_action_server_node's own odom_frame
+    # (navigation_params.yaml) -- both must name the SAME frame independently,
+    # nothing here enforces the match (contract v0.1 S:2.11). A P7.3 checklist
+    # item, not a runtime check: the two nodes never see each other's config.
+    odom_frame: odom
+
+    # Liveness window for a source topic. Must clear 3 missed ticks at the
+    # 20 Hz every publisher ships at (gateway + navigator config), AND stay a
+    # comfortable margin under the gateway's own stale-command cutoff below.
+    source_timeout_sec: 0.20
+
+    # SECOND COPY of px4_command_gateway_node's command_timeout_sec (0.5 s,
+    # px4_command_gateway_node.cpp:58). Two constants encoding the same number
+    # is a known repeat mistake in this codebase (G6, 4 prior recurrences) --
+    # kept here, named as a copy, only because the arbiter cannot see the
+    # gateway's own parameter server. PAIRING RULES, do not break either:
+    #   source_timeout_sec <= 0.6 * downstream_command_timeout_sec
+    #   release_dwell_sec + 2*monitor_period + 1/stream_hz <= 0.8 * downstream_command_timeout_sec
+    downstream_command_timeout_sec: 0.50
+
+    # Asymmetric hysteresis, release side only (S:3b). A higher-priority
+    # source always preempts on its first message with no dwell at all --
+    # there is no parameter for that half because there must never be a delay
+    # on the way up. This one governs only how long the ACTIVE channel may
+    # stay silent before a lower, still-live channel is allowed to take over.
+    # MUST stay >= source_timeout_sec (Y3): otherwise the just-released
+    # channel and NONE can chatter against each other at the shared boundary.
+    release_dwell_sec: 0.20
+
+    # SetControlAuthority latch (S:4). GRACE: how long a freshly granted latch
+    # may sit with zero traffic from its own holder before it self-destructs
+    # (the "operator latched then grabbed the wrong stick" failure mode).
+    # TIMEOUT: once the holder has proven itself alive at least once, how long
+    # a later silence is tolerated before the latch gives up on it.
+    # Must stay TIMEOUT > GRACE.
+    # P8 R2 + R5 (P8.5, G-S1 #8 finding): a SAFETY latch is the one exception
+    # -- effective (and exempt from GRACE) with zero proof of life, the
+    # deliberate INHIBIT mode (policy-1: SAFETY may never publish on a broken
+    # pose); R5 extends the exemption to TIMEOUT too, once alive -- HOLD
+    # proving liveness then going silent (INHIBIT) must not read as "holder
+    # died". A SAFETY latch therefore never self-expires at all; watch
+    # latch_age_sec (Y15 diagnostics) growing unbounded on latch_level=SAFETY
+    # to detect a genuinely dead safety node -- escape routes stay
+    # clear_safety_latch service, PX4 failsafe, or RC (P11), never GRACE/TIMEOUT.
+    latch_grace_sec: 2.0
+    latch_timeout_sec: 5.0
+
+    # Content-freshness guard on header.stamp, independent of source liveness
+    # (which is measured by VALIDATED arrival time, never by stamp -- S:3b,
+    # B2). The switch is its OWN boolean; max_command_age_sec must never be
+    # set to 0 as a way to turn this off (R-C1: a limit that doubles as its
+    # own switch degrades quietly instead of refusing to start).
+    check_command_age: true
+    max_command_age_sec: 0.5
+
+    # Y5 used to be a demote_after_bad_ticks counter here (removed, B2 review
+    # 2026-08-20): liveness/latch/dwell now all key off VALIDATED arrivals
+    # only, so a channel that is 100% garbage was never "live" and can never
+    # win or hold a latch in the first place -- no separate counter needed,
+    # the guarantee is now structural rather than a second mechanism to keep in sync.
+
+    # Sim default: the flight probes publish on cmd_test (N11). Real flips
+    # this once cmd_test has no business being live.
+    enable_test_source: true
+    # P11 has no RC bridge yet; true here just means the topic is not refused.
+    enable_operator_source: true
+
+# Contract constants, not tunables (N-f): the monitor timer runs at
+# 1/kMonitorPeriodSec = 20 Hz (authority_arbiter.hpp). /control/authority
+# publishes a heartbeat at 2 Hz (every 10th tick) regardless of change, plus
+# immediately on any change; /diagnostics/control_authority publishes at 1 Hz
+# (every 20th tick), which is also when the publisher-count graph query runs
+# (Y2 -- moved off the 20 Hz tick on purpose, graph queries are not free).

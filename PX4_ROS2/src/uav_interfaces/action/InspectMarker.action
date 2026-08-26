@@ -1,0 +1,13 @@
+int32 marker_id
+float32 inspect_distance            # m
+float32 search_timeout              # s
+---
+bool success
+uint8 result_code
+string message
+geometry_msgs/Pose marker_pose
+string marker_frame_id              # always "odom" in result
+---
+bool marker_visible
+float32 distance_to_marker          # m
+float32 search_elapsed_seconds

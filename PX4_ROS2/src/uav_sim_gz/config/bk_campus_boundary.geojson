@@ -1,0 +1,67 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "bk_campus",
+    "area_ha": 10.9,
+    "crs_note": "WGS84 lon/lat; source orthophoto is EPSG:32648",
+    "accuracy_m": 20,
+    "status": "approved by project owner 2026-08-12; read off our own orthophoto",
+    "open_question": "10.9 ha is below the ~14-15 ha usually quoted for this campus - either the outline is tight or the survey does not cover all of it"
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       106.6593278539179,
+       10.771044629503601
+      ],
+      [
+       106.66029158210638,
+       10.771717512989273
+      ],
+      [
+       106.66107394068447,
+       10.772662582347738
+      ],
+      [
+       106.6613082167023,
+       10.773700993353222
+      ],
+      [
+       106.6609949007407,
+       10.774923151185133
+      ],
+      [
+       106.66035959106392,
+       10.775785411348524
+      ],
+      [
+       106.65953324270797,
+       10.77515699731707
+      ],
+      [
+       106.6587511282005,
+       10.774257126082642
+      ],
+      [
+       106.65833424617801,
+       10.773264892102445
+      ],
+      [
+       106.65846520693582,
+       10.772134117270621
+      ],
+      [
+       106.6593278539179,
+       10.771044629503601
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>uav_observability</name>
+  <version>0.1.0</version>
+  <description>Evidence layer: black-box bag recording, aggregated diagnostics/go-no-go, and a unified event timeline. P10.1: 3 ROS-free libraries (bag_retention, staleness_board, event_ledger) pinned by gtest tables -- no node yet.</description>
+  <maintainer email="ng.chi.nghi@gmail.com">PX4_ROS2 team</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Not used by the 3 pure libs (ROS-free by design), declared for the
+       node layer to follow: P10.2 rosbag_manager_node, P10.4
+       diagnostics_node, P10.5 event_logger_node. -->
+  <depend>rclcpp</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>rosbag2_storage</depend>
+  <!-- P10.2: SequentialCompressionWriter, real zstd wiring not a stub. -->
+  <depend>rosbag2_compression</depend>
+  <!-- P10.8c: Rosbag2QoS's YAML::convert writes offered_qos_profiles the
+       SAME way `ros2 bag play` (rosbag2_transport::Player) will decode it. -->
+  <depend>rosbag2_transport</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>std_msgs</depend>
+  <!-- P10.5: MissionEvent/MissionStatus/SafetyState/ControlAuthority/
+       VehicleState/OffboardStatus/LocalizationStatus typed subs; internal
+       interfaces only, never px4_msgs (R1). -->
+  <depend>uav_interfaces</depend>
+
+  <!-- mcap storage plugin + zstd compression plugin: both loaded by NAME at
+       runtime (rosbag2 plugin discovery), never a compile-time symbol, so
+       exec_depend only. Q-P10-1 condition 1: neither is px4_msgs. -->
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <exec_depend>rosbag2_compression_zstd</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,40 @@
+# G-O1 storage-durability experiment params (P10.3, plan
+# .claude/plan/P10-observability.md S:6 row P10.3). Deliberately NOT the
+# production config in config/observability_params.yaml -- this is a
+# 3-topic synthetic-traffic rig on ROS_DOMAIN_ID 99, no Gazebo/PX4.
+#
+# __STORAGE_ID__/__COMPRESSION_MODE__/__COMPRESSION_FORMAT__ are substituted
+# by scripts/verify_observability.sh (sed) into /tmp/go1_params_<config>.yaml
+# per the 3 configs under test: mcap+file/zstd, mcap+none, sqlite3+none.
+rosbag_manager_node:
+  ros__parameters:
+    uav_id: go1
+    bag_root: "/tmp/go1_bags"
+
+    storage_id: __STORAGE_ID__
+    compression_mode: __COMPRESSION_MODE__
+    compression_format: __COMPRESSION_FORMAT__
+
+    max_bagfile_size_bytes: 536870912      # 512 MiB -- irrelevant at this scale, kept prod-equal
+    max_bagfile_duration_sec: 300          # 300 s (Q-P10-3) -- round never rotates, one file only
+    max_cache_size_bytes: 33554432         # 32 MiB (G-O1 ceiling under test)
+    max_total_bytes: 8589934592.0          # 8 GiB
+    min_free_bytes: 1073741824.0           # 1 GiB floor -- /tmp has plenty
+    retention_period_sec: 10.0
+
+    default_subscription_depth: 20
+    write_error_limit: 50
+    record_px4_topics: false               # no /fmu/* declared below
+
+    topics: [
+      "/uav_obs_test/topic_fast",
+      "/uav_obs_test/topic_slow",
+      "/uav_obs_test/topic_idle",
+    ]
+    types: [
+      "std_msgs/msg/String",
+      "std_msgs/msg/String",
+      "std_msgs/msg/String",
+    ]
+    qos_profiles: [ be, be, be ]
+    depths: [ 20, 20, 20 ]

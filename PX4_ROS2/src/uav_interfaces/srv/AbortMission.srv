@@ -1,0 +1,8 @@
+# Stops the mission; does not land the vehicle.
+
+string mission_id               # empty targets the running mission
+string reason                   # always fill in, used for incident review
+---
+bool success
+uint8 result_code               # see ResultCode.msg
+string message

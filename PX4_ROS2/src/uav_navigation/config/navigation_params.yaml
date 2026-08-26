@@ -1,0 +1,197 @@
+navigator_action_server_node:
+  ros__parameters:
+    uav_id: uav0
+    odom_frame: odom              # GotoPose rejects any other frame (contract v0.1)
+
+    stream_hz: 20.0               # PX4 drops offboard below 2 Hz; M4/M5 flew at 20
+    # The leash must stay a fault detector, not a permanent speed limiter.
+    # Keep max_speed <= K_p * max_lead / 1.3 (PX4 lag = v/K_p; 0.95 xy, 1.0 z).
+    max_speed: 0.55
+    max_vertical_speed: 0.45
+    acceptance_radius: 0.3        # matches the M5 altitude threshold
+
+    # Arriving inside the noise floor of our own pose is not something we can judge:
+    # widen to k*sigma from localization_status, and refuse to fly past the ceiling.
+    acceptance_sigma_factor: 2.0
+    max_acceptance_radius: 1.5
+
+    # Per-axis leash: a stuck altitude must not freeze the flight path.
+    # hypot(0.8, 0.6) = 1.0, so the 3D lead keeps its old ceiling.
+    max_lead_horizontal_m: 0.8
+    max_lead_vertical_m: 0.6
+    leash_stall_fault_sec: 3.0    # clamped this long = the aircraft cannot follow
+    # Spool-up and the PX4 land detector hold the aircraft still right after arming;
+    # the stall clock stays at zero until this much of a task has passed.
+    takeoff_stall_grace_sec: 5.0
+    command_loss_debounce_sec: 0.5
+
+    max_yaw_rate_rad_s: 0.5
+    max_acceleration: 1.0        # m/s^2, shapes the trajectory; the carrot never had one
+    sample_hz: 50.0              # core refuses below 40: a 20 Hz consumer would skip peaks
+    use_trajectory: true         # false flies the P6.1 carrot (rollback and gate control)
+    use_route: true              # false flies the straight line P6.1-P6.2 flew
+
+    # Same rule as the two planner nodes: false on sim, TRUE on real. With true a
+    # Goto refuses to start without a route, and freezes when nothing is checking
+    # the way ahead. Flying blind must not be something real.launch.py can produce.
+    require_obstacle_feed: false
+    route_timeout_sec: 2.0        # route_planner_node plans at 5 Hz
+
+    # The rollback for the advice hop. THIS is how the watch is switched off - never
+    # by a zero timeout. Every value below is refused at startup unless finite and
+    # positive, and require_obstacle_feed additionally refuses use_avoidance: false
+    # and use_trajectory: false (the rollback gives up the acceleration ceiling of
+    # the trajectory core, and a required map is the configuration that flies people).
+    use_avoidance: true
+    # Silence on /planning/avoidance is never read as clear air. 10 Hz advisor, so
+    # this is ten missed ticks.
+    advice_timeout_sec: 1.0
+    # The navigator has no costmap: it cannot check whether an escape point is clear,
+    # only how far off the planned leg it sits. Last line against a broken advisor.
+    # MUST stay >= avoid.spiral_growth_m * 2*sqrt(avoid.max_spiral_steps) = 4.90 m,
+    # or the navigator refuses escapes the advisor considers legitimate.
+    # 8.0 not 5.0 on purpose: this guard catches a BROKEN advisor, it does not
+    # second-guess a working one, so it is sized with room (63%) over that bound.
+    max_escape_deviation_m: 8.0
+    escape_replan_interval_sec: 1.0   # a rebuild restarts the plan from rest
+    escape_refresh_m: 0.5             # the same obstacle, re-advised, is not news
+    # After an escape the navigator splices the route STILL FLOWING on the topic; it
+    # never re-asks, because a blocking ask freezes the task thread for
+    # route_timeout_sec while the aircraft keeps flying at the obstacle. The planner
+    # republishes at 5 Hz, so this ceiling is five ticks.
+    route_fresh_sec: 1.0
+
+    # A carrot leg (Takeoff, TrackTarget, a Goto whose plan would not build) now
+    # publishes the two point segment it is flying, so the advisor sees it too.
+    # HARD FLOOR IN CODE: 0.2 s. One advisor round trip was measured at 85 ms, and a
+    # leg republished faster than the answer comes back reads to the navigator as
+    # silence - which under require_obstacle_feed is a permanent hold.
+    carrot_plan_period_sec: 0.5
+
+    # A hold waits for the way ahead to clear. One that never clears is not waiting,
+    # and riding it out to goto_timeout_sec (240 s) reports the wrong thing at the
+    # wrong time. 12 s = four full lifetimes of the obstacle map below it
+    # (avoid.map_timeout_sec 3.0): a blockage that has not moved in four map
+    # lifetimes is not transient. Costs 6.6 m of unflown distance at 0.55 m/s.
+    avoidance_hold_timeout_sec: 12.0
+
+    # TrackTarget. Decision 4: the target velocity estimate was measured wrong by
+    # 0.71 m/s on a target moving 1.0 m/s (71 %). That is an information limit, not
+    # a filter bug, so one reaction time of it is paid for out of the standoff:
+    #   effective standoff = max(min_standoff_m, requested) + error * reaction
+    min_standoff_m: 1.0
+    # HARD FLOOR IN CODE: 0.708 m/s, the MEASURED error of the sensor chain. This
+    # parameter may only widen it; anything smaller refuses to start. It is not a
+    # tuning knob - a smaller number does not make the aircraft safer, it makes the
+    # system lie about what it knows.
+    target_velocity_error_mps: 0.71
+    # Floored in code at 1.0 as well: the margin is a PRODUCT, so a floor on the
+    # error alone would leave this as the way round it.
+    target_reaction_sec: 1.0
+    # 0 = do not lead the target at all, which is what ships. Every second of lead
+    # buys 0.71 m of error. Above zero the lead is STILL refused whenever
+    # TargetState carries no position_uncertainty (decision 4, non negotiable).
+    target_lead_sec: 0.0
+    # TargetState.header.stamp is PUBLISH time by contract, so this one only ever
+    # catches "world_model died", never "nobody has seen the target".
+    target_state_timeout_sec: 1.0
+    # That second axis is this one: how old the SIGHTING behind the message may be.
+    # Measured on the G-M3 chain (4870 samples of a healthy chase): the sighting age
+    # was 0 for 95 % of samples and never stayed elevated longer than 0.37 s.
+    target_sighting_timeout_sec: 1.0
+    # Copies for validate, not knobs. Detection rate feeding the tracker (depth
+    # camera 15 Hz) and target_tracker_node's own lost_after_sec. Code refuses to
+    # start unless 2*period <= sighting_timeout < tracker_lost_after.
+    target_sighting_period_copy_sec: 0.0667
+    tracker_lost_after_copy_sec: 3.0
+
+    # Coarse envelope only; the real geofence belongs to uav_safety (P8).
+    max_takeoff_altitude_m: 10.0
+    min_altitude_m: 0.5
+    max_altitude_m: 20.0
+
+    # Recover: hold, climb_to_safe_altitude, return_home. The GOAL chooses; this node
+    # never picks a type and never substitutes one. LAND and HANDOVER_TO_PILOT are
+    # refused at the door - deciding to put the aircraft down, or to give it back to
+    # the pilot, belongs to the safety and authority layers (contract 2.5).
+    recovery:
+      min_travel_m: 0.3           # below this the request sits inside position noise
+      max_climb_m: 15.0           # one recovery climb, measured from the aircraft
+      # Left out on purpose: it defaults to max_altitude_m above, and the node
+      # refuses to start if it is ever set higher than that. Two constants for one
+      # ceiling is how a recovery ends up allowed where a goal is not.
+      # max_safe_altitude_m: 20.0
+      min_home_clearance_m: 1.0   # a return that ends AT home is a landing
+      # MEASURED bound, not a preference: 30 m with a climb leg already costs 164 s
+      # of the 192 s (0.8 * goto_timeout_sec) the trajectory core allows, so raising
+      # this only produces plans the core refuses.
+      max_home_distance_m: 25.0
+
+    feedback_hz: 2.0
+    progress_rate_hz: 10.0
+    arrival_settle_sec: 1.0       # arrival must hold, a fly-through is not arrival
+
+    odometry_timeout_sec: 1.0     # localization_mux publishes at 10 Hz
+    startup_timeout_sec: 30.0
+    offboard_engage_timeout_sec: 30.0
+    service_timeout_sec: 15.0
+    takeoff_timeout_sec: 60.0
+    goto_timeout_sec: 240.0       # tripled endpoints cruise at 0.44*max_speed: 120 s reached 29 m
+    hold_timeout_margin_sec: 30.0
+    land_stream_stop_delay_sec: 1.0
+    disarm_timeout_sec: 40.0
+
+route_planner_node:
+  ros__parameters:
+    uav_id: uav0
+
+    costmap:
+      width_m: 25.0
+      resolution_m: 0.25
+      drone_radius_m: 0.35
+      cost_scaling: 1.0
+      corner_cut_m: 0.0          # tightenForSpline() covers the cut, not this
+      obstacle_timeout_sec: 3.0
+      flight_band_m: 1.0
+
+    route:
+      soft_cost_gain: 1.0
+      goal_tolerance_m: 0.3
+      window_margin_m: 0.5
+      projection_timeout_sec: 2.0
+
+    # False on sim, TRUE on real (P6 decision 4): flying with no obstacle map
+    # must not be a scenario real.launch.py can silently produce.
+    require_obstacle_feed: false
+    map_timeout_sec: 3.0
+    plan_hz: 5.0
+    spline_tighten_rounds: 4
+
+local_planner_node:
+  ros__parameters:
+    uav_id: uav0
+
+    costmap:
+      width_m: 25.0
+      resolution_m: 0.25
+      drone_radius_m: 0.35
+      cost_scaling: 1.0
+      corner_cut_m: 0.0
+      obstacle_timeout_sec: 3.0
+      flight_band_m: 1.0
+
+    avoid:
+      horizon_m: 6.0
+      sample_step_m: 0.1
+      clearance_scan_m: 2.0
+      spiral_growth_m: 0.5
+      max_escape_climb_m: 2.0
+      allow_descent: false
+      map_timeout_sec: 3.0
+      max_spiral_steps: 24
+
+    # Same rule as route_planner_node: false on sim, TRUE on real.
+    require_obstacle_feed: false
+    advise_hz: 10.0
+    # An advisor still clearing the horizon from a dead pose is worse than silence.
+    odometry_timeout_sec: 1.0

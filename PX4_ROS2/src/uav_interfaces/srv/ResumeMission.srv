@@ -1,0 +1,7 @@
+# Continue a paused mission from its current step.
+
+string mission_id               # empty targets the paused mission
+---
+bool success
+uint8 result_code               # see ResultCode.msg
+string message

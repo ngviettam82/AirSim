@@ -1,0 +1,9 @@
+# Rejected if current holder has higher priority.
+
+uint8 requested_source      # ControlAuthority SOURCE_*
+string reason
+---
+bool success
+uint8 result_code
+string message
+uint8 granted_source

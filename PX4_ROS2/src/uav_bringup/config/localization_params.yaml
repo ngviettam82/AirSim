@@ -1,0 +1,85 @@
+/**:
+  ros__parameters:
+    uav_id: uav0
+    odom_frame: odom
+    base_frame: base_link
+
+rangefinder_adapter_node:
+  ros__parameters:
+    range_frame: rangefinder_link
+    max_tilt_rad: 0.6981        # 40 degrees; beyond this the beam misses below
+    attitude_timeout_sec: 0.5
+
+gps_adapter_node:
+  ros__parameters:
+    degraded_above_m: 0.5
+    bad_above_m: 2.0
+    # Simulation-only. real.launch.py must not carry these: a real flight with a
+    # deliberately corrupted GNSS is not a scenario allowed to exist.
+    drift:
+      enabled: false
+      correlation_time_sec: 60.0
+      sigma_m: 5.0
+      # G4 varies this so a PASS cannot be one lucky realisation.
+      seed: 0
+      force_no_fix: false
+
+vio_adapter_node:
+  ros__parameters:
+    body_offset_z: 0.24         # model origin -> base_link, measured on uav0_nav
+    nominal_position_stddev: 0.10   # synthetic: the simulator reports zero
+    nominal_heading_stddev: 0.02
+    tracking_timeout_sec: 0.25
+    degraded_above_m: 0.5
+    bad_above_m: 2.0
+    # Simulation-only, same rule as above.
+    degrade:
+      enabled: false
+      white_noise_stddev_m: 0.03
+      latency_sec: 0.0
+      force_tracking_loss: false
+      drift:
+        enabled: true
+        correlation_time_sec: 120.0
+        sigma_m: 0.5
+
+optical_flow_adapter_node:
+  ros__parameters:
+    min_features: 20
+    max_features: 150
+    feature_quality: 0.01
+    feature_min_distance: 10.0
+    search_window_px: 31        # frames arrive slowly, so each moves a long way
+    pyramid_levels: 4
+    round_trip_tolerance_px: 1.0    # rejects points that do not track back
+    min_height_m: 0.3           # below this the scale from height is unreliable
+    max_height_m: 25.0
+    max_speed_mps: 20.0
+    pixel_noise_px: 1.0
+    input_timeout_sec: 0.5
+    # Set by experiment: camera mounting decides the signs, not math.
+    roll_rate_sign: 1.0
+    pitch_rate_sign: 1.0
+
+localization_health_node:
+  ros__parameters:
+    expected_fused_hz: 10.0
+    max_speed_mps: 20.0
+    jump_tolerance_m: 0.2
+    source_timeout_sec: 0.5
+    # A gap beyond source uncertainty means one source is wrong.
+    disagreement_warn_sigma: 3.0
+    disagreement_error_sigma: 6.0
+    disagreement_floor_m: 0.2
+
+localization_mux_node:
+  ros__parameters:
+    publish_rate_hz: 10.0
+    # Also the anchor grace: a source silent longer than this loses the right to
+    # have its return smoothed, so the pose may step after 2x this without one.
+    source_timeout_sec: 0.5
+    switch_margin: 0.7          # a rival must be 30% better before it counts
+    min_hold_sec: 1.0
+    continuity_decay_rate_mps: 0.5
+    degraded_above_m: 0.5
+    bad_above_m: 2.0

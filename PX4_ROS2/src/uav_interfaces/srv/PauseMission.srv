@@ -1,0 +1,7 @@
+# Suspend the running mission. The vehicle holds position.
+
+string mission_id               # empty targets the running mission
+---
+bool success
+uint8 result_code               # see ResultCode.msg
+string message

@@ -1,0 +1,13 @@
+# Does not disarm; call Disarm after touchdown.
+
+bool use_precision_landing
+int32 marker_id                     # ignored unless use_precision_landing=true
+---
+bool success
+uint8 result_code
+string message
+bool landed_on_marker
+---
+float32 current_altitude            # m
+float32 descent_rate                # m/s, positive descending
+bool marker_visible

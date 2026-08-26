@@ -1,0 +1,157 @@
+# Parameters for safety_supervisor_node (P8.3): failsafe_policy's
+# FailsafePolicyParams, one-to-one, plus enforcement_enabled. Every "*_copy"
+# field below is a hand-kept COPY of a threshold that truly lives in another
+# package's parameter server -- this package cannot see it directly (same
+# reason uav_control_authority carries downstream_command_timeout_sec, G6:
+# two constants encoding one number is a known repeat mistake in this
+# codebase). validate() refuses to start if any pairing rule below is broken.
+
+safety_supervisor_node:
+  ros__parameters:
+    uav_id: uav0
+    odom_frame: odom
+
+    # Default false (package-level; sim.launch.py's safety_enforcement flag
+    # overrides to true, R0 note there). When false, safety_supervisor_node
+    # creates NO publisher on control/cmd_safety and calls no arbiter service
+    # at all -- a STRUCTURAL guarantee (ros2 node info proves it), not a
+    # runtime branch. The lib's FSM still runs every tick; HOLD/INHIBIT
+    # actions only ever appear in diagnostics as "would_hold"/"would_inhibit".
+    enforcement_enabled: false
+
+    # --- Localization (S:3 rows 1-3) ---
+    status_timeout_sec: 1.0        # LocalizationStatus message freshness
+    fused_timeout_sec: 0.5         # odometry_fused freshness; < odometry_timeout_copy_sec (V2)
+    localization_invalid_grace_sec: 0.0
+    localization_stale_grace_sec: 0.0
+    localization_jump_grace_sec: 0.0
+
+    # --- BLIND_COMMAND (S:0b decision R1) ---
+    blind_grace_sec: 1.5           # > odometry_timeout_copy_sec + 2/progress_hz_copy (V1)
+    # COPY of navigator_action_server_node's kFrozenSetpointDrift
+    # (navigator_action_server_node.cpp:2852) -- the exact number a frozen
+    # HOLD is allowed to drift before navigator itself calls it "moving".
+    frozen_setpoint_epsilon_copy_m: 0.05
+
+    # --- Battery (S:3 rows 5-6, REPORT-only -- this package's OWN, more
+    # conservative thresholds; see bat_*_thr_copy below for PX4's real ones,
+    # which is what the ACTION-bearing BATTERY_PX4_NO_ACTION gates on) ---
+    battery_warn_threshold: 0.20
+    battery_critical_threshold: 0.10
+    battery_warn_grace_sec: 0.0
+    battery_critical_grace_sec: 0.0
+
+    # --- BATTERY_PX4_NO_ACTION (S:3 row 7) ---
+    px4_action_grace_sec: 5.0
+
+    # --- B3 (review 2026-08-21): real PX4 battery thresholds, read live via
+    # MAVLink param_request_read against PX4 v1.15.4 SITL default params
+    # (2026-08-21) -- BAT_LOW_THR/BAT_CRIT_THR/BAT_EMERGEN_THR. PX4's own
+    # CRIT (0.07) sits BELOW battery_critical_threshold (0.10) above:
+    # BATTERY_PX4_NO_ACTION gates on THIS bat_crit_thr_copy, not on
+    # battery_critical_threshold -- between 0.10 and 0.07 PX4 has had no
+    # real chance to act yet, that gap is not a PX4 failure.
+    # CAVEAT: the "PX4 reacts within ~0.58 s of CRITICAL" finding (G-S3 B2,
+    # P8.4/P8.4b) was measured under an ARTIFICIALLY FORCED drain rate in
+    # SITL -- a lower bound on PX4's reaction latency under that ONE
+    # condition, not a general guarantee for a real, slow, natural discharge.
+    bat_low_thr_copy: 0.15
+    bat_crit_thr_copy: 0.07
+    bat_emergen_thr_copy: 0.05
+
+    # --- OBSTACLE_TOO_CLOSE (S:3 row 8) ---
+    min_obstacle_distance_copy_m: 0.35  # = costmap.drone_radius_m; entering this means the planner already failed
+    obstacle_grace_sec: 0.5
+    obstacle_clear_margin_m: 0.10  # ClearFault hysteresis, not S:3-specified -- conservative default
+    # COPY of world_model_node's obstacle map publish rate (CLAUDE.md S:4.4).
+    world_model_publish_hz_copy: 10.0
+    # "map tuoi" gate S:3 names but does not number; 3 cycles at the rate
+    # above is this library's own conservative choice, now validated
+    # (obstacle_map_timeout_copy_sec >= 2/world_model_publish_hz_copy, Y2).
+    obstacle_map_timeout_copy_sec: 0.3
+
+    # --- OFFBOARD_UNHEALTHY (S:3 row 9) ---
+    offboard_min_rate_hz: 5.0      # >> the 2 Hz PX4 floor, << the 20 Hz shipped rate -- deliberately early
+    offboard_grace_sec: 0.5
+    # P8.4b (coordinator decision, real-flight finding): the STATE_FAULT/rate
+    # path above measured +2.66 s end-to-end on a real stream loss, 1.07 s
+    # SLOWER than PX4's own failsafe. selected_stale_sec adds a second,
+    # faster, more direct path off command_selected's own raw age -- 0.5 s
+    # sits strictly above the arbiter's own validated worst-case legitimate
+    # handover silence (<= 0.4 s, its Y1 pairing rule), so a normal MISSION
+    # <-> OPERATOR handover never false-flags. Still REPORT-only. Y4: this
+    # SAME threshold now also defines SafetyState.command_fresh and B5's
+    # armed && OFFBOARD && command_fresh action gate for the 4 latching codes.
+    selected_stale_sec: 0.5
+    # COPY of px4_command_gateway_node's command_timeout_sec (also copied by
+    # authority_arbiter as downstream_command_timeout_sec) -- must stay
+    # <= selected_stale_sec (validate() enforces this).
+    downstream_command_timeout_copy_sec: 0.5
+
+    # --- ESTIMATOR_INPUT_INVALID / CAMERA_STREAM_UNHEALTHY (S:3 row 10) ---
+    # Both REPORT-only (never latch): 0 s debounce is the conservative
+    # choice in the absence of a numbered threshold from the blueprint.
+    estimator_grace_sec: 0.0
+    camera_grace_sec: 0.0
+
+    # --- B1 (review 2026-08-21, real bug): the per-channel wrong_frame drop
+    # count this code reads only refreshes once per arbiter diagnostics cycle
+    # (1 Hz) -- grace must span >= 2 cycles, or a stale-but-unchanged reading
+    # between cycles could look like "still rising". Default bumped 1.0 -> 2.0.
+    arbiter_diagnostics_period_copy_sec: 1.0   # COPY of authority_arbiter's diagnostics_every_ticks_ cadence
+    # --- FRAME_MISMATCH (S:3 row 11) ---
+    frame_mismatch_grace_sec: 2.0              # >= 2 x arbiter_diagnostics_period_copy_sec (B1)
+    # --- R32 (Y1/N3): sample-and-hold readings expire after 2 source cycles
+    localization_diag_period_copy_sec: 1.0     # COPY of localization_health_node report_timer_ cadence
+
+    # --- ClearFault (S:3.1) ---
+    clear_stability_sec: 3.0
+    battery_clear_margin: 0.02             # hysteresis fraction, ClearFault only
+    localization_clear_margin_sec: 0.1     # hysteresis seconds, ClearFault only
+    handover_jump_limit_m: 0.80            # <= max_lead_copy_m (V5)
+
+    # --- HOLD engagement (S:4) ---
+    pose_max_age_sec: 0.25         # contract ceiling, not a tunable (V4: must stay <= 0.25); >= 2 x mux_publish_period_copy_sec (Y8)
+    hold_stream_hz: 20.0           # >= 3/arbiter_source_timeout_copy_sec (V3: >= 15)
+
+    # --- B2/Y1 (review 2026-08-21): freshness ceilings for 4 subscriptions
+    # this node used to cache with NO age -- a dead publisher left the last
+    # GOOD reading frozen forever, read as still-trustworthy indefinitely.
+    # Each is 3x the real publisher's own period (same "3 missed cycles"
+    # convention as obstacle_map_timeout_copy_sec above).
+    vehicle_health_timeout_sec: 0.3    # 3 x 10 Hz, px4_state_adapter_node publish_rate_hz
+    vehicle_state_timeout_sec: 0.3     # 3 x 10 Hz, px4_state_adapter_node publish_rate_hz
+    offboard_status_timeout_sec: 0.6   # 3 x 200 ms, offboard_session_manager_node kSupervisionInterval
+    camera_health_timeout_sec: 3.0     # 3 x 1 Hz, camera_health_node report_period_sec default
+
+    # --- Copies of thresholds this package cannot see directly (S:9d) ---
+    # COPY of navigator_action_server_node's own pose-staleness reaction
+    # threshold ("layer 1", CLAUDE.md/memory S:3 row "Trajectory cũ").
+    odometry_timeout_copy_sec: 1.0
+    # COPY of navigator's planning tick rate.
+    progress_hz_copy: 10.0
+    # COPY of authority_arbiter's source_timeout_sec (control_authority_params.yaml).
+    arbiter_source_timeout_copy_sec: 0.20
+    # COPY of navigator's max_lead_horizontal_m (P6 navigation params).
+    max_lead_copy_m: 0.80
+    # Y8: COPY of localization_mux_node's publish PERIOD (not rate) -- 10 Hz.
+    mux_publish_period_copy_sec: 0.1
+
+# Pairing rules enforced by FailsafePolicy::validate() -- refuses to start if any is violated:
+#   V1: blind_grace_sec > odometry_timeout_copy_sec + 2/progress_hz_copy
+#   V2: fused_timeout_sec < odometry_timeout_copy_sec
+#   V3: hold_stream_hz >= 3/arbiter_source_timeout_copy_sec
+#   V4: pose_max_age_sec <= 0.25
+#   V5: handover_jump_limit_m <= max_lead_copy_m
+#   V6: odom_frame must match navigator's odom_frame AND authority_arbiter's
+#       odom_frame -- NOT enforceable at runtime across packages (same as
+#       control_authority_params.yaml's own odom_frame note), manual checklist item.
+#   V7 (P8.4b): selected_stale_sec >= downstream_command_timeout_copy_sec
+#   B1 (2026-08-21): frame_mismatch_grace_sec >= 2 x arbiter_diagnostics_period_copy_sec
+#   Y2 (2026-08-21): obstacle_map_timeout_copy_sec >= 2/world_model_publish_hz_copy
+#   Y8 (2026-08-21): pose_max_age_sec >= 2 x mux_publish_period_copy_sec
+#   B3 (2026-08-21): bat_emergen_thr_copy < bat_crit_thr_copy < bat_low_thr_copy
+#   (all of vehicle_health_timeout_sec/vehicle_state_timeout_sec/
+#   offboard_status_timeout_sec/camera_health_timeout_sec/bat_*_thr_copy must
+#   simply be finite and positive/in-range -- no cross-field pairing beyond
+#   the battery ordering above)

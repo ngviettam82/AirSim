@@ -1,0 +1,105 @@
+# Not wired into uav_bringup/launch/sim.launch.py (that file documents ITS
+# OWN choice: "no shared config yaml per package" for uav_perception,
+# overrides mirror verify_*.sh instead). This file is the canonical reference
+# for values that used to live only as C++ declare_parameter() defaults --
+# node code and this file must be kept in sync by hand until someone decides
+# to wire it in.
+obstacle_extractor_node:
+  ros__parameters:
+    uav_id: uav0
+    camera: front
+
+    # Sourced from sensor_depth_front/model.sdf clip near/far (see README).
+    min_range_m: 0.2
+    max_range_m: 19.1
+
+    cluster_depth_tolerance_m: 0.3
+    # Bounds chaining across gradual slopes (ground at grazing angle): local
+    # steps can each pass cluster_depth_tolerance_m yet sum to an unbounded
+    # span (README ground-plane pitfall, P5.4).
+    max_cluster_depth_span_m: 2.0
+
+    pixel_stride: 2
+    min_cluster_points: 30
+    confidence_saturating_points: 150.0
+    max_obstacles: 20
+
+    # Ground-plane pre-filter (README "phan manh nen", fixed for the P9 G-M3
+    # gate 2026-08-22). Level-camera + flat-ground invariant: every ground
+    # point shares one metric optical-down value, a real object's own faces
+    # do not. Runs BEFORE clustering so it also kills the local-jump
+    # fragmentation that cluster_depth_tolerance_m alone cannot.
+    enable_ground_filter: true
+    # Band half-width AND histogram bin width for the dominant-level search.
+    # Also the maximum height above ground that gets trimmed off a real
+    # object's base where it touches the floor (documented limit).
+    ground_margin_m: 0.05
+    # Safety gate: a candidate level must explain at least this share of the
+    # frame's valid points before it is trusted as ground. LOWERED round 3
+    # (2026-08-22, G-M3 re-block): a near follow_target box (designed
+    # min_standoff_m 1.0 m) fills enough of the frame that ground legitimately
+    # drops below 50% even dead-level -- measured 0.37 on the wire at 0.8 m.
+    # Safe to lower ONLY with ground_min_depth_below_camera_m below as the
+    # primary discriminator, not this ratio.
+    ground_min_inlier_ratio: 0.15
+    # Second safety gate: absolute floor so a near-empty frame cannot trip
+    # the ratio gate on a handful of coincidentally aligned points.
+    ground_min_inlier_points: 200
+    # Third safety gate (round 3): a dominant level is only ground if it sits
+    # at least this far BELOW the camera. Ground is always below a flying
+    # vehicle by roughly the flight altitude (mission floor min_altitude_m is
+    # 0.5 m, navigation_params.yaml); this sits well under that with margin.
+    # A wall/large object face near or above camera height can never pass
+    # this, no matter how low ground_min_inlier_ratio goes.
+    ground_min_depth_below_camera_m: 0.15
+
+    # Round 2 (2026-08-22, P9 G-M3 gate re-block on follow_target): tilts the
+    # ground-plane invariant with the vehicle using /state/odometry_fused
+    # orientation ONLY (never position). R32 sample-and-hold: older than this
+    # (from header.stamp) degrades to identity attitude -- the round-1,
+    # level-only behaviour, not "skip the filter". See README derivation.
+    odometry_max_age_sec: 0.5
+
+# Y12 (review lượt 1, 2026-08-23): section này thiếu hoàn toàn trước bản vá
+# dù file tự nhận là canonical -- bổ sung đủ, mirror target_tracker_node.cpp.
+target_tracker_node:
+  ros__parameters:
+    uav_id: uav0
+
+    # Shape filter applied before a cluster reaches the tracker (README
+    # "ground-plane sliver" pitfall in obstacle_extractor_node).
+    min_target_extent_m: 0.05
+    max_target_extent_m: 5.0
+    # Applied inside update(): source-neutral, any TrackObservation qualifies.
+    min_observation_confidence: 0.0
+
+    # Constant-velocity KF process noise (white-noise-acceleration std, m/s^2).
+    process_noise_accel_std_m_s2: 1.0
+    # Falls back when an observation's own stddev is unknown (-1 today, see
+    # obstacle_extractor_node's "position_uncertainty = -1" note).
+    default_observation_stddev_m: 0.3
+    initial_velocity_stddev_m_s: 2.0
+
+    # Association gate: max(min_association_gate_m, sigma * predicted stddev).
+    association_gate_sigma: 3.0
+    min_association_gate_m: 0.5
+
+    # Measured max frame gap 1.8 s (P5 plan Sec 0.1b) plus one missed-cycle margin.
+    lost_after_sec: 3.0
+    max_tracks: 20
+
+    # M-of-N track confirmation (bug #10, G-M4.4, 2026-08-23): a fresh track
+    # is TENTATIVE and never published until it matches confirm_hits_required
+    # times within its first confirm_window_frames update() opportunities --
+    # blocks 1-2 frame residual clutter from ever surfacing as a "target".
+    confirm_hits_required: 3
+    confirm_window_frames: 5
+
+    # Ego-motion compensation (G-M3/G-M4, 2026-08-23): association/tracking
+    # runs in ODOM (not the moving camera frame) while odometry stays this
+    # fresh; older degrades to the old camera-frame behaviour (see README).
+    odometry_max_age_sec: 0.5
+
+    # Node clock (respects use_sim_time), never a wall timer: sweeps LOST
+    # tracks independently of new observations arriving.
+    age_check_period_sec: 0.5
