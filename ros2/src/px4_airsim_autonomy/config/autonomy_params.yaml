@@ -1,0 +1,24 @@
+autonomous_flight_mode_node:
+  ros__parameters:
+    vehicle_name: "drone1"
+    camera_name: "cam1"
+    algorithm: ""               # Default to blank (Standby / Hover Hold until mission commanded)
+    enable_fmu_registration: true
+
+    safety:
+      enable_adsb: true
+      enable_geofence: true
+      enable_smart_rth: true
+
+    avoidance:
+      cruise_speed: 2.0           # Forward cruising speed (m/s)
+      max_accel: 3.0              # Max acceleration/braking (m/s^2)
+      safety_margin: 1.5          # Safety bubble standoff margin (m)
+      cruise_altitude: 10.0       # Cruise altitude AGL (m)
+
+    survey:
+      altitude: 30.0              # Survey altitude AGL (m)
+      forward_overlap: 0.75       # Along-track forward overlap (75%)
+      side_overlap: 0.65          # Cross-track strip overlap (65%)
+      speed: 4.0                  # Survey cruise speed (m/s)
+      acceptance_radius: 2.5      # Waypoint acceptance tolerance (m)
