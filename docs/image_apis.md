@@ -340,7 +340,8 @@ When `InitialInstanceSegmentation` is `true`, AirSim assigns color indexes to su
 The `simGetSegmentationObjectID` API allows you get object ID for given mesh name.
 
 #### More information
-Please see the [instance segmentation documentation](instance_segmentation.md) for some more information on the segmentation system created by Cosys-Lab.
+Please see the [instance segmentation documentation](instance_segmentation.md) for more information on the segmentation system in Custom AirSim.
+
 
 ### Infrared
 Currently, this is an annotation/object-ID view that maps a valid object ID directly to an 8-bit grayscale value. So any supported object with object ID 42 shows up with color (42, 42, 42). It uses the same source-stencil labels as segmentation, so IDs must be in `0..255`. Please see [segmentation section](#segmentation) for more details on how to set object IDs. Keep noise and distortion disabled when you need exact label values; enabling those post-process settings can make the output more visual but less suitable as ground truth.

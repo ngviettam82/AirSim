@@ -208,7 +208,8 @@ Vehicle-state publishers are created for configured vehicles. Individual sensor 
   The state of the computer vision actor if the vehicle is of this sim-mode type.
 
 - `/airsim_node/origin_geo_point` [airsim_interfaces::GPSYaw](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/GPSYaw.msg)
-  GPS coordinates corresponding to global frame. This is set in the airsim's [settings.json](https://cosys-lab.github.io/AirSim/settings/) file under the `OriginGeopoint` key.
+  GPS coordinates corresponding to global frame. This is set in AirSim's [settings.json](settings.md) file under the `OriginGeopoint` key.
+
 
 - `/airsim_node/VEHICLE-NAME/global_gps` [sensor_msgs::NavSatFix](https://docs.ros.org/api/sensor_msgs/html/msg/NavSatFix.html)
   This the current GPS coordinates of the drone in airsim.
@@ -232,28 +233,28 @@ Vehicle-state publishers are created for configured vehicles. Individual sensor 
 - `/airsim_node/VEHICLE-NAME/gps/SENSOR_NAME` [sensor_msgs::NavSatFix](https://docs.ros.org/api/sensor_msgs/html/msg/NavSatFix.html)
   This is the configured GPS sensor reading. Valid AirSim 2D/3D fixes are mapped to ROS `STATUS_FIX`; no-fix/time-only values map to `STATUS_NO_FIX`.
 
-- `/airsim_node/VEHICLE-NAME/imu/SENSOR_NAME` [sensor_msgs::Imu](http://docs.ros.org/api/sensor_msgs/html/msg/Imu.html)
+- `/airsim_node/VEHICLE-NAME/imu/SENSOR_NAME` [sensor_msgs::Imu](https://docs.ros.org/api/sensor_msgs/html/msg/Imu.html)
   IMU sensor data.
 
-- `/airsim_node/VEHICLE-NAME/magnetometer/SENSOR_NAME` [sensor_msgs::MagneticField](http://docs.ros.org/api/sensor_msgs/html/msg/MagneticField.html)
+- `/airsim_node/VEHICLE-NAME/magnetometer/SENSOR_NAME` [sensor_msgs::MagneticField](https://docs.ros.org/api/sensor_msgs/html/msg/MagneticField.html)
   Measurement of magnetic field vector/compass in Tesla and ROS body axes.
 
-- `/airsim_node/VEHICLE-NAME/distance/SENSOR_NAME` [sensor_msgs::Range](http://docs.ros.org/api/sensor_msgs/html/msg/Range.html)
+- `/airsim_node/VEHICLE-NAME/distance/SENSOR_NAME` [sensor_msgs::Range](https://docs.ros.org/api/sensor_msgs/html/msg/Range.html)
   Measurement of distance from an active ranger, such as infrared or IR
 
-- `/airsim_node/VEHICLE-NAME/lidar/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
+- `/airsim_node/VEHICLE-NAME/lidar/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](https://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
   LIDAR pointcloud 
 
 - `/airsim_node/VEHICLE-NAME/lidar/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
   Custom message type with an array of string that are the labels for each point in the pointcloud of the lidar sensor
 
-- `/airsim_node/VEHICLE-NAME/gpulidar/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
+- `/airsim_node/VEHICLE-NAME/gpulidar/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](https://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
   GPU LIDAR pointcloud. The instance segmentation/annotation color data is stored in the rgb field of the pointcloud. The intensity data is stored as well in the intensity field
 
-- `/airsim_node/VEHICLE-NAME/echo/active/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
+- `/airsim_node/VEHICLE-NAME/echo/active/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](https://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
   Echo sensor pointcloud for active sensing
 
-- `/airsim_node/VEHICLE-NAME/echo/passive/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](http://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
+- `/airsim_node/VEHICLE-NAME/echo/passive/points/SENSOR_NAME/` [sensor_msgs::PointCloud2](https://docs.ros.org/api/sensor_msgs/html/msg/PointCloud2.html)
   Echo sensor pointcloud for passive sensing
 
 - `/airsim_node/VEHICLE-NAME/echo/active/labels/SENSOR_NAME/` [airsim_interfaces::StringArray](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/StringArray.msg)
@@ -266,7 +267,7 @@ Vehicle-state publishers are created for configured vehicles. Individual sensor 
   Custom message type with an array of a custom messages that are the names, color and index of the instance segmentation system for each object in the world.
    
 - `/airsim_node/object_transforms` [airsim_interfaces::ObjectTransformsList](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/ObjectTransformsList.msg)
-  Custom message type with an array of [geometry_msgs::TransformStamped](http://docs.ros.org/api/geometry_msgs/html/msg/TransformStamped.html) that are the transforms of all objects in the world, each child frame ID is the object name.
+  Custom message type with an array of [geometry_msgs::TransformStamped](https://docs.ros.org/api/geometry_msgs/html/msg/TransformStamped.html) that are the transforms of all objects in the world, each child frame ID is the object name.
    
 #### Subscribers:
 
@@ -292,35 +293,35 @@ Vehicle-state publishers are created for configured vehicles. Individual sensor 
   Gimbal set point in quaternion.
 
 - `/airsim_node/VEHICLE-NAME/car_cmd` [airsim_interfaces::CarControls](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/msg/CarControls.msg)
-Throttle, brake, steering and gear selections for control. Both automatic and manual transmission control possible, see the [`car_joy.py`](https://github.com/ngviettam82/Airsim/blob/main/ros/src/airsim_ros_pkgs/scripts/car_joy) script for use.
+Throttle, brake, steering and gear selections for control. Both automatic and manual transmission control possible, see the [`car_joy.py`](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_ros_pkgs/scripts/car_joy) script for use.
 
 #### Services:
 
 For the per-vehicle `takeoff` and `land` services, `success=true` with `wait_on_last_task: false` means only that the wrapper queued the asynchronous RPC request; it does not prove that AirSim accepted or completed the task. With `wait_on_last_task: true`, it reports the completed AirSim task result. Group and all-vehicle services aggregate the completed results when waiting.
 
-- `/airsim_node/VEHICLE-NAME/land` [airsim_interfaces::Land](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Land.html)
+- `/airsim_node/VEHICLE-NAME/land` [airsim_interfaces::Land](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Land.srv)
 
-- `/airsim_node/VEHICLE-NAME/takeoff` [airsim_interfaces::Takeoff](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.html)
+- `/airsim_node/VEHICLE-NAME/takeoff` [airsim_interfaces::Takeoff](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.srv)
 
-- `/airsim_node/all_robots/land` [airsim_interfaces::Land](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Land.html)
+- `/airsim_node/all_robots/land` [airsim_interfaces::Land](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Land.srv)
  land all drones
 
-- `/airsim_node/all_robots/takeoff` [airsim_interfaces::Takeoff](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.html)
+- `/airsim_node/all_robots/takeoff` [airsim_interfaces::Takeoff](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Takeoff.srv)
  take-off all drones
 
-- `/airsim_node/group_of_robots/land` [airsim_interfaces::LandGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/LandGroup.html)
+- `/airsim_node/group_of_robots/land` [airsim_interfaces::LandGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/LandGroup.srv)
  land a specific set of drones
 
-- `/airsim_node/group_of_robots/takeoff` [airsim_interfaces::TakeoffGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/TakeoffGroup.html)
+- `/airsim_node/group_of_robots/takeoff` [airsim_interfaces::TakeoffGroup](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/TakeoffGroup.srv)
  take-off a specific set of drones
 
-- `/airsim_node/reset` [airsim_interfaces::Reset](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Reset.html)
+- `/airsim_node/reset` [airsim_interfaces::Reset](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/Reset.srv)
  Resets *all* vehicles
 
-- `/airsim_node/instance_segmentation_refresh` [airsim_interfaces::RefreshInstanceSegmentation](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/RefreshInstanceSegmentation.html)
+- `/airsim_node/instance_segmentation_refresh` [airsim_interfaces::RefreshInstanceSegmentation](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/RefreshInstanceSegmentation.srv)
  Refresh the instance segmentation list
 
-- `/airsim_node/object_transforms_refresh` [airsim_interfaces::RefreshObjectTransforms](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/RefreshObjectTransforms.html)
+- `/airsim_node/object_transforms_refresh` [airsim_interfaces::RefreshObjectTransforms](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/RefreshObjectTransforms.srv)
  Refresh the object transforms list
 
   
@@ -427,11 +428,11 @@ For the per-vehicle `takeoff` and `land` services, `success=true` with `wait_on_
 
 #### Services:
 
-- `/airsim_node/VEHICLE-NAME/gps_goal` [Request: [airsim_interfaces::SetGPSPosition](https://github.com/ngviettam82/Airsim/blob/main/ros/src/airsim_ros_pkgs/srv/SetGPSPosition.srv)]
+- `/airsim_node/VEHICLE-NAME/gps_goal` [Request: [airsim_interfaces::SetGPSPosition](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/SetGPSPosition.srv)]
   Target gps position + yaw.
   In **absolute** altitude.
 
-- `/airsim_node/VEHICLE-NAME/local_position_goal` [Request: [airsim_interfaces::SetLocalPosition](https://github.com/ngviettam82/Airsim/blob/main/ros/src/airsim_ros_pkgs/srv/SetLocalPosition.srv)]
+- `/airsim_node/VEHICLE-NAME/local_position_goal` [Request: [airsim_interfaces::SetLocalPosition](https://github.com/ngviettam82/Airsim/blob/main/ros2/src/airsim_interfaces/srv/SetLocalPosition.srv)]
   Target local position + yaw in global frame.
 
 #### Subscribers:
@@ -461,3 +462,12 @@ For the per-vehicle `takeoff` and `land` services, `success=true` with `wait_on_
 
     * `/max_yaw_rate_degree` [double]
   Maximum yaw rate (degrees/second)
+
+---
+
+## Next Steps & Advanced Autonomy
+
+* **Autonomous Flight Stack**: For closed-loop perception, dynamic stopping bubbles, and autonomous mission execution via PX4 ROS 2 ModeBase, see the [PX4 ROS 2 Autonomy Guide](px4_ros2_autonomy.md).
+* **Web Companion GCS**: For browser and tablet-based flight control, real-time Google Maps telemetry, and click-to-track visual targeting, see the [Web Companion GCS Guide](web_gcs.md).
+* **Hardware-In-The-Loop / SITL**: For complete PX4 simulation setup and port mapping, consult the [PX4 in SITL Guide](px4_sitl.md) and [WSL 2 Setup](px4_sitl_wsl2.md).
+

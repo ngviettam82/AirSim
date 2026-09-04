@@ -126,7 +126,7 @@ class WebGcsNode(Node):
             "home_alt": 120.0,
 
             # Live camera stream URI
-            "camera_stream_url": f"http://{self.airsim_ip}:{self.camera_host_port}/stream/mjpeg",
+            "camera_stream_url": f"http://{self.airsim_ip}:{self.camera_host_port}/camera/{self.vehicle_name}/{self.camera_name}/scene",
             "timestamp_ms": 0,
         }
 

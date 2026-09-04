@@ -1,6 +1,14 @@
-# How to use AirSim with Robot Operating System (ROS)
+# How to use AirSim with Robot Operating System (ROS 1 Legacy)
+
+> [!WARNING]
+> **Legacy ROS 1 (Noetic) Guide**: ROS 1 reached official End-of-Life (EOL) in May 2025. This document is retained solely for legacy catkin setups on Ubuntu 20.04.
+> For modern robotics workflows on Ubuntu 22.04+ with ROS 2 Humble, please refer to:
+> - [ROS 2 C++ Wrapper (`airsim_ros_pkgs`)](ros_cplusplus.md)
+> - [PX4 ROS 2 Autonomy Architecture](px4_ros2_autonomy.md)
+> - [Web Companion Ground Control Station](web_gcs.md)
 
 AirSim and ROS can be integrated using Python. Some example ROS node are provided demonstrating how to publish data from AirSim as ROS topics.
+
 
 ## Prerequisites
 

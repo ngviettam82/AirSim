@@ -4,38 +4,48 @@ A production-grade, modular autonomy framework built on top of the official **`p
 
 ---
 
-## 1. Key Architectural Concept: Dedicated File Per Algorithm
+## 1. Architectural Structure
 
-Every flight behavior/algorithm is isolated in its own dedicated C++ file implementing the `IAutonomyAlgorithm` interface. This allows you to develop, test, and maintain each function independently without touching the core flight controller or ROS 2 node wiring:
+The autonomy architecture is organized into mission-level supervisors (`enterprise/`) and mathematical aerospace contingency modules (`production/`):
 
 ```
 include/px4_airsim_autonomy/
 ├── types.hpp                             # SensorSnapshot, AutonomyCommand
 ├── algorithm_base.hpp                     # Base interface (IAutonomyAlgorithm)
 ├── algorithm_factory.hpp                  # Dynamic algorithm switcher/factory
-└── algorithms/
-    ├── obstacle_avoidance.hpp             # Dynamic 3D depth-based collision avoidance
-    ├── scanning_patrol.hpp                # Area survey / lawnmower scan pattern
-    ├── target_guiding.hpp                 # Standoff target tracking & following
-    └── area_search.hpp                    # Expanding spiral search pattern
+├── enterprise/
+│   ├── enterprise_flight_supervisor.hpp   # 50 Hz deterministic flight supervisor
+│   ├── dynamic_avoidance_mission.hpp      # Reactive collision avoidance mission
+│   └── photogrammetry_survey_mission.hpp  # Boustrophedon photogrammetry mission
+└── production/
+    ├── smart_rth_battery.hpp              # Dynamic return-to-home with wind/sag
+    ├── geofence_3d.hpp                    # 3D winding number prism containment
+    ├── adsb_deconfliction.hpp             # RTCA DO-365B DAA alerting & dive
+    ├── photogrammetry_calc.hpp            # GSD, forward/side overlap & SOC
+    ├── boustrophedon_planner.hpp          # Rotating Calipers minimum-strip sweeps
+    ├── mission_continuity.hpp             # Atomic JSON breakpoint resumption
+    ├── dynamic_stopping_bubble.hpp        # 3D velocity-aligned ellipsoid quadric
+    ├── safe_flight_corridor.hpp           # Polyhedral corridor & jerk bounding
+    ├── quadcopter_spin_recovery.hpp       # Single-motor failure cyclic thrust
+    ├── multi_camera_depth.hpp             # Pinhole depth unprojection to Body FLU
+    └── degraded_navigation_fsm.hpp        # 5-tier GPS-denied quality ladder
 
-src/algorithms/
-├── obstacle_avoidance.cpp
-├── scanning_patrol.cpp
-├── target_guiding.cpp
-└── area_search.cpp
+src/
+├── algorithm_factory.cpp
+├── autonomous_flight_mode_node.cpp        # PX4 ROS 2 ModeBase node
+├── enterprise/
+└── production/
 ```
 
 ---
 
-## 2. Implemented Algorithms
+## 2. Implemented Enterprise Missions
 
-| Algorithm | File | Role & Behavior |
+| Mission / Algorithm | Key Implementation | Role & Behavior |
 |---|---|---|
-| **Obstacle Avoidance** | `algorithms/obstacle_avoidance.cpp` | Segments AirSim depth camera into Left/Center/Right sectors; steers toward maximum clearance and applies emergency stop/reverse on close proximity. |
-| **Scanning Patrol** | `algorithms/scanning_patrol.cpp` | Generates parallel sweep lanes (lawnmower pattern) across an area at fixed altitude for surveillance and mapping. |
-| **Target Guiding** | `algorithms/target_guiding.cpp` | Maintains a specified standoff distance and altitude above a target (human, vehicle, or marker) while yawing to face it. |
-| **Area Search** | `algorithms/area_search.cpp` | Executes an expanding Archimedean spiral search pattern ($r = b \cdot \theta$) until an objective or target is discovered. |
+| **Dynamic Avoidance** | `enterprise/dynamic_avoidance_mission.cpp` | Ingests 3D depth sector clearances; dynamically steers through maximum clearance corridors and triggers quadratic emergency stopping on obstacle breach. |
+| **Photogrammetry Survey** | `enterprise/photogrammetry_survey_mission.cpp` | Executes optimal Boustrophedon sweep passes using Rotating Calipers, tracks waypoint progress, and handles along-track backtrack resumption. |
+| **Standby Hover-Hold (`""`)** | `src/autonomous_flight_mode_node.cpp` | Default stationary position hold while maintaining full 50 Hz supervisor protection (Smart RTH, Geofence, ADS-B, Stopping Bubble). |
 
 ---
 
@@ -111,20 +121,17 @@ This script automatically:
 AirSim automatically uses the repository's root `settings.json` (`~/Documents/AirSim/settings.json`), which is already pre-configured for `PX4Multirotor` (TCP 4560, `SteppableClock`, `LockStep: true`) and camera `cam1` (`ImageType: 0` RGB and `ImageType: 5` DepthPlanar).
 
 ### 3. Run the Autonomy Stack
-Launch AirSim and PX4 SITL, then run:
+Launch AirSim, PX4 SITL, and MicroXRCEAgent (`MicroXRCEAgent udp4 -p 8888`), then run:
 ```bash
 cd /path/to/AirSim/ros2
 
-# Run obstacle avoidance (default):
+# Run dynamic obstacle avoidance (default):
 ./run_autonomy.sh obstacle_avoidance
 
-# Or run scanning patrol:
-./run_autonomy.sh scanning_patrol
+# Or run photogrammetry survey:
+./run_autonomy.sh photogrammetry_survey
 
-# Or run target guiding:
-./run_autonomy.sh target_guiding
-
-# Or run area search:
-./run_autonomy.sh area_search
+# Or run standby hover-hold under supervisor protection:
+./run_autonomy.sh ""
 ```
 

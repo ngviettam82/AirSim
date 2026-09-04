@@ -1,11 +1,12 @@
 site_name: AirSim
 repo_url: https://github.com/ngviettam82/AirSim
-site_description: 'AirSim is a simulator for drones, cars and more, built on Unreal Engine (this fork: UE 5.5, Cosys-based features).'
+site_description: 'Custom AirSim: Simulator for autonomous drones, ground vehicles, and robotics perception on Unreal Engine 5.5 with PX4 ROS 2 Autonomy, Web GCS, and advanced sensing.'
 
 theme: readthedocs
 
+
 extra_javascript:
-  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 edit_uri: https://github.com/ngviettam82/AirSim/edit/main/docs/
@@ -56,13 +57,15 @@ nav:
       - "Pulse Echo": 'echo.md'
       - "Infrared Camera": "InfraredCamera.md"
       - "Distance Sensor": 'distance_sensor.md'
-    - "ROS":
-      - "ROS: AirSim ROS Python Wrapper": "ros_python.md"
-      - "ROS2: AirSim ROS C++ Wrapper": "ros_cplusplus.md"
     - "Matlab": 'matlab.md'
     - "Playing Logs": 'playback.md'
     - "Voxel Grid Generator": "voxel_grid.md"
     - "Event camera": "event_sim.md"
+  - "ROS 2 & Autonomy":
+    - "PX4 ROS 2 Autonomy Architecture": "px4_ros2_autonomy.md"
+    - "Web Companion Ground Control Station": "web_gcs.md"
+    - "ROS 2 C++ Wrapper (airsim_ros_pkgs)": "ros_cplusplus.md"
+    - "Legacy ROS 1 Python Wrapper (EOL)": "ros_python.md"
   - "Design":
     - "Modifying Recording Data": 'modify_recording_data.md'
     - "Flight Controller": 'flight_controller.md'

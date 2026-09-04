@@ -118,9 +118,22 @@ function updateUI(tel) {
   }
 
   // Sync Algorithm Dropdown if changed externally
-  const algoSelect = document.getElementById('select-algorithm');
+  const algoSelect = document.getElementById('autonomy-algo-select');
   if (algoSelect && tel.active_algorithm !== undefined && document.activeElement !== algoSelect) {
     algoSelect.value = tel.active_algorithm;
+  }
+
+  // Camera stream URL dynamic binding (auto-adapts for LAN / tablet access)
+  const streamImg = document.getElementById('mjpeg-stream');
+  if (streamImg && tel.camera_stream_url) {
+    let targetStream = tel.camera_stream_url;
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      targetStream = targetStream.replace('127.0.0.1', window.location.hostname);
+    }
+    if (streamImg.getAttribute('data-loaded-src') !== targetStream) {
+      streamImg.setAttribute('data-loaded-src', targetStream);
+      streamImg.src = targetStream;
+    }
   }
 
   // 2. Update Subsystems

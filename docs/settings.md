@@ -1,7 +1,8 @@
 # AirSim Settings
 
 A good basic settings file that works with many of the examples can be found here as [settings_example.json](settings_example.json).
-It shows many of the custom sensors and vehicles that were added by Cosys-Lab.
+It shows many of the custom sensors and vehicles supported in Custom AirSim.
+
 
 ## Where are Settings Stored?
 AirSim is searching for the settings definition in the following order. The first match will be used:

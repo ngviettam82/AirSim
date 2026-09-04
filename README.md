@@ -1,17 +1,19 @@
-# AirSim
+# Custom AirSim
 
-AirSim is a simulator for drones, cars and more, with extensive API support, built on [Unreal Engine](https://www.unrealengine.com/). It is open-source, cross platform, and supports hardware-in-loop with popular flight controllers such as PX4 for physically and visually realistic simulations. It is developed as an Unreal plugin that can simply be dropped into any Unreal environment. 
+Custom AirSim is an advanced open-source simulator for autonomous drones, ground vehicles, and robotics perception, built on [Unreal Engine 5.5](https://www.unrealengine.com/). It provides physically and visually realistic simulation environments with native hardware-in-the-loop (HIL) and software-in-the-loop (SITL) support for flight controllers such as PX4 Autopilot.
 
-This fork is based on last public AirSim release from Microsoft's GitHub.
-Cosys-Lab made extensive modifications to the AirSim platform to support multiple projects and research goals. 
-Please contact a Cosys-Lab researcher to get more in depth information on our work or if you wish to collaborate. 
-The [original AirSim MIT license](https://github.com/ngviettam82/Airsim/blob/main/LICENSE) applies to all native AirSim source files. 
-Please note that we use that same [MIT license](https://github.com/ngviettam82/Airsim/blob/main/LICENSE) as which applies to all changes made by Cosys-Lab in case you plan to do anything within this repository.
-Do note that this repository is provided as is, will not be actively updated and comes without warranty or support. 
-Please contact a Cosys-Lab researcher to get more in depth information on which branch or version is best for your work.
+This repository is an actively maintained **Custom AirSim** distribution featuring:
+* **PX4 ROS 2 Autonomy Framework**: Production C++17 autonomy stack (`px4_ros2::ModeBase`), dynamic stopping bubbles, photogrammetry survey mission planner, 3D geofencing, and Smart RTH battery models.
+* **Web Companion Ground Control Station (GCS)**: Zero-install tablet & browser cockpit (`http://localhost:8080`) featuring Google Maps (Satellite/Hybrid), Primary Flight Display (PFD) HUD, 50 Hz real-time WebSocket telemetry, interactive boustrophedon survey planning, and click-to-track visual targeting.
+* **Unreal Native CameraHost**: High-throughput HTTP/MJPEG streaming server built directly into Unreal Engine for low-latency multi-camera viewports.
+* **ROS 2 Humble Integration (`airsim_ros_pkgs`)**: Direct MCAP rosbag2 recording, hardware-accurate timestamp synchronization, and multi-vehicle control.
+* **Advanced Perception Suite**: Multi-camera depth unprojection, GPU LiDAR (with multirotor async capture), pulse-echo radar, instance segmentation, and infrared imaging.
 
-This [main branch](https://github.com/ngviettam82/Airsim/tree/main) is for the latest supported Unreal Version v5.5, maintained for support, and is available for builds in the [releases](https://github.com/ngviettam82/Airsim/releases).
-Unreal [5.2.1](https://github.com/ngviettam82/Airsim/tree/5.2.1) is also available for long term support builds.
+The [MIT License](LICENSE) applies to all source files in this repository.
+
+This [main branch](https://github.com/ngviettam82/Airsim/tree/main) is actively maintained for Unreal Engine v5.5, with precompiled plugin releases available in [Releases](https://github.com/ngviettam82/Airsim/releases).
+Unreal [5.2.1](https://github.com/ngviettam82/Airsim/tree/5.2.1) is also available for long-term support builds.
+
 
 ## Associated publications
 
@@ -62,22 +64,27 @@ Unreal [5.2.1](https://github.com/ngviettam82/Airsim/tree/5.2.1) is also availab
 * **Precompiled UE 5.5 plugin (Win64):** [Releases](https://github.com/ngviettam82/AirSim/releases) → `AirSimPlugin-Win64.zip` (install [guide](docs/install_precompiled.md))
 * **Packaged binary (Blocks):** [Releases](https://github.com/ngviettam82/AirSim/releases) (run [guide](docs/run_packaged.md))
 * **Build from Source:** [Windows](docs/install_windows.md) / [Linux](docs/install_linux.md)
-* **Python client:** install from `PythonClient` in this repo only (`pip install .` → `import airsim`). Do not use PyPI `cosysairsim` / unrelated `airsim` wheels.
+* **Python client:** install from `PythonClient` in this repo only (`pip install .` → `import airsim`). Do not install third-party PyPI wheels (such as legacy `airsim` or `cosysairsim`).
 * **Docs:** [docs/](docs/) in this repository (`mkdocs build` from repo root)
 
-## Cosys-Lab lineage (and this fork)
+## Custom AirSim Capabilities & Architecture
 
-Upstream Cosys-Lab expanded AirSim for industrial sensing. This fork keeps that lineage and adds field-oriented work (source-stencil Seg/IR, CameraHost, multirotor physics, PX4 battery, Multirotor GPU LiDAR, ROS 2 live control). See [CHANGELOG](CHANGELOG.md).
+Custom AirSim provides advanced, production-grade robotics and autonomy capabilities on Unreal Engine 5.5. See [CHANGELOG](CHANGELOG.md).
 
-**Note:** Built-in labeling is **source-stencil Segmentation/Infrared** only. Custom multi-layer proxy annotation from Cosys is **disabled** in this build (see [annotation](docs/annotation.md)).
+**Note:** Built-in labeling is **source-stencil Segmentation/Infrared** only.
 
-Notable inherited capabilities (docs in-tree):
+Notable capabilities (docs in-tree):
 
+
+* [PX4 ROS 2 Autonomy Architecture](docs/px4_ros2_autonomy.md) — Production C++17 autonomy stack (`px4_ros2::ModeBase`), dynamic stopping bubbles, photogrammetry survey planner, 3D geofence, and Smart RTH battery models.
+* [Web Companion Ground Control Station (GCS)](docs/web_gcs.md) — Touch-friendly tablet & browser UI with Leaflet/Google Maps, 50 Hz WebSocket telemetry, click-to-track visual targeting, and boustrophedon survey mission generator.
+* [PX4 SITL with AirSim](docs/px4_sitl.md) & [WSL 2 Integration](docs/px4_sitl_wsl2.md) — Complete port triad guide (TCP 4560 simulator, UDP 8888 MicroXRCEAgent, UDP 14550 QGC).
+* [ROS 2 C++ Wrapper (`airsim_ros_pkgs`)](docs/ros_cplusplus.md) — Full ROS 2 Humble bridge with direct MCAP rosbag2 recording and hardware timestamp synchronization.
 * [Instance segmentation](docs/instance_segmentation.md) / [annotation notes](docs/annotation.md)
 * [GPU LiDAR](docs/gpulidar.md) (including Multirotor async path)
 * [Echo](docs/echo.md), [skid steer](docs/skid_steer_vehicle.md), [dynamic objects](docs/dynamic_objects.md), [lights](docs/lights.md)
-* [Camera host](docs/camera_host.md), [multirotor physics](docs/multirotor_physics.md)
-* [ROS Python](docs/ros_python.md) / [ROS 2 C++](docs/ros_cplusplus.md)
+* [Native Camera Host](docs/camera_host.md), [multirotor physics](docs/multirotor_physics.md)
+* [Legacy ROS 1 Python Wrapper](docs/ros_python.md) (Catkin / Noetic EOL)
 
 ## Network note
 

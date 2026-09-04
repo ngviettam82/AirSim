@@ -59,7 +59,7 @@ The server starts only when at least one capture setting has `Host: true`. All r
 | Setting | Default | Purpose |
 | --- | ---: | --- |
 | `BindAddress` | `127.0.0.1` | Local IPv4 interface on which to listen. |
-| `Port` | `8080` | HTTP listen port. |
+| `Port` | `8080` | HTTP listen port (Recommend `8000` when operating with Web GCS dashboard on `8080`). |
 | `TargetFps` | `30` | Maximum capture rate per vehicle. |
 | `JpegQuality` | `85` | Quality from 1 to 100 for dashboard, MJPEG, and snapshot previews. |
 | `FloatPreviewMax` | `100` | Float value mapped to the end of the grayscale preview range. Exact raw float values are unchanged. |
@@ -168,3 +168,15 @@ Capture work is lazy: a hosted route renders only while an MJPEG client is conne
 ## Network safety
 
 The host has no authentication or TLS. Keep the default loopback binding unless remote access is required. For LAN access, restrict the port with the host firewall or a trusted reverse proxy, especially when gimbal control is enabled through hosted vehicle cameras. Do not expose it directly to the public internet.
+
+## Web GCS Integration (`px4_airsim_gcs`)
+
+AirSim's Native CameraHost integrates directly with the [Web Companion Ground Control Station](web_gcs.md). The Web GCS embeds the live MJPEG scene stream (`/camera/{vehicle}/{camera}/scene`) into its reconnaissance HUD and uses click-to-track pixel offsets to calculate Body FLU target guidance coordinates.
+
+When operating both systems on the same host:
+1. Configure AirSim's `CameraHost.Port` to `8000` in `settings.json`.
+2. Keep the Web GCS dashboard on port `8080`.
+3. Launch Web GCS with matching camera source:
+   ```bash
+   ros2 launch px4_airsim_gcs web_gcs.launch.py camera_host_port:=8000 vehicle_name:=drone1 camera_name:=cam1
+   ```

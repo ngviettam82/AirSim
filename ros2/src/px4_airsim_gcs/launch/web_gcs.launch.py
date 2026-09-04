@@ -30,6 +30,11 @@ def generate_launch_description():
             default_value='8000',
             description='AirSim CameraHost streaming port'
         ),
+        DeclareLaunchArgument(
+            'airsim_ip',
+            default_value='127.0.0.1',
+            description='AirSim host IP for camera stream'
+        ),
         Node(
             package='px4_airsim_gcs',
             executable='web_gcs_node',
@@ -41,6 +46,7 @@ def generate_launch_description():
                 'vehicle_name': LaunchConfiguration('vehicle_name'),
                 'camera_name': LaunchConfiguration('camera_name'),
                 'camera_host_port': LaunchConfiguration('camera_host_port'),
+                'airsim_ip': LaunchConfiguration('airsim_ip'),
             }]
         )
     ])

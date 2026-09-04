@@ -70,43 +70,31 @@ This resolves to the WSL 2 remote ip address found in the TCP socket.
             "Parameters": {
                 "NAV_RCL_ACT": 0,
                 "NAV_DLL_ACT": 0,
-                "COM_OBL_ACT": 1,
-                "LPE_LAT": 47.641468,
-                "LPE_LON": -122.140165
+                "COM_OBL_ACT": 1
             }
         }
     }
 }
 ```
 See [PX4 LockStep](px4_lockstep.md) for more information.
-The "Barometer" setting keeps PX4 happy because the default AirSim barometer has a bit too much
-noise generation.  This setting clamps that down a bit.
+The "Barometer" setting keeps PX4 happy because the default AirSim barometer has a bit too much noise generation. This setting clamps that down a bit.
 
-If your local repo does not include [this PX4 
-commit](https://github.com/PX4/PX4-Autopilot/commit/292a66ce417c9769e1a7845fbc9b8d5e68e1cf0b), 
-please edit the Linux file in `ROMFS/px4fmu_common/init.d-posix/rcS` and make sure it is looking
-for the `PX4_SIM_HOST_ADDR` environment variable and is passing that through to the PX4 
-simulator like this:
-
-```shell
-# If PX4_SIM_HOST_ADDR environment variable is empty use localhost.
-if [ -z "${PX4_SIM_HOST_ADDR}" ]; then
-    echo "PX4 SIM HOST: localhost"
-    simulator start -c $simulator_tcp_port
-else
-    echo "PX4 SIM HOST: $PX4_SIM_HOST_ADDR"
-    simulator start -t $PX4_SIM_HOST_ADDR $simulator_tcp_port
-fi
-```
-
-**Note:** this code might already be there depending on the version of PX4 you are using.
+Modern PX4 (v1.14+ / v1.15+) natively supports `PX4_SIM_HOST_ADDR` without editing ROMFS scripts.
 
 **Note:** please be patient when waiting for the message:
-
 ```
 INFO  [simulator] Simulator connected on TCP port 4560.
 ```
+It can take a little longer to establish the remote connection across the Hyper-V virtual switch than it does with pure `localhost`.
 
-It can take a little longer to establish the remote connection than it does with `localhost`.
+## Operating ROS 2 Autonomy inside WSL2
 
-Now you can proceed with the steps shown in [Setting up PX4 Software-in-Loop](px4_sitl.md).
+When running PX4 SITL, `MicroXRCEAgent`, and the ROS 2 Autonomy Stack inside the **same WSL2 distribution**:
+* **PX4 $\leftrightarrow$ MicroXRCEAgent $\leftrightarrow$ ROS 2**: Communicates purely over internal loopback (`127.0.0.1:8888`). No Windows port proxying or firewall configuration is required for DDS telemetry or control setpoints.
+* **AirSim (Windows) $\leftrightarrow$ PX4 (WSL2)**: Uses TCP port 4560 routed via `PX4_SIM_HOST_ADDR`.
+
+## Next Steps
+
+Once your WSL2 PX4 SITL is running and connected:
+* Fly autonomous missions via [PX4 ROS 2 Autonomy Framework](px4_ros2_autonomy.md).
+* Monitor telemetry and command flights from a web browser via [Web Companion GCS](web_gcs.md).

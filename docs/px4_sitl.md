@@ -26,9 +26,9 @@ instructions](px4_sitl_wsl2.md).
     cd PX4-Autopilot
     ```
     And find the latest stable release from [https://github.com/PX4/PX4-Autopilot/releases](https://github.com/PX4/PX4-Autopilot/releases)
-    and checkout the source code matching that release, for example:
+    and checkout a modern stable release (v1.14+ or v1.15+ for ROS 2 Micro-XRCE-DDS compatibility):
     ```
-    git checkout v1.11.3
+    git checkout release/1.15
     ```
 
 3. Use following command to build and start PX4 firmware in SITL mode:
@@ -225,3 +225,30 @@ LocalIpAddress to the address of your host machine running the Unreal engine.
 
 There are several options for flying the simulated drone using a remote control or joystick like
 xbox gamepad. See [remote controllers](remote_control.md#rc-setup-for-px4)
+
+## Simulation Port Architecture & Communication Triad
+
+When operating PX4 SITL with AirSim and ROS 2 Autonomy, three independent network channels operate simultaneously:
+
+| Port | Protocol | Channel Purpose | Endpoints |
+|---|---|---|---|
+| **4560** | TCP | AirSim Lockstep Physics & Actuator Mixing | Unreal Simulator $\leftrightarrow$ PX4 SITL |
+| **8888** | UDP | Micro-XRCE-DDS uORB Bridge | PX4 SITL `uxrce_dds_client` $\leftrightarrow$ `MicroXRCEAgent` $\leftrightarrow$ ROS 2 |
+| **14550 / 14540** | UDP | MAVLink Telemetry & Mission Control | PX4 SITL $\leftrightarrow$ QGroundControl |
+
+### Starting Micro-XRCE-DDS for ROS 2 Autonomy
+To connect ROS 2 nodes ([`px4_airsim_autonomy`](px4_ros2_autonomy.md) and [`px4_airsim_gcs`](web_gcs.md)) to PX4:
+```bash
+# In a terminal:
+MicroXRCEAgent udp4 -p 8888
+```
+In the PX4 SITL console, verify connection:
+```bash
+uxrce_dds_client status
+```
+
+## Next Steps
+
+Once PX4 SITL is running and connected to AirSim on TCP 4560:
+* Fly autonomous missions via [PX4 ROS 2 Autonomy Framework](px4_ros2_autonomy.md).
+* Monitor telemetry and command flights from a web browser via [Web Companion GCS](web_gcs.md).
