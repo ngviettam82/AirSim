@@ -403,6 +403,8 @@ PythonClient/docs/_build
 
 # clangd generated folder, for e.g. from VSCode clangd extension
 .cache/
+# Python setuptools build artifacts
+*.egg-info/
 /PythonClient/cosysairsim.egg-info/
 /PythonClient/airsim.egg-info/
 .vscode/

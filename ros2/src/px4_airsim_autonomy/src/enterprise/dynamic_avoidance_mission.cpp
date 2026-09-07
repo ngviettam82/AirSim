@@ -18,10 +18,10 @@ DynamicAvoidanceMission::DynamicAvoidanceMission()
 
 void DynamicAvoidanceMission::init(rclcpp::Node& node)
 {
-    cruise_speed_ = node.declare_parameter<float>("avoidance.cruise_speed", 2.0f);
-    max_accel_ = node.declare_parameter<float>("avoidance.max_accel", 3.0f);
-    safety_margin_ = node.declare_parameter<float>("avoidance.safety_margin", 1.5f);
-    cruise_altitude_ = node.declare_parameter<float>("avoidance.cruise_altitude", 10.0f);
+    cruise_speed_ = node.has_parameter("avoidance.cruise_speed") ? static_cast<float>(node.get_parameter("avoidance.cruise_speed").as_double()) : node.declare_parameter<float>("avoidance.cruise_speed", 2.0f);
+    max_accel_ = node.has_parameter("avoidance.max_accel") ? static_cast<float>(node.get_parameter("avoidance.max_accel").as_double()) : node.declare_parameter<float>("avoidance.max_accel", 3.0f);
+    safety_margin_ = node.has_parameter("avoidance.safety_margin") ? static_cast<float>(node.get_parameter("avoidance.safety_margin").as_double()) : node.declare_parameter<float>("avoidance.safety_margin", 1.5f);
+    cruise_altitude_ = node.has_parameter("avoidance.cruise_altitude") ? static_cast<float>(node.get_parameter("avoidance.cruise_altitude").as_double()) : node.declare_parameter<float>("avoidance.cruise_altitude", 10.0f);
 
     production::DynamicStoppingBubbleConfig cfg;
     cfg.a_max = max_accel_;

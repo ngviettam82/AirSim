@@ -150,6 +150,28 @@ class WebGcsNode(Node):
         self._server_thread = threading.Thread(target=self._run_web_server, daemon=True)
         self._server_thread.start()
 
+        # AirSim direct RPC bridge for physical simulation flight
+        self._airsim = None
+        self._airsim_lock = threading.Lock()
+        self._ground_z = 2.707
+        self._init_airsim_client()
+
+    def _init_airsim_client(self):
+        try:
+            import sys
+            for p in ['/mnt/c/Users/ADMIN/Documents/AirSim/PythonClient', 'c:/Users/ADMIN/Documents/AirSim/PythonClient']:
+                if p not in sys.path:
+                    sys.path.insert(0, p)
+            import airsim
+            self._airsim = airsim.MultirotorClient(ip=self.airsim_ip)
+            self._airsim.confirmConnection()
+            state = self._airsim.getMultirotorState()
+            self._ground_z = state.kinematics_estimated.position.z_val
+            self.get_logger().info(f"Connected to AirSim RPC at {self.airsim_ip} (Ground Z: {self._ground_z:.2f}m)")
+        except Exception as e:
+            self._airsim = None
+            self.get_logger().info(f"AirSim RPC not connected directly ({e}), relying on ROS 2 telemetry")
+
     def _init_subscribers(self):
         """Initialize ROS 2 telemetry subscriptions."""
         qos_sensor = QoSProfile(
@@ -246,6 +268,24 @@ class WebGcsNode(Node):
         if not self._ws_clients or self._loop is None:
             return
 
+        if self._airsim:
+            try:
+                with self._airsim_lock:
+                    state = self._airsim.getMultirotorState()
+                    pos = state.kinematics_estimated.position
+                    vel = state.kinematics_estimated.linear_velocity
+                    rotors = self._airsim.getRotorStates().rotors
+                is_armed = any(r.get('speed', 0.0) > 10.0 for r in rotors)
+                alt_agl = max(0.0, round(self._ground_z - pos.z_val, 2))
+                with self._telemetry_lock:
+                    self._state["pos_enu"] = [round(pos.y_val, 2), round(pos.x_val, 2), round(alt_agl, 2)]
+                    self._state["alt_agl"] = alt_agl
+                    self._state["groundspeed"] = round(math.hypot(vel.x_val, vel.y_val), 2)
+                    self._state["vertical_speed"] = round(-vel.z_val, 2)
+                    self._state["armed"] = is_armed
+            except Exception:
+                pass
+
         with self._telemetry_lock:
             self._state["timestamp_ms"] = int(self.get_clock().now().nanoseconds / 1e6)
             data_json = json.dumps(self._state)
@@ -296,8 +336,16 @@ class WebGcsNode(Node):
             if os.path.exists(dev_static):
                 static_dir = dev_static
 
-        app.router.add_static('/static/', path=static_dir, name='static')
-        app.router.add_get('/', lambda r: web.HTTPFound('/static/index.html'))
+        static_dir = os.path.realpath(static_dir)
+        app.router.add_static('/static', path=static_dir, name='static', follow_symlinks=True)
+
+        async def _handle_root(request):
+            index_path = os.path.join(static_dir, 'index.html')
+            if os.path.exists(index_path):
+                return web.FileResponse(index_path)
+            return web.HTTPFound('/static/index.html')
+
+        app.router.add_get('/', _handle_root)
 
         runner = web.AppRunner(app)
         self._loop.run_until_complete(runner.setup())
@@ -377,6 +425,14 @@ class WebGcsNode(Node):
 
             self.target_pub.publish(msg)
 
+            if self._airsim:
+                try:
+                    with self._airsim_lock:
+                        target_ned_z = self._ground_z - max(2.0, z)
+                        self._airsim.moveToPositionAsync(float(x), float(y), float(target_ned_z), 3.0)
+                except Exception as e:
+                    self.get_logger().warn(f"AirSim moveToPosition error: {e}")
+
             with self._telemetry_lock:
                 self._state["target_detected"] = True
                 self._state["target_pos_flu"] = [x, y, z]
@@ -431,6 +487,13 @@ class WebGcsNode(Node):
         return True
 
     async def _handle_api_arm(self, request):
+        if self._airsim:
+            try:
+                with self._airsim_lock:
+                    self._airsim.enableApiControl(True)
+                    self._airsim.armDisarm(True)
+            except Exception as e:
+                self.get_logger().warn(f"AirSim arm error: {e}")
         # MAV_CMD_COMPONENT_ARM_DISARM = 400, param1 = 1 (Arm)
         await self._send_vehicle_command(400, param1=1.0)
         with self._telemetry_lock:
@@ -438,6 +501,13 @@ class WebGcsNode(Node):
         return web.json_response({"success": True, "action": "arm"})
 
     async def _handle_api_disarm(self, request):
+        if self._airsim:
+            try:
+                with self._airsim_lock:
+                    self._airsim.armDisarm(False)
+                    self._airsim.enableApiControl(False)
+            except Exception as e:
+                self.get_logger().warn(f"AirSim disarm error: {e}")
         # MAV_CMD_COMPONENT_ARM_DISARM = 400, param1 = 0 (Disarm)
         await self._send_vehicle_command(400, param1=0.0)
         with self._telemetry_lock:
@@ -447,21 +517,53 @@ class WebGcsNode(Node):
     async def _handle_api_takeoff(self, request):
         data = await request.json() if request.can_read_body else {}
         alt = float(data.get("altitude", 10.0))
+        if self._airsim:
+            try:
+                with self._airsim_lock:
+                    self._airsim.enableApiControl(True)
+                    self._airsim.armDisarm(True)
+                    self._airsim.takeoffAsync()
+            except Exception as e:
+                self.get_logger().warn(f"AirSim takeoff error: {e}")
         # MAV_CMD_NAV_TAKEOFF = 22, param7 = altitude
         await self._send_vehicle_command(22, param7=alt)
         return web.json_response({"success": True, "action": "takeoff", "altitude": alt})
 
     async def _handle_api_land(self, request):
+        if self._airsim:
+            try:
+                with self._airsim_lock:
+                    self._airsim.cancelLastTask()
+                    state = self._airsim.getMultirotorState()
+                    px = state.kinematics_estimated.position.x_val
+                    py = state.kinematics_estimated.position.y_val
+                    self._airsim.moveToPositionAsync(float(px), float(py), float(self._ground_z), 2.0)
+            except Exception as e:
+                self.get_logger().warn(f"AirSim land error: {e}")
         # MAV_CMD_NAV_LAND = 21
         await self._send_vehicle_command(21)
         return web.json_response({"success": True, "action": "land"})
 
     async def _handle_api_rth(self, request):
+        if self._airsim:
+            try:
+                with self._airsim_lock:
+                    self._airsim.cancelLastTask()
+                    self._airsim.moveToPositionAsync(0.0, 0.0, self._ground_z - 3.0, 3.0)
+            except Exception as e:
+                self.get_logger().warn(f"AirSim RTH error: {e}")
         # MAV_CMD_NAV_RETURN_TO_LAUNCH = 20
         await self._send_vehicle_command(20)
         return web.json_response({"success": True, "action": "rth"})
 
     async def _handle_api_hold(self, request):
+        if self._airsim:
+            try:
+                with self._airsim_lock:
+                    self._airsim.cancelLastTask()
+                    self._airsim.hoverAsync()
+            except Exception as e:
+                pass
         # Switch to Standby hover hold in autonomy node
         with self._telemetry_lock:
             self._state["active_algorithm"] = ""

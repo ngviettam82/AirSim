@@ -91,7 +91,8 @@ public:
                 result.successful = true;
                 for (const auto& param : parameters) {
                     if (param.get_name() == "algorithm" && param.get_type() == rclcpp::ParameterType::PARAMETER_STRING) {
-                        setAlgorithm(param.as_string());
+                        std::lock_guard<std::mutex> lock(sensor_mutex_);
+                        pending_algorithm_ = param.as_string();
                     }
                 }
                 return result;
@@ -125,6 +126,19 @@ public:
 
     void updateSetpoint(float dt) override
     {
+        // 0. Process any pending dynamic algorithm switch
+        std::string next_algo;
+        {
+            std::lock_guard<std::mutex> lock(sensor_mutex_);
+            if (!pending_algorithm_.empty()) {
+                next_algo = std::move(pending_algorithm_);
+                pending_algorithm_.clear();
+            }
+        }
+        if (!next_algo.empty()) {
+            setAlgorithm(next_algo);
+        }
+
         // 1. Populate current sensor snapshot
         SensorSnapshot snapshot;
         snapshot.dt = dt;
@@ -425,6 +439,7 @@ private:
     Eigen::Vector3f latest_target_pos_{Eigen::Vector3f::Zero()};
     rclcpp::Time latest_depth_time_{0, 0, RCL_ROS_TIME};
     rclcpp::Time latest_target_time_{0, 0, RCL_ROS_TIME};
+    std::string pending_algorithm_;
 };
 
 } // namespace px4_airsim_autonomy

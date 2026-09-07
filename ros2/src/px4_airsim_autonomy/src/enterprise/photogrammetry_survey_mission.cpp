@@ -19,11 +19,11 @@ PhotogrammetrySurveyMission::PhotogrammetrySurveyMission()
 
 void PhotogrammetrySurveyMission::init(rclcpp::Node& node)
 {
-    target_altitude_agl_ = node.declare_parameter<double>("survey.altitude", 30.0);
-    forward_overlap_ = node.declare_parameter<double>("survey.forward_overlap", 0.75);
-    side_overlap_ = node.declare_parameter<double>("survey.side_overlap", 0.65);
-    survey_speed_m_s_ = node.declare_parameter<double>("survey.speed", 4.0);
-    acceptance_radius_ = node.declare_parameter<double>("survey.acceptance_radius", 2.5);
+    target_altitude_agl_ = node.has_parameter("survey.altitude") ? node.get_parameter("survey.altitude").as_double() : node.declare_parameter<double>("survey.altitude", 30.0);
+    forward_overlap_ = node.has_parameter("survey.forward_overlap") ? node.get_parameter("survey.forward_overlap").as_double() : node.declare_parameter<double>("survey.forward_overlap", 0.75);
+    side_overlap_ = node.has_parameter("survey.side_overlap") ? node.get_parameter("survey.side_overlap").as_double() : node.declare_parameter<double>("survey.side_overlap", 0.65);
+    survey_speed_m_s_ = node.has_parameter("survey.speed") ? node.get_parameter("survey.speed").as_double() : node.declare_parameter<double>("survey.speed", 4.0);
+    acceptance_radius_ = node.has_parameter("survey.acceptance_radius") ? node.get_parameter("survey.acceptance_radius").as_double() : node.declare_parameter<double>("survey.acceptance_radius", 2.5);
 
     // Compute optical parameters using production PhotogrammetryCalc
     production::SurveyParameters survey_params;
