@@ -83,44 +83,25 @@ Here is how you would do so:
 
 **Note** This script also assumes PX4 is built with `make px4_sitl_default none_iris` as shown [here](px4_sitl.md#setting-up-px4-software-in-loop) before trying to run multiple PX4 instances.
 
-1. From your bash (or Cygwin) terminal go to the PX4 directory and get the scripts (place them in a subdirectory called Scripts win the PX4 directory as shown)
+1. In the AirSim repository under `PX4Scripts/`, use `run_px4_sitl.sh` and `sitl_kill.sh`:
+    ```bash
+    chmod +x PX4Scripts/sitl_kill.sh PX4Scripts/run_px4_sitl.sh
     ```
-    cd PX4
-    mkdir -p Scripts
-    cd Scripts
-    wget https://github.com/ngviettam82/Airsim/raw/main/PX4Scripts/sitl_kill.sh
-    wget https://github.com/ngviettam82/Airsim/raw/main/PX4Scripts/run_airsim_sitl.sh
-    ```
-    **Note** the shell scripts expect the `Scripts` and `Firmware` directories to be within the same parent directory. Also, you may need to make the scripts executable by running `chmod +x sitl_kill.sh` and `chmod +x run_airsim_sitl.sh`.
-2. Run the `sitl_kill.sh` script to kill all active PX4 SITL instances 
-    ```
-    ./sitl_kill.sh
+2. Run the `sitl_kill.sh` script to cleanly stop any active PX4 SITL instances and clear locks:
+    ```bash
+    ./PX4Scripts/sitl_kill.sh
     ```
     
-3. Run the `run_airsim_sitl.sh` script while specifying which instance you would like to run in the current terminal window (the first instance would be numbered 0)
-    ```
-    ./run_airsim_sitl.sh 0 # first instance = 0
+3. Run the `run_px4_sitl.sh` script specifying the instance index (instance 0 connects to TCP 4560):
+    ```bash
+    ./PX4Scripts/run_px4_sitl.sh 0 # first instance = 0
     ```
     
-    You should see the PX4 instance starting and waiting for AirSim's connection as it would with a single instance.
-    ```
-    ______  __   __    ___
-    | ___ \ \ \ / /   /   |
-    | |_/ /  \ V /   / /| |
-    |  __/   /   \  / /_| |
-    | |     / /^\ \ \___  |
-    \_|     \/   \/     |_/
+    You will see the PX4 instance starting, auto-detecting the Windows host IP, and waiting for AirSim's TCP connection.
 
-    px4 starting.
-    INFO  [px4] Calling startup script: /bin/sh /cygdrive/c/PX4/home/PX4/Firmware/etc/init.d-posix/rcS 0
-    INFO  [dataman] Unknown restart, data manager file './dataman' size is 11798680 bytes
-    INFO  [simulator] Waiting for simulator to connect on TCP port 4560
-    ```
-4. Open a new terminal and go to the Scripts directory and start the next instance
-    ```
-    cd PX4
-    cd Scripts
-    ./run_airsim_sitl.sh 1  # ,2,3,4,..,etc
+4. Open another terminal and start the next instance:
+    ```bash
+    ./PX4Scripts/run_px4_sitl.sh 1  # connects to TCP 4561, MAVLink 14551, etc.
     ```
 
 5. Repeat step 4 for as many instances as you would like to start
