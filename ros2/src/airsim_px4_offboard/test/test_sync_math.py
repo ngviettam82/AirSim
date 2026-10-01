@@ -9,7 +9,6 @@ from airsim_px4_offboard.sync_math import (
     frd_to_flu,
     lerp_vector,
     matrix_multiply,
-    matrix_to_quaternion,
     ned_to_enu,
     ned_velocity_covariance_to_flu_body,
     ned_velocity_to_flu_body,

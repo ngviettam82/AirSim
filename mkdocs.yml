@@ -56,9 +56,7 @@ nav:
       - "Pulse Echo": 'echo.md'
       - "Infrared Camera": "InfraredCamera.md"
       - "Distance Sensor": 'distance_sensor.md'
-    - "ROS":
-      - "ROS: AirSim ROS Python Wrapper": "ros_python.md"
-      - "ROS2: AirSim ROS C++ Wrapper": "ros_cplusplus.md"
+    - "ROS 2": 'ros_cplusplus.md'
     - "Matlab": 'matlab.md'
     - "Playing Logs": 'playback.md'
     - "Voxel Grid Generator": "voxel_grid.md"

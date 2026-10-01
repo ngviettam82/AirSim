@@ -76,7 +76,7 @@ Notable inherited capabilities (docs in-tree):
 * [GPU LiDAR](gpulidar.md) (including Multirotor async path)
 * [Echo](echo.md), [skid steer](skid_steer_vehicle.md), [dynamic objects](dynamic_objects.md), [lights](lights.md)
 * [Camera host](camera_host.md), [multirotor physics](multirotor_physics.md)
-* [ROS Python](ros_python.md) / [ROS 2 C++](ros_cplusplus.md)
+* [ROS 2 C++](ros_cplusplus.md)
 
 ## Network note
 

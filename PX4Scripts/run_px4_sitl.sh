@@ -23,11 +23,19 @@ elif [ -d "$AIRSIM_ROOT/PX4-Autopilot" ]; then
     PX4_DIR="$AIRSIM_ROOT/PX4-Autopilot"
 elif [ -d "$HOME/PX4-Autopilot" ]; then
     PX4_DIR="$HOME/PX4-Autopilot"
-elif [ -d "/home/ubuntu/PX4-Autopilot" ]; then
-    PX4_DIR="/home/ubuntu/PX4-Autopilot"
 else
+    # Dynamically search user homes and system directories
+    for candidate in /home/*/PX4-Autopilot /opt/PX4-Autopilot /usr/local/PX4-Autopilot; do
+        if [ -d "$candidate" ]; then
+            PX4_DIR="$candidate"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PX4_DIR" ] || [ ! -d "$PX4_DIR" ]; then
     echo "[ERROR] PX4-Autopilot directory not found!"
-    echo "Checked: \$PX4_AUTOPILOT_DIR, $AIRSIM_ROOT/PX4-Autopilot, $HOME/PX4-Autopilot, /home/ubuntu/PX4-Autopilot"
+    echo "Checked: \$PX4_AUTOPILOT_DIR, $AIRSIM_ROOT/PX4-Autopilot, $HOME/PX4-Autopilot, /home/*/PX4-Autopilot, /opt/PX4-Autopilot"
     exit 1
 fi
 
