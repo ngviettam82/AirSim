@@ -1,0 +1,31 @@
+/**:
+  ros__parameters:
+    uav_id: uav0
+    odom_frame: odom
+    base_frame: base_link
+
+px4_state_adapter_node:
+  ros__parameters:
+    publish_rate_hz: 10.0
+    connection_timeout_sec: 2.0
+
+px4_command_gateway_node:
+  ros__parameters:
+    stream_rate_hz: 20.0        # PX4 needs 2 Hz minimum; margin is deliberate
+    command_timeout_sec: 0.5    # older than this and the gateway goes silent
+    ack_timeout_sec: 5.0
+
+offboard_session_manager_node:
+  ros__parameters:
+    priming_cycles: 10
+    min_stream_rate_hz: 2.0
+    engage_timeout_sec: 2.0
+    auto_engage: true
+
+px4_external_odometry_node:
+  ros__parameters:
+    external_odometry_topic: localization/vio_odometry
+    require_valid_localization: true
+    status_timeout_sec: 1.0
+    # 0 = forward every sample. Throttling to 10 Hz was measured to change nothing.
+    max_publish_rate_hz: 0.0

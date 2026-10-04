@@ -1,0 +1,45 @@
+# Non-image topics only; images go via ros_gz_image, pitfall 5/7.
+#
+# uav0_full with the two front sensors merged into one rgbd_camera (S10, 2026-08-26).
+# The merge exists because four rendering sensors landing on the SAME tick cost
+# super-additively: 0.0% of the window below 0.95x RTF with two, 0.9% with the other
+# two, 24.5% with all four. Dropping exactly one render pass took the tail to 0.0%.
+# Topic names below are unchanged from bridge_uav0_full.yaml on purpose: R7 says the
+# node layer must not be able to tell sim from real, so the merge has to be invisible
+# above the bridge.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/uav/uav0/localization/range_scan_raw"
+  gz_topic_name: "/uav0/lidar_down"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/uav/uav0/perception/down/camera_info"
+  gz_topic_name: "/uav0/camera_down/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# One camera_info now serves RGB and depth because they ARE one sensor here. The split
+# model already relied on that being true -- obstacle_extractor reads /front/camera_info
+# for depth intrinsics, justified in uav_perception/README section on the depth mount by
+# the two sensors being co-located with identical fov and size. Merging removes the
+# assumption instead of depending on it.
+- ros_topic_name: "/uav/uav0/perception/front/camera_info"
+  gz_topic_name: "/uav0/rgbd_front/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# No point cloud: it starved depth's bandwidth (README section 3). rgbd_camera publishes
+# one on <topic>/points and it stays unbridged for the same reason.
+- ros_topic_name: "/uav/uav0/localization/vio_odometry_raw"
+  gz_topic_name: "/model/uav0_full_rgbd_0/odometry"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS

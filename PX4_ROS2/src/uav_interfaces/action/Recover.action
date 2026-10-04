@@ -1,0 +1,20 @@
+# Prefers pilot handover over auto-land; see docs/interface-contract-v0.1.md.
+
+uint8 TYPE_UNKNOWN=0
+uint8 TYPE_HOLD=1
+uint8 TYPE_CLIMB_TO_SAFE_ALTITUDE=2
+uint8 TYPE_RETURN_HOME=3
+uint8 TYPE_LAND=4
+uint8 TYPE_HANDOVER_TO_PILOT=5
+
+uint8 recovery_type
+float32 safe_altitude               # m
+string trigger_reason
+---
+bool success
+uint8 result_code
+string message
+uint8 executed_type
+---
+uint8 current_stage
+string stage_description

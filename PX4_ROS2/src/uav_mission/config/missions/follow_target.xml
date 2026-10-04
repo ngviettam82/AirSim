@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!-- Body only (plan P9 S:1): MissionGuard wraps this SubTree in C++, never
+     a tag in this file. Single continuous reactive behaviour -- no discrete
+     waypoint progression, so mission_registry fixes total_steps=1 for this
+     mission (see mission_registry.hpp). Search points are a plain Sequence
+     of NavAction(GotoPose) -- "search" is composed from navigator's own
+     primitives, never a dedicated leaf (navigator has no Search action).
+     G-M4.4 (2026-08-23) identity anchor: track_target's target_id reads
+     {acquired_track_id} (TargetSeen's own output), NOT {target_id} (the
+     mission's -1 "any" filter) -- see README.md "5 lech co chu dich" for
+     the full rebind-on-reacquire rationale.
+     G-M4.4b (2026-08-23) search budget: SearchBudgetAvailable gates
+     search_when_lost on a PERSISTENT (across-TargetSeen-flicker) loss-
+     episode counter kept by MissionContext, not by any tag here -- once
+     exhausted it fails WITHOUT ever reaching search_point_1's NavAction, so
+     the recorded ABORTED_LOST_TARGET verdict (noteSearchBudgetExhausted())
+     survives to let mission_executor_node route to Recover(CLIMB) -> abort
+     (plan P9 S:2.5), instead of an endless track<->search loop that only
+     ever ends via the outer Timeout with the wrong result code.
+     bug #12 (2026-08-23) reacquire recheck: target_visible_recheck (khuon
+     inspect_point.xml's marker_visible_recheck) is the LAST child of
+     search_when_lost -- REACHING both search waypoints is navigation
+     success, NOT target-found; only a genuine TargetSeen SUCCESS here
+     counts as reacquisition (and rebinds {acquired_track_id} to whatever
+     id is ACTUALLY visible now, same rebind-on-reacquire semantics as
+     target_visible_check above). Flying both legs without ever seeing the
+     target ⇒ search_when_lost itself FAILS ⇒ tickBody() (mission_executor_
+     node.cpp) either retries (budget remains) or routes to Recover once
+     exhausted -- it NEVER lets "reached the waypoints" alone read as
+     mission SUCCESS. See README.md. -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <Timeout msec="{timeout_msec}">
+      <ReactiveFallback name="follow_or_search">
+        <Sequence name="track_when_seen">
+          <TargetSeen name="target_visible_check" target_id="{target_id}" track_id="{acquired_track_id}"/>
+          <NavAction name="track_target" nav_type="TrackTarget" target_id="{acquired_track_id}"
+                     standoff_distance="{standoff_m}" duration_seconds="0.0"
+                     target_lost_timeout="4.0"/>
+        </Sequence>
+        <Sequence name="search_when_lost">
+          <SearchBudgetAvailable name="search_budget_check"/>
+          <NavAction name="search_point_1" nav_type="GotoPose" x="{search_x1}" y="{search_y1}"
+                     z="{search_z}" frame_id="odom" acceptance_radius="0.5" max_speed="0.4"/>
+          <NavAction name="search_point_2" nav_type="GotoPose" x="{search_x2}" y="{search_y2}"
+                     z="{search_z}" frame_id="odom" acceptance_radius="0.5" max_speed="0.4"/>
+          <TargetSeen name="target_visible_recheck" target_id="{target_id}" track_id="{acquired_track_id}"/>
+        </Sequence>
+      </ReactiveFallback>
+    </Timeout>
+  </BehaviorTree>
+</root>

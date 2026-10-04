@@ -1,0 +1,6 @@
+uint8 mode                  # VehicleState FLIGHT_MODE_*
+---
+bool success
+uint8 result_code
+string message
+uint8 current_mode

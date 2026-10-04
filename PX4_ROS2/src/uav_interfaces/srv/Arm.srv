@@ -1,0 +1,5 @@
+# No force-arm option by design; see docs/interface-contract-v0.1.md.
+---
+bool success
+uint8 result_code
+string message

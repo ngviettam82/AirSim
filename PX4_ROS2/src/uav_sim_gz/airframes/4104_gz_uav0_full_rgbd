@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+# @name Gazebo uav0 full sensor suite, front pair merged into one rgbd camera
+#
+# @type Quadrotor
+#
+# S10 MEASUREMENT ONLY (2026-08-26). Exists to put a number on one question:
+# does collapsing four heavy render ticks into three move RTF? Not a shipping
+# configuration -- merging forces one clip range on both streams, so the marker
+# and obstacle gates would have to be re-run before this could ever fly.
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=uav0_full_rgbd}
+
+. ${R}etc/init.d-posix/airframes/4100_gz_uav0

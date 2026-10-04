@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <model name='sensor_depth_front'>
+    <pose>0 0 0 0 0 0</pose>
+    <self_collide>false</self_collide>
+    <static>false</static>
+    <link name="sensor_depth_front/base_link">
+      <inertial>
+        <!-- Mass counted in sensor_camera_front; see model-sources.md 2.3. -->
+        <mass>0.001</mass>
+        <inertia>
+          <ixx>0.0000001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0000001</iyy>
+          <iyz>0</iyz>
+          <izz>0.0000001</izz>
+        </inertia>
+      </inertial>
+      <sensor name="depth_front" type="depth_camera">
+        <topic>uav0/depth_front/image</topic>
+        <!-- Also publishes <topic>/points, not bridged; see README section 3. -->
+        <update_rate>15</update_rate>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>1.274</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R_FLOAT32</format>
+          </image>
+          <clip>
+            <!-- OakD-Lite stereo baseline's usable range; model-sources.md 2.3. -->
+            <near>0.2</near>
+            <far>19.1</far>
+          </clip>
+        </camera>
+      </sensor>
+    </link>
+  </model>
+</sdf>

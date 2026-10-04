@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Raises the Fast DDS shared-memory segment and the UDP socket buffers so that a
+     camera frame fits in one piece. Sim-only: the ros_gz image bridge does not exist
+     on the real aircraft.
+
+     WHY, measured 2026-08-24 (docs/package-status.md 4):
+     The ros_gz bridge delivers a fixed FRACTION of each image stream, and that
+     fraction collapses at a size boundary:
+
+         down  320x240 RGB8    230 400 B    97% delivered, 0 frames lost
+         depth 320x240 F32     307 200 B    97% delivered, 0 frames lost
+         down  640x480 RGB8    921 600 B    31-53%
+         depth 640x480 F32   1 228 800 B    25-30%
+
+     Every fastrtps segment in /dev/shm measured exactly 549 408 B -- the stock default.
+     Both delivered streams fit inside it; both starved streams do not. A sample that
+     does not fit falls back to UDP, fragments into 14-19 datagrams against a 208 KB
+     default socket buffer (net.core.rmem_default), and losing one fragment loses the
+     whole frame. That is the entire mechanism, and it is a TRANSPORT limit -- not a
+     sensor limit, not bandwidth, not the frame rate.
+
+     Consequence that made this urgent: front/depth_image feeds obstacle avoidance and
+     was delivering 4.8 of 15.6 Hz with a 1256 ms worst-case gap. Reducing its
+     resolution WOULD fix delivery but fails the obstacle accuracy gate (a 1.000x0.600 m
+     box measures 0.578x0.298 m). This file fixes the transport instead, so no sensor
+     is degraded at all.
+
+     🔴 DELIBERATELY NOT SHM-ONLY. config/fastdds_shm_only.xml is a measured dead end
+     that severed every /fmu/out/* topic: the PX4 agent links Fast DDS 2.12.2 and ROS
+     Humble links 2.6.11, and their SHM segment layouts do not interoperate while
+     RTPS-over-UDP does. Both transports are declared here on purpose so that pair can
+     still fall back to UDP. Any edit that removes udp_large repeats that failure.
+
+     Sizing: 16 MiB holds five 1.172 MiB depth frames (the SensorDataQoS KEEP_LAST
+     depth) plus both RGB streams' histories. /dev/shm has 12 GB and roughly 30 live
+     participants, so about 480 MB worst case. -->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>shm_large</transport_id>
+        <type>SHM</type>
+        <segment_size>16777216</segment_size>
+        <port_queue_capacity>4096</port_queue_capacity>
+      </transport_descriptor>
+
+      <transport_descriptor>
+        <transport_id>udp_large</transport_id>
+        <type>UDPv4</type>
+        <sendBufferSize>4194304</sendBufferSize>
+        <receiveBufferSize>4194304</receiveBufferSize>
+      </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="large_samples" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>shm_large</transport_id>
+          <transport_id>udp_large</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

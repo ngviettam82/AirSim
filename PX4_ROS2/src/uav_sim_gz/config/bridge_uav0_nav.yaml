@@ -1,0 +1,24 @@
+# Non-image topics only; images go via ros_gz_image, pitfall 5/7.
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/uav/uav0/localization/range_scan_raw"
+  gz_topic_name: "/uav0/lidar_down"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/uav/uav0/perception/down/camera_info"
+  gz_topic_name: "/uav0/camera_down/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/uav/uav0/localization/vio_odometry_raw"
+  gz_topic_name: "/model/uav0_nav_0/odometry"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "gz.msgs.Odometry"
+  direction: GZ_TO_ROS

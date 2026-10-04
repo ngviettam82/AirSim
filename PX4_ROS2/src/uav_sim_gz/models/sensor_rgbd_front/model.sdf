@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <!-- The two front sensors of uav0_full, collapsed into one render pass (S10,
+       2026-08-26). Four rendering sensors on the same tick cost super-additively:
+       24.5% of the window below 0.95x RTF with all four, 0.0% after dropping one.
+
+       WHAT THE MERGE COSTS, corrected 2026-08-26 after reading the consumers.
+       sensor_camera_front and sensor_depth_front carry DIFFERENT clip ranges on
+       purpose (RGB 0.1-100 m, depth 0.2-19.1 m, the OakD-Lite stereo baseline's
+       usable range, model-sources.md 2.3), and one rgbd sensor has ONE clip, so
+       the RGB stream loses everything past 19.1 m. An earlier note here said that
+       is where marker detection at distance lives. IT IS NOT: marker_detector_node
+       defaults to camera "down", which keeps far=100 and is untouched, and
+       obstacle_extractor_node reads front DEPTH, already clipped at 19.1 m. The one
+       consumer of front RGB pixels is object_detector_node, an OpenCV HOG
+       people-detector — and no world in this package contains a person. So the
+       range this merge gives up is range nothing in this simulation can use.
+
+       That is an argument about THIS simulation, not about the sensor: on real
+       hardware the RGB camera has no such clip, so any claim about long-range
+       front-camera perception measured here is pessimistic, not transferable. -->
+  <model name='sensor_rgbd_front'>
+    <pose>0 0 0 0 0 0</pose>
+    <self_collide>false</self_collide>
+    <static>false</static>
+    <link name="sensor_rgbd_front/base_link">
+      <inertial>
+        <!-- Same device as the pair it replaces; masses summed. -->
+        <mass>0.062</mass>
+        <inertia>
+          <ixx>0.000006</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000043</iyy>
+          <iyz>0</iyz>
+          <izz>0.000045</izz>
+        </inertia>
+      </inertial>
+      <visual name="sensor_rgbd_front/visual">
+        <geometry>
+          <mesh>
+            <uri>model://OakD-Lite/meshes/OakDLite.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <sensor name="rgbd_front" type="rgbd_camera">
+        <topic>uav0/rgbd_front</topic>
+        <update_rate>15</update_rate>
+        <always_on>1</always_on>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>1.274</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.2</near>
+            <far>19.1</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+        </camera>
+      </sensor>
+    </link>
+  </model>
+</sdf>

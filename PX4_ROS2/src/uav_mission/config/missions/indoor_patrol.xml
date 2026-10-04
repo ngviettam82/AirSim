@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Body only (plan P9 S:1): MissionGuard wraps this SubTree in C++, never
+     a tag in this file -- a text edit here cannot remove the safety wrapper.
+     Repeat's own count IS mission_registry's total_steps for this mission
+     (see mission_registry.hpp): each iteration visits one waypoint. -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <Repeat num_cycles="{loops}">
+      <Sequence name="patrol_leg">
+        <WaypointCursor name="next_waypoint" waypoints="{waypoints}" waypoint_out="{leg_target}"/>
+        <NavAction name="goto_waypoint" nav_type="GotoPose" target="{leg_target}"
+                   frame_id="odom" acceptance_radius="0.3" max_speed="0.55"/>
+        <Dwell name="dwell_at_waypoint" duration_sec="{dwell_sec}"/>
+      </Sequence>
+    </Repeat>
+  </BehaviorTree>
+</root>

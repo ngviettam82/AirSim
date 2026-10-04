@@ -1,0 +1,424 @@
+# Parameters for rosbag_manager_node (P10.2, plan .claude/plan/P10-observability.md S:2.1).
+# 4 parallel arrays (topics/types/qos_profiles/depths) MUST stay the same
+# length and topic-unique -- validate() refuses to start otherwise (R33).
+#
+# qos_profiles values: be | reliable | reliable_tl -- matches the ACTUAL
+# publisher QoS for reliable/reliable_tl entries (mandatory for the
+# reliable_tl ones: a volatile subscriber never sees a TransientLocal
+# publisher's latched sample). "be" is O1's stated default (zero
+# backpressure on the flight bus) for everything not explicitly named in
+# plan S:3.
+#
+# Q-P10-1 (docs/interface-contract-v0.1.md S:2.20 once P10.9 lands): the 4
+# /fmu/* entries below are a plain YAML string list -- data, not a px4_msgs
+# symbol. Gated by record_px4_topics (true in sim, real.launch.py flips it
+# per D-4).
+#
+# 42 topics -- plan S:3's "~30" was a rough prose estimate written before
+# this line-by-line enumeration; the delta is 4 /fmu/* + the full
+# localization/world/perception/diagnostics breakdown plan S:3 names by
+# group, not by count.
+#
+# G-O1 (P10.3, scripts/verify_observability.sh, 2026-08-23): kill -9 mid-
+# write x10/config on ROS_DOMAIN_ID 99. mcap (both none and file/zstd
+# compression) was 0/10 readable -- rosbag2_storage_mcap 0.15.16 refuses to
+# open a bag whose footer/summary was never written (no clean close, no
+# linear-scan fallback). sqlite3+none was 10/10 readable via `ros2 bag
+# reindex` (0/10 direct -- metadata.yaml is also only written on close),
+# median message loss 0, median tail loss 0.03s. Full table + raw CSV in
+# ~/gate_logs/go1_results.csv. R31: this covers PROCESS DEATH only, not
+# real power loss (OS page cache still flushes on kill -9).
+rosbag_manager_node:
+  ros__parameters:
+    uav_id: uav0
+    bag_root: "~/uav_bags"
+
+    storage_id: sqlite3             # G-O1 (P10.3) flipped from mcap, Q-P10-4: 10/10 readable
+    compression_mode: none          # none|file|message -- G-O1: file/zstd not retested on sqlite3
+    compression_format: none        # none|zstd (must be zstd when mode != none)
+
+    max_bagfile_size_bytes: 536870912      # 512 MiB (Q-P10-3)
+    max_bagfile_duration_sec: 300          # 300 s (Q-P10-3): power-loss blast radius = 1 open file
+    max_cache_size_bytes: 33554432         # 32 MiB (G-O1 chosen ceiling)
+    max_total_bytes: 8589934592.0          # 8 GiB (Q-P10-3)
+    min_free_bytes: 2147483648.0           # 2 GiB floor (Q-P10-3)
+    retention_period_sec: 10.0
+
+    write_error_limit: 50                  # consecutive, not lifetime
+    record_px4_topics: true                # real.launch.py: false until P11 review (D-4)
+
+    topics: [
+      # --- control (Q-P10-2: cmd_* stay BE; command_selected/authority need
+      #     exact QoS match to ever see anything) ---
+      "/uav/uav0/control/command_selected",
+      "/uav/uav0/control/authority",
+      "/uav/uav0/control/cmd_safety",
+      "/uav/uav0/control/cmd_operator",
+      "/uav/uav0/control/cmd_mission",
+      "/uav/uav0/control/cmd_test",
+      # --- state ---
+      "/uav/uav0/state/vehicle",
+      "/uav/uav0/state/health_px4",
+      "/uav/uav0/state/odometry_fused",
+      "/uav/uav0/state/odometry_raw",
+      "/uav/uav0/state/localization_status",
+      "/uav/uav0/state/estimator_source",
+      "/uav/uav0/state/camera_health",
+      "/uav/uav0/state/gnss_fix",
+      "/uav/uav0/state/gnss_origin",
+      # --- localization adapter (trimmed to the outdoor-GPS pair used by
+      #     the M5 default world; vio_odometry/flow_velocity are P11 debt,
+      #     see docs/package-status.md) ---
+      "/uav/uav0/localization/gps_odometry",
+      "/uav/uav0/localization/range",
+      # --- backend ---
+      "/uav/uav0/backend/offboard_status",
+      # --- planning ---
+      "/uav/uav0/planning/trajectory",
+      "/uav/uav0/planning/route",
+      "/uav/uav0/planning/avoidance",
+      # --- safety ---
+      "/uav/uav0/safety/state",
+      "/uav/uav0/safety/violations",
+      # --- mission ---
+      "/uav/uav0/mission/status",
+      "/uav/uav0/mission/events",
+      # --- world ---
+      "/uav/uav0/world/semantic_landmarks",
+      "/uav/uav0/world/obstacle_map_local",
+      "/uav/uav0/world/target_state",
+      "/uav/uav0/world/mission_reference",
+      # --- perception ---
+      "/uav/uav0/perception/markers",
+      "/uav/uav0/perception/target_track",
+      "/uav/uav0/perception/obstacles_local",
+      # --- diagnostics (VÀNG#3a: the evidence layer must observe its OWN
+      #     output too -- aggregated/observability/observability_events +
+      #     state/system_health were previously absent from the bag) ---
+      "/uav/uav0/diagnostics/localization",
+      "/uav/uav0/diagnostics/control_authority",
+      "/uav/uav0/diagnostics/safety",
+      "/uav/uav0/diagnostics/perception",
+      "/uav/uav0/diagnostics/aggregated",
+      "/uav/uav0/diagnostics/observability",
+      "/uav/uav0/diagnostics/observability_events",
+      "/uav/uav0/state/system_health",
+      # --- tf (global, never namespaced -- same exemption as /fmu/*) ---
+      "/tf",
+      "/tf_static",
+      # --- /fmu/* whitelist (Q-P10-1, gated by record_px4_topics) ---
+      "/fmu/out/vehicle_odometry",
+      "/fmu/out/vehicle_status",
+      "/fmu/in/trajectory_setpoint",
+      "/fmu/in/vehicle_command",
+    ]
+
+    types: [
+      "uav_interfaces/msg/ControlCommand",
+      "uav_interfaces/msg/ControlAuthority",
+      "uav_interfaces/msg/ControlCommand",
+      "uav_interfaces/msg/ControlCommand",
+      "uav_interfaces/msg/ControlCommand",
+      "uav_interfaces/msg/ControlCommand",
+      "uav_interfaces/msg/VehicleState",
+      "uav_interfaces/msg/VehicleHealth",
+      "nav_msgs/msg/Odometry",
+      "nav_msgs/msg/Odometry",
+      "uav_interfaces/msg/LocalizationStatus",
+      "std_msgs/msg/String",
+      "diagnostic_msgs/msg/DiagnosticStatus",
+      "sensor_msgs/msg/NavSatFix",
+      "sensor_msgs/msg/NavSatFix",
+      "nav_msgs/msg/Odometry",
+      "sensor_msgs/msg/Range",
+      "uav_interfaces/msg/OffboardStatus",
+      "uav_interfaces/msg/Trajectory3D",
+      "uav_interfaces/msg/Path3D",
+      "uav_interfaces/msg/AvoidanceAdvice",
+      "uav_interfaces/msg/SafetyState",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "uav_interfaces/msg/MissionStatus",
+      "uav_interfaces/msg/MissionEvent",
+      "uav_interfaces/msg/SemanticLandmarkArray",
+      "uav_interfaces/msg/ObstacleArray",
+      "uav_interfaces/msg/TargetState",
+      "geometry_msgs/msg/PoseStamped",
+      "uav_interfaces/msg/MarkerObservation",
+      "uav_interfaces/msg/TargetTrack",
+      "uav_interfaces/msg/ObstacleArray",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticStatus",
+      "tf2_msgs/msg/TFMessage",
+      "tf2_msgs/msg/TFMessage",
+      "px4_msgs/msg/VehicleOdometry",
+      "px4_msgs/msg/VehicleStatus",
+      "px4_msgs/msg/TrajectorySetpoint",
+      "px4_msgs/msg/VehicleCommand",
+    ]
+
+    qos_profiles: [
+      reliable, reliable_tl, be, be, be, be,
+      be, be, be, be, be, reliable_tl, be, be, reliable_tl,
+      be, be,
+      be,
+      reliable_tl, be, be,
+      reliable_tl, reliable,
+      reliable_tl, reliable,
+      be, be, be, reliable_tl,
+      be, be, be,
+      be, be, be, be,
+      reliable, reliable, reliable, reliable_tl,
+      reliable, reliable_tl,
+      be, be, be, be,
+    ]
+
+    depths: [
+      10, 1, 10, 10, 10, 10,
+      10, 10, 20, 20, 10, 1, 10, 10, 1,
+      10, 10,
+      10,
+      1, 1, 1,
+      1, 20,
+      1, 50,
+      10, 10, 10, 1,
+      10, 10, 10,
+      10, 10, 10, 10,
+      10, 10, 10, 1,
+      100, 1,
+      10, 10, 10, 10,
+    ]
+
+# Parameters for diagnostics_node (P10.4, plan .claude/plan/P10-observability.md
+# S:2.2). Two GenericSubscription cadence groups (always | flight_only, plan
+# S:6b hz survey) + 5 typed diagnostics/* sources (Sub B). Every group is 8 (or
+# 5) parallel arrays -- V-O2 refuses to start on a length mismatch.
+#
+# always_topics/types entries left "" are SENTINEL rows -- fed by a typed
+# subscription elsewhere instead of a second GenericSubscription to the same
+# topic. 3 are diagnostics/* cadence items double-fed by Sub B's typed
+# subscription (diagnostics_node.cpp: onDiagSourceMessage(), names also
+# present in diag_source_names below). The 4th is state/vehicle itself
+# (review lượt 2, N2): it used to have BOTH a GenericSubscription cadence
+# entry here AND a separate dedicated typed sub feeding armed_/connected_ --
+# two independent DDS readers that could see arrivals out of step with each
+# other. onVehicleState() now feeds cadence_board_ directly, same pattern as
+# the diagnostics/* trio, so there is exactly one reader.
+#
+# 🔴 hz/timeout in `always_*` are the MEASURED values from P10.0's parked
+# survey (plan S:6b) -- do not "round" them.
+#
+# `flight_only_expected_hz` UPDATED to real in-flight measurement, P10.7
+# (G-O2), scripts/verify_observability.sh round o2-hz, uav0_track + spawned
+# target_box, perception:=true, ~/gate_logs/o2_hz_survey.log:
+#   command_selected 20.0 -- CONFIRMED, not by ros2 topic hz (that tool
+#     averages across smoke_flight.py's inter-flight settle gap where
+#     target=None and nothing publishes, reading ~15Hz) but by the G-O2
+#     p99 latency probe's own p50 inter-arrival (~0.051s = 19.6Hz) taken
+#     ONLY across the active-streaming window -- the right measurement for
+#     a topic whose whole cadence model is phase-gated (plan S:6b finding).
+#   obstacle_map_local 10.0->9.9, target_state 10.0->9.9 (measured 9.97 both)
+#   obstacles_local 10.0->5.9 (measured 5.926 -- was a guess 2x too high)
+#   target_track 10.0->13.5 (measured 13.591 -- was a guess, real rate higher)
+#   detections 10.0->3.1 (measured 3.178 -- SURPRISE: object_detector_node's
+#     HOG people detector DOES fire in this arena/target_box scene, despite
+#     no person/actor model existing anywhere in this repo to spawn; most
+#     likely a false-positive rate off background clutter, not a stable
+#     pipeline cadence the way a health-monitor timer is -- revisit once
+#     P11 ships the real camera driver + a real detection target)
+# state/camera_health & diagnostics/perception UPDATED 1.0->0.8, P10.8b
+# (G-O3 Task A, sim.launch.py PERCEPTION_NODES finally wired to
+# camera_health_node): ros2 topic hz on uav0_full/uav_arena, both parked,
+# both cameras live -- average rate 0.877 on both topics (report_period_sec
+# default 1.0s is the TIMER period, not the delivered rate; report() does
+# real work -- 3-stream judge() + 2 publishes -- every tick, so measured
+# cadence runs a bit under the timer's nominal 1.0 Hz). Timeout stays 3.0s
+# (V-O1: 3.0 >= 2/0.8 = 2.5, still holds). ~/gate_logs/o3_camera_health_run.log.
+diagnostics_node:
+  ros__parameters:
+    uav_id: uav0
+    # P10.9b: gate_mode is now MEASURED off /state/vehicle (armed), not this
+    # param -- see docs/interface-contract-v0.1.md S:2.20. This override can
+    # only TIGHTEN the measured phase (force flight), never loosen it toward
+    # preflight -- auto|preflight are functionally identical (neither ever
+    # forces anything); only "flight" acts. Still settable via set_parameter
+    # at runtime for exactly that one direction.
+    gate_mode_override: auto        # auto|preflight|flight
+
+    report_period_sec: 0.05         # internal StalenessBoard re-evaluation tick (V-O3 bound)
+    publish_period_sec: 1.0         # /diagnostics/aggregated + /state/system_health cadence
+    sub_b_stale_after_sec: 3.0      # R32: a gộp source older than this reads as UNKNOWN
+    # C2: sim.launch.py wires these to its OWN `perception`/`blackbox` flags
+    # (same 2 flags that decide whether camera_health_node/rosbag_manager_node
+    # even exist in this bringup) -- values here are just this yaml's
+    # standalone default, real bringup always overrides them at launch time.
+    perception_enabled: false
+    blackbox_enabled: true
+
+    always_names: [
+      "state/odometry_fused", "state/odometry_raw", "state/vehicle", "state/health_px4",
+      "state/localization_status", "backend/offboard_status", "control/authority",
+      "safety/state", "world/semantic_landmarks", "state/localization_health",
+      "diagnostics/localization", "diagnostics/control_authority", "diagnostics/safety",
+    ]
+    always_topics: [
+      "state/odometry_fused", "state/odometry_raw", "", "state/health_px4",
+      "state/localization_status", "backend/offboard_status", "control/authority",
+      "safety/state", "world/semantic_landmarks", "state/localization_health",
+      "", "", "",
+    ]
+    always_types: [
+      "nav_msgs/msg/Odometry", "nav_msgs/msg/Odometry", "",
+      "uav_interfaces/msg/VehicleHealth", "uav_interfaces/msg/LocalizationStatus",
+      "uav_interfaces/msg/OffboardStatus", "uav_interfaces/msg/ControlAuthority",
+      "uav_interfaces/msg/SafetyState", "uav_interfaces/msg/SemanticLandmarkArray",
+      "diagnostic_msgs/msg/DiagnosticStatus",
+      "", "", "",
+    ]
+    always_qos: [
+      be, be, be, be,
+      be, be, reliable_tl,
+      reliable_tl, be, be,
+      be, be, be,
+    ]
+    always_depths: [
+      20, 20, 10, 10,
+      10, 10, 1,
+      1, 10, 10,
+      1, 1, 1,
+    ]
+    # odometry_fused·odometry_raw·vehicle·health_px4·localization_status·
+    # offboard_status·authority·safety/state·semantic_landmarks·
+    # localization_health·diagnostics/{localization,control_authority,safety}
+    always_expected_hz: [
+      10.0, 100.0, 10.0, 10.0,
+      10.0, 5.0, 2.0,
+      5.0, 10.0, 1.0,
+      1.0, 1.0, 1.0,
+    ]
+    always_timeout_sec: [
+      0.5, 0.2, 0.3, 0.3,
+      0.5, 0.6, 1.5,
+      1.0, 0.5, 3.0,
+      3.0, 3.0, 3.0,
+    ]
+    always_level_when_missing: [
+      error, warn, error, error,
+      error, error, error,
+      error, warn, warn,
+      error, error, error,
+    ]
+    # C2: world/semantic_landmarks is the only "always" item that CAN
+    # legitimately have no publisher (perception:=false) -- everything else
+    # here is a core subsystem always expected to flow.
+    always_owner: [
+      "", "", "", "",
+      "", "", "",
+      "", "perception", "",
+      "", "", "",
+    ]
+
+    flight_only_names: [
+      "control/command_selected", "world/obstacle_map_local", "world/target_state",
+      "perception/obstacles_local", "perception/target_track", "perception/detections",
+      "state/camera_health", "diagnostics/perception",
+    ]
+    flight_only_topics: [
+      "control/command_selected", "world/obstacle_map_local", "world/target_state",
+      "perception/obstacles_local", "perception/target_track", "perception/detections",
+      "state/camera_health", "",
+    ]
+    flight_only_types: [
+      "uav_interfaces/msg/ControlCommand", "uav_interfaces/msg/ObstacleArray",
+      "uav_interfaces/msg/TargetState", "uav_interfaces/msg/ObstacleArray",
+      "uav_interfaces/msg/TargetTrack", "vision_msgs/msg/Detection2DArray",
+      "diagnostic_msgs/msg/DiagnosticStatus", "",
+    ]
+    flight_only_qos: [
+      reliable, be, be,
+      be, be, be,
+      be, be,
+    ]
+    flight_only_depths: [
+      10, 10, 10,
+      10, 10, 10,
+      10, 1,
+    ]
+    flight_only_expected_hz: [
+      20.0, 9.9, 9.9,
+      5.9, 13.5, 3.1,
+      0.8, 0.8,
+    ]
+    flight_only_timeout_sec: [
+      0.5, 0.5, 0.5,
+      1.0, 1.0, 1.0,
+      3.0, 3.0,
+    ]
+    flight_only_level_when_missing: [
+      error, warn, warn,
+      warn, warn, warn,
+      warn, error,
+    ]
+    # C2: command_selected/world/perception items are ALL flight-phase-gated
+    # by gate_mode already (S:6b's tense-predicate finding) -- only the
+    # perception/* + world/* + camera_health items are ALSO gated by
+    # perception_enabled_ (they have NO publisher at all when perception is
+    # off, regardless of flight phase). diagnostics/perception is the Sub-A
+    # cadence half of the SAME source Sub-B watches below.
+    flight_only_owner: [
+      "", "perception", "perception",
+      "perception", "perception", "perception",
+      "perception", "perception",
+    ]
+
+    # VÀNG#3: 6th source added -- diagnostics/observability_events
+    # (event_logger_node's own self-diagnostics) previously had NO consumer
+    # anywhere, so a failed JSONL file open was invisible outside its own
+    # unwatched topic. Both blackbox-owned sources NEVER gate go/no-go (O1).
+    diag_source_names: [
+      "diagnostics/localization", "diagnostics/perception", "diagnostics/control_authority",
+      "diagnostics/safety", "diagnostics/observability", "diagnostics/observability_events",
+    ]
+    diag_source_topics: [
+      "diagnostics/localization", "diagnostics/perception", "diagnostics/control_authority",
+      "diagnostics/safety", "diagnostics/observability", "diagnostics/observability_events",
+    ]
+    diag_source_types: [
+      "diagnostic_msgs/msg/DiagnosticArray", "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray", "diagnostic_msgs/msg/DiagnosticArray",
+      "diagnostic_msgs/msg/DiagnosticArray", "diagnostic_msgs/msg/DiagnosticArray",
+    ]
+    diag_source_qos: [be, be, be, be, be, be]
+    diag_source_depths: [10, 10, 10, 10, 10, 10]
+    diag_source_owner: ["", "perception", "", "", "blackbox", "blackbox"]
+    # P10.9b (design panel NW2, docs/interface-contract-v0.1.md S:2.20):
+    # action_aware=true ONLY for diagnostics/safety -- it is the only source
+    # whose per-child DiagnosticStatus carries a KeyValue "action"
+    # (safety_supervisor_node.cpp's describeAction()); NW2's fail-closed
+    # rule ("action missing/unresolved on an ERROR child -> always counted")
+    # would be the WRONG default on any source that never publishes "action"
+    # in the first place (every ERROR child there would spuriously become
+    # never-waivable). summary_child is the bare rollup-child NAME, "" for
+    # every source except safety -- G8: `overall_level` is PROVEN (failsafe_
+    # policy.cpp's std::max() over VIOLATING codes only) to be a subset of
+    # the per-code children already counted individually; that proof has
+    # NOT been done for the other 5 sources' own summary-shaped children
+    # (e.g. camera_health_node's "perception: cameras"), so they stay
+    # ordinary counted children -- conservative (never less safe), not a
+    # blanket assumption.
+    diag_source_action_aware: [false, false, false, true, false, false]
+    diag_source_summary_child: ["", "", "", "safety", "", ""]
+
+# Parameters for event_logger_node (P10.5, plan .claude/plan/P10-observability.md
+# S:2.3). Typed sub on 10 fixed sources -> EventLedger -> one JSONL file per
+# boot at <log_root>/<uav_id>_<UTC>_events.jsonl. O2: file only, never a topic.
+event_logger_node:
+  ros__parameters:
+    uav_id: uav0
+    log_root: "~/uav_events"
+    fsync_period_sec: 2.0           # ERROR-level lines fsync immediately regardless (EventLedger)

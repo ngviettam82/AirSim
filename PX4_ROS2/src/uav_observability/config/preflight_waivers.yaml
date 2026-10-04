@@ -1,0 +1,67 @@
+# P10.9b preflight waiver table (docs/interface-contract-v0.1.md S:2.20,
+# .claude/plan/P10-gonogo-design-panel.md S:4). sim.launch.py and (once it
+# exists, P11) real.launch.py load THIS SAME FILE (R7) -- there is no
+# per-environment waiver table.
+#
+# Exactly TWO `when` values are legal: "preflight" (effective_phase ==
+# PREFLIGHT only) and "perception_off" (perception_enabled_ == false only,
+# independent of phase). Adding a third value is a CONTRACT CHANGE, not a
+# config edit.
+#
+# Every row here is a decision equal in weight to a contract edit and MUST
+# be signed off by the project owner (docs/interface-contract-v0.1.md
+# S:2.20's "THÊM — bảng miễn-trừ"). All 5 rows below came from
+# preflight_baseline_capture.py's D0 run (2 configs x 60s, parked/healthy
+# `uav0_nav`/`uav0_full` on `uav_arena`, 2026-08-24 --
+# gate_logs/p10_9b_baseline_perception_{false,true}.jsonl), cross-checked
+# against the exact eval*() function in uav_safety/src/failsafe_policy.cpp
+# that produced each reading (cited per row below). D0's candidate table
+# also surfaced 3 rows on source "diagnostics/perception" (camera_health_
+# node's own "camera: front/rgb"|"front/depth"|"down/rgb" -- ERROR/WARN
+# "losing frames", nợ #10 camera bridge frame drop) -- DELIBERATELY left
+# OUT: those are the exact signal o4-gate's (c) sub-round requires to stay
+# visible (perception:=true correctly reads NO_GO until nợ #10 is fixed;
+# waiving them would be exactly the "cấm nới cổng" this design forbids).
+# Every other candidate D0 could have found was left out too (fail-loud is
+# the safe default) -- D0 did not surface any beyond the 8 above.
+#
+# A row can NEVER grant an exemption to a NEVER-WAIVABLE child (G1/G2:
+# action in {hold,inhibit,would_hold,would_inhibit} at level ERROR, or an
+# action_aware source with a missing/unresolved "action" at level ERROR) --
+# those are always counted regardless of what is loaded here. A row also
+# cannot target a source's summary/rollup child (G8) -- the node refuses to
+# start if one does. NONE of the 5 rows below are at risk of that: 4 are
+# WARN-level cannot-measure (well under NW1's level==ERROR gate) and the
+# 1 ERROR-level row (OFFBOARD_UNHEALTHY) has action="report", never
+# "hold"/"inhibit" (uav_safety/src/failsafe_policy.cpp's
+# violationCodeAction() -- confirmed by direct read, not assumed).
+diagnostics_node:
+  ros__parameters:
+    waiver_source: [
+      "diagnostics/safety",
+      "diagnostics/safety",
+      "diagnostics/safety",
+      "diagnostics/safety",
+      "diagnostics/safety",
+    ]
+    waiver_child: [
+      "safety: OFFBOARD_UNHEALTHY",
+      "safety: BLIND_COMMAND",
+      "safety: planning/trajectory plan_state",
+      "safety: CAMERA_STREAM_UNHEALTHY",
+      "safety: OBSTACLE_TOO_CLOSE",
+    ]
+    waiver_when: [
+      "preflight",
+      "preflight",
+      "preflight",
+      "perception_off",
+      "perception_off",
+    ]
+    waiver_reason: [
+      "evalOffboardUnhealthy(): parked/disarmed, no goal ever dispatched, so offboard_session_manager_node has not started streaming OffboardControlMode -- rate reads below floor AND command_selected is stale (D0: level=ERROR, action=report, msg=\"offboard STATE_FAULT/rate low AND command_selected stale\", 117 observations spanning both 60s configs, perception:=false AND :=true). action=report (NOT hold/inhibit -- never seizes control either way) -- B5-P8 gates the 4 LATCHING codes on armed&&OFFBOARD so this being unhealthy while parked was never able to latch anything regardless.",
+      "evalBlindCommand(): the setpoint-displacement measurement window only fills once commands are actually flowing (armed+offboard) -- parked means it never fills, so this is a permanent, harmless cannot-measure while disarmed, not a real fault (D0: level=WARN, action=inhibit, msg=\"setpoint displacement window not yet measurable\", 117 observations spanning both configs). action=inhibit but level=WARN (cannot-measure, not violating) so NW1 (level==ERROR gate) never applies to this row -- see uav_safety/src/failsafe_policy.cpp:334-354.",
+      "safety_supervisor_node.cpp's own trajectory-visibility status (not a ViolationCode, no action key) -- parked means no navigator goal was ever dispatched, so there is no trajectory to report on (D0: level=WARN, msg=\"NO_GOAL: no goal yet\", 117 observations spanning both configs). Purely descriptive, never drives a failsafe action.",
+      "evalCameraStreamUnhealthy(): camera_health_node only exists/publishes when perception:=true -- with perception off this reads cannot-measure forever (D0 perception:=false: level=WARN, action=report, msg=\"camera health not received\", 60/60 samples). D0 perception:=true ALSO shows this code non-OK (57 samples) but the message CHANGES to \"camera stream reported unhealthy\" -- that is the REAL nợ #10 frame-drop fault (camera_health_node's own diagnostics/perception source shows the same thing: \"camera: front/rgb\"|\"front/depth\"|\"down/rgb\" ERROR/WARN \"losing frames\"), a DIFFERENT mechanism from cannot-measure. This waiver's when=perception_off only matches perception_enabled_==false, so it correctly does NOT fire once perception:=true -- the real nợ #10 signal stays fully counted and blocking (o4-gate (c) still reads NO_GO on purpose). See uav_safety/src/failsafe_policy.cpp:551-569.",
+      "evalObstacleTooClose(): obstacle_min_distance_m comes from world_model_node's obstacle map, which only exists when perception:=true -- with perception off this reads NaN=cannot-measure forever (D0 perception:=false: level=WARN, action=hold, msg=\"obstacle_min_distance_m unavailable\", 60/60 samples, all within the perception:=false window). CONFIRMED gone once perception:=true: 0 occurrences in the perception:=true capture (obstacle_min_distance_m became genuinely measurable). action=hold but level=WARN (cannot-measure) so NW1 never applies -- see uav_safety/src/failsafe_policy.cpp:450-468.",
+    ]

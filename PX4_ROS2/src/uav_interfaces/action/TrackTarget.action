@@ -1,0 +1,15 @@
+# Target loss starts a timeout, not an immediate abort.
+
+int32 target_id
+float32 standoff_distance           # m
+float32 duration_seconds            # 0 = track until canceled
+float32 target_lost_timeout         # s
+---
+bool success
+uint8 result_code
+string message
+float32 tracked_seconds
+---
+bool target_visible
+float32 distance_to_target          # m
+float32 target_lost_seconds

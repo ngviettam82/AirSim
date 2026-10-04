@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# @name Gazebo uav0 indoor, no GPS fix
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=uav0_nav_indoor}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=uav_arena_indoor}
+
+. ${R}etc/init.d-posix/airframes/4100_gz_uav0
+
+# Indoors the receiver still runs, it just never reaches four satellites. Faking
+# that is more honest than switching the module off, because the estimator then
+# has to reject a sensor that is present and reporting itself unusable.
+param set-default SIM_GPS_USED 0
+
+# The receiver stays powered but the estimator must stop waiting on it, or the
+# arming check keeps refusing on "GPS fix too low" no matter how good vision is.
+param set-default EKF2_GPS_CTRL 0
+
+# Height comes from vision, fed by px4_external_odometry_node.
+param set-default EKF2_HGT_REF 3
+
+# And from vision only. The barometer is still running (measured: cs_baro_hgt was
+# true), and its pressure altitude sits at a different zero than the vision frame,
+# so fusing both makes the height innovation fail and arming is refused. Indoors
+# a barometer is worth little anyway: doors and ventilation move the pressure.
+param set-default EKF2_BARO_CTRL 0
+
+# No compass indoors. PX4's simulated magnetometer only publishes once a global
+# position exists, so without a GPS fix there is no compass at all and preflight
+# refuses to arm. Declaring its absence is also the honest indoor setup: magnetic
+# fields inside buildings are unusable, and yaw comes from vision instead
+# (EKF2_EV_CTRL keeps yaw fusion on by default).
+param set-default SYS_HAS_MAG 0

@@ -1,0 +1,8 @@
+# R1/R25 declared exceptions -- checked by scripts/check_px4_msgs_boundary.sh
+# Format: <repo-relative path><TAB or spaces># <why this file may cross>
+#
+# Every line here is one more place to fix when PX4 changes its API. That is the
+# cost R1 exists to avoid, so a line is added only when the file's whole purpose
+# is to test PX4 itself, below our stack -- never for convenience.
+
+scripts/ga0_try_arm.py  # G-A0 probe: proves PX4 under AirSim HIL arms, deliberately BELOW our stack. Going through uav_px4_backend's Arm service would test our code, not PX4's -- the opposite of what the gate claims. Same class as R25's CLI carve-out. AirSim branch parked since 2026-08-20; rewriting it blind would replace evidence-producing code with unverified code (R14).

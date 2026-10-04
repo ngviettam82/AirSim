@@ -1,0 +1,70 @@
+# Parameters for mission_executor_node (P9.4): MissionPolicyParams and
+# MissionRegistryParams, one-to-one. Every "*_copy" field below is a
+# HAND-KEPT COPY of a threshold that truly lives in another package's
+# parameter server (uav_navigation, uav_control_authority, uav_px4_backend)
+# -- this package cannot see it directly (same reason uav_safety's
+# safety_params.yaml carries its own copies). validate() refuses to start
+# if any pairing rule below is broken; this file must be kept in sync BY
+# HAND whenever the real source value changes.
+
+mission_executor_node:
+  ros__parameters:
+    uav_id: uav0
+
+    # --- mission_policy: Priority 2, control authority ---
+    authority_heartbeat_copy_sec: 0.5     # COPY: ControlAuthority publish period (2 Hz, P7)
+    authority_loss_grace_sec: 1.5         # plan P9 S:2 dwell; >= 2 x heartbeat_copy AND >= 1.5
+
+    # --- mission_policy: Priority 3, battery (Q-P9-2, chu du an ky 2026-08-22) ---
+    battery_warn_threshold: 0.35
+    battery_min_start_threshold: 0.40     # isBatteryOkToStart() gate at goal acceptance
+    battery_warn_dwell_sec: 3.0           # R29 grace
+    battery_unknown_timeout_sec: 30.0
+    battery_health_period_copy_sec: 0.1   # COPY: px4_state_adapter_node publish_rate_hz (10 Hz)
+
+    # --- mission_policy: Priority 4, pause ---
+    paused_timeout_sec: 180.0             # plan P9 S:2
+
+    # --- mission_policy: Priority 5, step failure / Q-P9-1 land-vs-hold ---
+    localization_status_timeout_copy_sec: 1.0   # COPY: failsafe_policy's status_timeout_sec
+    max_step_retries: 2                   # plan P9 S:2 "retry backoff 3s x2"
+    retry_backoff_sec: 3.0
+
+    # --- mission_policy: cross-package step timeout budget (plan P9 S:3.4) ---
+    navigator_goto_timeout_copy_sec: 240.0   # COPY: navigator_action_server_node goto_timeout_sec
+    step_timeout_sec: 300.0               # >= 1.2 x navigator_goto_timeout_copy_sec
+
+    # --- mission_registry: shared *_copy bounds for mission_params validation ---
+    min_alt_copy_m: 0.5                   # COPY: navigator_action_server_node min_altitude_m
+    max_alt_copy_m: 8.0                   # mission's OWN tighter indoor ceiling, NOT a literal copy
+    goto_reach_copy_m: 40.0               # mission's own conservative per-leg cap
+    navigator_max_speed_copy_mps: 0.55    # COPY: navigator_action_server_node max_speed
+    target_speed_max_mps: 0.275           # = 0.5 x navigator_max_speed_copy_mps (plan P9 S:3)
+    max_loops: 1000                       # administrative sanity ceiling, not a safety bound
+
+    # --- 🟡-4 (2026-08-23): added, previously only had a C++ default ---
+    # B2/Y11 R32 age-gates -- COPY: uav_world_model's publish_rate_hz (10 Hz,
+    # world_model_params.yaml) / uav_localization's localization_mux_node
+    # publish_rate_hz default (10 Hz).
+    world_model_publish_period_copy_sec: 0.1
+    odometry_publish_period_copy_sec: 0.1
+    # G-M4.4b: follow_target's self-issued search points, home +/- this
+    # along X (mission's own choice, not a literal copy of anything).
+    search_offset_m: 2.0
+    # G-M4.4b/bug#12: loss-episode search budget, plan P9 S:2.5 "2 luot".
+    search_attempts_max: 2
+    track_progress_reset_sec: 10.0
+    # Y5: MUST stay <= max_alt_copy_m above (validated) -- Recover(CLIMB)
+    # must not fly through the indoor ceiling.
+    recover_climb_altitude_m: 7.5
+
+# Pairing rules enforced by MissionPolicy::validate() / MissionRegistry::validate()
+# -- refuse to start if any is violated:
+#   authority_loss_grace_sec >= 2 x authority_heartbeat_copy_sec, AND >= 1.5 s (contract floor)
+#   battery_min_start_threshold > battery_warn_threshold
+#   battery_warn_dwell_sec >= 2 x battery_health_period_copy_sec (R29)
+#   battery_unknown_timeout_sec >= 2 x battery_health_period_copy_sec (R29)
+#   step_timeout_sec >= 1.2 x navigator_goto_timeout_copy_sec
+#   max_step_retries in [1, 10]
+#   goto_reach_copy_m <= navigator_max_speed_copy_mps x navigator_goto_timeout_copy_sec
+#   target_speed_max_mps <= 0.5 x navigator_max_speed_copy_mps

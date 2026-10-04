@@ -1,0 +1,25 @@
+# Sim-only carve-outs for the large-samples Fast DDS profile.
+# Checked by scripts/check_dds_profile_sim_only.sh
+# Format: <repo-relative path><TAB or spaces># <why this file may reference it>
+#
+# The rule this enforces (project owner, 2026-08-25): the profile stays SIM-ONLY until
+# P11.3 measures it on the target hardware. Gate R0 cleared it over WSL loopback
+# against MicroXRCEAgent; a real aircraft's flight-controller link crosses a physical
+# interface, and useBuiltinTransports=false replaces the transport of every participant
+# that reads the profile -- that link included. Carrying a number across substrates is
+# exactly what R31 forbids.
+#
+# Adding a REAL-side line here is a flight-safety decision. It requires a P11.3 gate
+# result cited in the reason, not a plausible argument.
+
+src/uav_bringup/launch/sim.launch.py  # dds_profile_actions() puts the autonomy stack on the transport the gates measured it on; honours UAV_DDS_PROFILE=none so gate R0's control arm still runs stock. Sim-only by filename.
+scripts/start_sim.sh  # Sim bringup entry point: covers the agent, Gazebo and the ros_gz bridge (the writer of the large samples). Sim-only by filename.
+scripts/gate_r0_dds_profile.sh  # Gate R0 itself: it must be able to force the profile ON in one arm and OFF in the other, or the gate cannot be re-run.
+scripts/run_no10_closeout.sh  # Runs the two product gates + M5 under the profile -- the R14 evidence that closed debt #10.
+scripts/verify_no10_wiring.sh  # Proves the wiring works with NOTHING exported by hand; must name the env var in order to unset it.
+scripts/diagnose_ros2cli_under_profile.sh  # Refuted the "profile blinds the ros2 CLI" hypothesis by measurement (5/5 nodes at every spin time).
+scripts/run_dds_transport_trial.sh  # The original transport experiment that found the 549 408 B ceiling.
+scripts/measure_image_budget.sh  # Reports which transport is in force on every run, so pre-2026-08-24 numbers are never silently compared against post ones.
+scripts/check_dds_profile_sim_only.sh  # This check.
+scripts/selftest_check_dds_profile_sim_only.sh  # Positive control for this check.
+scripts/check_sim_real_parity.py  # Must name the env var in order to assert real.launch.py does NOT set it. Enforcing the rule requires stating it.

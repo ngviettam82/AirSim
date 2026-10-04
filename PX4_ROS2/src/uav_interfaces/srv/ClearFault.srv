@@ -1,0 +1,8 @@
+# Only clears faults whose cause is already gone.
+
+string fault_code               # empty clears every clearable fault
+---
+bool success
+uint8 result_code               # see ResultCode.msg
+string message
+string[] remaining_faults       # still active, could not be cleared

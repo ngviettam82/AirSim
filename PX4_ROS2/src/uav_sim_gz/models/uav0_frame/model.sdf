@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <model name='uav0_frame'>
+    <!-- Swap point: replace with hardware-team CAD when available. -->
+    <include merge='true'>
+      <uri>model://x500</uri>
+    </include>
+  </model>
+</sdf>

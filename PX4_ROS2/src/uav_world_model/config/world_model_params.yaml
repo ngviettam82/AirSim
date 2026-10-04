@@ -1,0 +1,57 @@
+world_model_node:
+  ros__parameters:
+    uav_id: uav0
+    odom_frame: odom
+    base_frame: base_link
+
+    publish_rate_hz: 10.0        # matches localization_mux_node
+    pose_history_sec: 3.0
+    max_pose_gap_sec: 0.25       # mux runs at 10 Hz; beyond this the pairing is a guess
+    max_future_stamp_sec: 1.0    # a stamp past this is a clock fault, not a pose
+
+    landmark_forget_sec: 120.0   # one odom drift correlation time
+    obstacle_forget_sec: 5.0     # measured image gaps reach 1.8 s
+    target_forget_sec: 10.0       # measured from the sighting, not from the message
+    # Held track must be silent this long before another may take over.
+    # Keep >= 2x the target_track publish period, else one late frame swaps target.
+    target_track_switch_after_sec: 1.0
+    obstacle_source_timeout_sec: 5.0
+
+    # P5.3: 0.036 m at 2.665 m slant range, 0.043 m at 3.665 m; rounded up.
+    marker_uncertainty_base_m: 0.0185
+    marker_uncertainty_per_metre: 0.007
+
+    # Guessed until P5.4 measures the depth extractor; node warns while false.
+    obstacle_uncertainty_base_m: 0.10
+    obstacle_uncertainty_per_metre: 0.02
+    obstacle_uncertainty_measured: false
+
+    # Guessed until P5.5 measures the tracker; node warns while false.
+    target_uncertainty_base_m: 0.10
+    target_uncertainty_per_metre: 0.02
+    target_uncertainty_measured: false
+
+    # Same drift the project injects into VIO; see localization_params.yaml.
+    odom_drift_sigma_m: 0.5
+    odom_drift_correlation_time_sec: 120.0
+
+    target_velocity_is_relative: true
+    publish_mission_reference: true
+    report_period_sec: 10.0
+
+    frames:
+      names: ["camera_down", "camera_front"]
+      camera_down:
+        frame_id: uav0/camera_down_optical
+        optical: true
+        # uav0_nav/uav0_full mount 0.06 0 -0.05, sensor adds 0 0 -0.015.
+        translation: [0.06, 0.0, -0.065]
+        # Pitch +90 deg turns the lens axis into body -Z.
+        rotation_rpy: [0.0, 1.5707963, 0.0]
+      camera_front:
+        frame_id: uav0/camera_front_optical
+        optical: true
+        # uav0_full/uav0_track mount .12 .03 .002; sensor adds no pose.
+        translation: [0.12, 0.03, 0.002]
+        # Lens already looks along body +X, unlike the down camera.
+        rotation_rpy: [0.0, 0.0, 0.0]

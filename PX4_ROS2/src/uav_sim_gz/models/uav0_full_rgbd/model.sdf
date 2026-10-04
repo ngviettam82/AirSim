@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <!-- uav0_full with the two front sensors merged into one rgbd_camera (S10,
+       2026-08-26). Four rendering sensors landing on the same tick cost
+       super-additively: 0.0% of the window below 0.95x RTF with two of them, 0.9%
+       with the other two, 24.5% with all four. Dropping exactly one render pass
+       took the tail to 0.0% and RTF mean to 1.000. Bridged to the SAME ROS names
+       as uav0_full: above the bridge nothing may tell the two apart (R7). -->
+  <model name='uav0_full_rgbd'>
+    <include merge='true'>
+      <uri>model://uav0_frame</uri>
+    </include>
+
+    <!-- relative_to base_link, not model origin; see README pitfall 4. -->
+    <include merge='true'>
+      <uri>model://sensor_lidar_down</uri>
+      <pose relative_to="base_link">0 0 -0.05 0 0 0</pose>
+    </include>
+    <joint name="LidarDownJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>sensor_lidar_down/base_link</child>
+    </joint>
+
+    <include merge='true'>
+      <uri>model://sensor_camera_down</uri>
+      <pose relative_to="base_link">0.06 0 -0.05 0 0 0</pose>
+    </include>
+    <joint name="CameraDownJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>sensor_camera_down/base_link</child>
+    </joint>
+
+    <!-- S10 measurement: the two front sensors collapsed into ONE render pass.
+         Four heavy ticks become three. See sensor_rgbd_front for what that costs. -->
+    <include merge='true'>
+      <uri>model://sensor_rgbd_front</uri>
+      <pose relative_to="base_link">.12 .03 .002 0 0 0</pose>
+    </include>
+    <joint name="RgbdFrontJoint" type="fixed">
+      <parent>base_link</parent>
+      <child>sensor_rgbd_front/base_link</child>
+    </joint>
+
+    <!-- Ground truth, not real VIO; see README section 6. -->
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <dimensions>3</dimensions>
+      <!-- Renamed: PX4 gz_bridge fuses /odometry_with_covariance as vision. -->
+      <odom_covariance_topic>/model/uav0_full_rgbd/odometry_cov_unused</odom_covariance_topic>
+    </plugin>
+  </model>
+</sdf>

@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>uav_mission</name>
+  <version>0.1.0</version>
+  <description>Highest-level autonomy: ExecuteMission action server, a Behavior Tree mission runner (BehaviorTree.CPP v3), and the 3-mission registry (indoor_patrol, follow_target, inspect_point). mission_policy/mission_registry are ROS-free libraries; mission_executor_node (P9.4) is the only rclcpp consumer.</description>
+  <maintainer email="ng.chi.nghi@gmail.com">PX4_ROS2 team</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- P9.2/P9.3 (mission_policy, mission_registry): ROS-free by design, only
+       yaml_cpp_vendor and tinyxml2_vendor are actually consumed by CMake. -->
+  <depend>yaml_cpp_vendor</depend>
+  <depend>tinyxml2_vendor</depend>
+
+  <!-- Y8/Y9 (2026-08-23): P9.4's mission_executor_ros DOES consume all 6
+       of these now; fixed a stale comment that used to say "NOT yet
+       consumed" from back when only the 2 ROS-free libraries above
+       existed. -->
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>uav_interfaces</depend>
+  <depend>behaviortree_cpp_v3</depend>
+  <depend>nav_msgs</depend>
+  <depend>diagnostic_msgs</depend>
+  <!-- P9.4: missions_dir default (share/uav_mission/config/missions).
+       session-notes.md P9.0 spike: the apt BT.CPP package needs this linked
+       explicitly, it is not pulled in transitively. -->
+  <depend>ament_index_cpp</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <!-- P9.4b only: test_mission_authority_chain.cpp runs the REAL
+       control_authority_manager_node in-process (uav_safety's
+       test_safety_cut_chain.cpp precedent). -->
+  <test_depend>uav_control_authority</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,51 @@
+# S3 classification -- every line in gate_logs/coverage/uncovered_by_file.txt must match
+# exactly one rule here. Format:  CATEGORY <TAB> path-suffix <TAB> lines <TAB> evidence
+#
+# CATEGORY is one of:
+#   B-FLIGHT   not reachable by ctest, but PROVEN by a named flight gate. Evidence must
+#              name the gate. This is the project's architecture, not an excuse: logic
+#              lives in ROS-free libs (unit-tested), the node layer is the wiring, and
+#              wiring is proven by flying it.
+#   B-ENTRY    process entry point (rclcpp init/spin/shutdown). Runs in every launch.
+#   B-DIAG     enum-to-string tables, default: arms, log-only lines. A wrong string
+#              cannot move the aircraft.
+#   A-TESTED   safety-relevant, and a test was written for it in this pass.
+#   D-BOUNDARY cannot be covered in simulation at all. Must cite a B-nn boundary entry
+#              and carries a signature line in docs/coverage-classification.md.
+#
+# "lines" is *  for the whole file, or a-b range, comma separated.
+
+# --- B-ENTRY: process entry points. Every launch-based gate runs these.
+B-ENTRY	_main.cpp	*	rclcpp init/spin/shutdown; runs in every launch of every flight gate (M5, G-N*, G-S*, G-M*, G-O*, S13)
+
+# --- D-BOUNDARY: cannot be exercised in simulation at all.
+D-BOUNDARY	uav_localization/src/optical_flow_adapter_node.cpp	*	B-03: PX4 v1.15.4 ships an EMPTY CMakeLists for the optical flow plugin, so no data source exists. Never flown, never testable here. Blocked on P11.
+
+# --- B-FLIGHT: the ROS wiring layer. Logic lives in the ROS-free libs (unit-tested);
+#     these files construct nodes, declare parameters and translate messages, and are
+#     proven by flying them. Each line names the gate that flies it.
+B-FLIGHT	uav_px4_backend/src/px4_command_gateway_node.cpp	*	M5 regression 3/3 (arm-takeoff-goto-land): every setpoint the aircraft ever received went through this node
+B-FLIGHT	uav_px4_backend/src/px4_state_adapter_node.cpp	*	M5 regression: the whole stack reads /state/odometry_raw and /state/health_px4 from this node
+B-FLIGHT	uav_px4_backend/src/offboard_session_manager_node.cpp	*	M5 regression: IDLE-STREAMING-ENGAGING-ACTIVE was observed on the wire before every flight
+B-FLIGHT	uav_px4_backend/src/px4_frame_bridge_node.cpp	*	M5 regression + the 2026-08-07 frame check that compared PX4 NED against ROS ENU in flight
+B-FLIGHT	uav_px4_backend/src/px4_external_odometry_node.cpp	*	indoor flights PASS 3/3 with no GPS and no compass: position and altitude both came through this node
+B-FLIGHT	uav_navigation/src/navigator_action_server_node.cpp	*	G-N1 8/8, G-N2 15/15, G-N4b, G-N5, G-N6: all seven actions flown end to end
+B-FLIGHT	uav_navigation/src/local_planner_node.cpp	*	S13 both arms flown 2026-08-26 (require_obstacle_feed false and true separate absolutely)
+B-FLIGHT	uav_navigation/src/route_planner_node.cpp	*	G-N6 cup fixture: the global route is what proved to break livelock
+B-FLIGHT	uav_mission/src/mission_executor_node.cpp	*	G-M0 through G-M4.4: all three missions flown end to end
+B-FLIGHT	uav_safety/src/safety_supervisor_node.cpp	*	G-S1 13 items, G-S2 4/4, G-S3, V1 boot-no-latch, S13
+B-FLIGHT	uav_control_authority/src/control_authority_manager_node.cpp	*	G-CA1, G-CA2, M5: single-writer of command_selected observed directly on a running system
+B-FLIGHT	uav_observability/src/rosbag_manager_node.cpp	*	G-O1 storage durability, G-O2 cost
+B-FLIGHT	uav_observability/src/diagnostics_node.cpp	*	G-O4 go/no-go light 6/6 twice
+B-FLIGHT	uav_observability/src/event_logger_node.cpp	*	G-O3 replay, G-O4
+B-FLIGHT	uav_localization/src/gps_adapter_node.cpp	*	M5 outdoor 3/3 and G4 GPS-disagreement 4/4
+B-FLIGHT	uav_localization/src/vio_adapter_node.cpp	*	indoor flights PASS 3/3 without GPS or compass, and G4
+B-FLIGHT	uav_localization/src/rangefinder_adapter_node.cpp	*	M5: rangefinder span 0.135-2.885 m recorded over 2197/2197 finite samples
+B-FLIGHT	uav_localization/src/localization_health_node.cpp	*	G4 4/4 including the drift-OFF control
+B-FLIGHT	uav_localization/src/localization_mux_node.cpp	*	G2 mux fidelity, and every flight reads odometry_fused from it
+B-FLIGHT	uav_world_model/src/world_model_node.cpp	*	G-N5 TrackTarget flights and the world-model frame gate
+B-FLIGHT	uav_perception/src/marker_detector_node.cpp	*	marker gate 2026-08-24: measured error +0.035/+0.070 m against a known marker
+B-FLIGHT	uav_perception/src/obstacle_extractor_node.cpp	*	obstacle gate 2026-08-24: box error under 6 mm against a known box
+B-FLIGHT	uav_perception/src/camera_health_node.cpp	*	verify_no10_wiring.sh, twice: camera_health reported "all streams healthy" on the live stack
+B-FLIGHT	uav_perception/src/target_tracker_node.cpp	*	G-N5 TrackTarget: yaw lag 93.7 deg measured over 800 samples on a moving target
+B-FLIGHT	uav_perception/src/object_detector_node.cpp	*	launched by sim.launch.py perception:=true; verify_no10_wiring.sh brought the whole perception graph up twice

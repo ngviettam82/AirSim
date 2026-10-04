@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Discovery over 127.0.0.1 unicast, for when WSL leaves lo without MULTICAST.
+     Symptom it cures: two processes on the same host, same ROS_DOMAIN_ID, see zero
+     of each other's topics while both are demonstrably alive.
+     Use: export FASTRTPS_DEFAULT_PROFILES_FILE=<this file>   (see ops-playbook 3) -->
+<dds xmlns="http://www.eprosima.com">
+  <profiles>
+    <participant profile_name="unicast_localhost" is_default_profile="true">
+      <rtps>
+        <builtin>
+          <metatrafficUnicastLocatorList>
+            <locator><udpv4><address>127.0.0.1</address></udpv4></locator>
+          </metatrafficUnicastLocatorList>
+          <initialPeersList>
+            <locator><udpv4><address>127.0.0.1</address></udpv4></locator>
+          </initialPeersList>
+        </builtin>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

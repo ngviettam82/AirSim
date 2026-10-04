@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# @name Gazebo uav0 navigation sensors
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=uav0_nav}
+
+. ${R}etc/init.d-posix/airframes/4100_gz_uav0
+
+# ---------------------------------------------------------------------------
+# VISION-PRIMARY PROFILE. Rationale and measurements: docs/package-status.md.
+#
+# 🔴 COST: with no GNSS position aiding there is no global position, so RTL /
+# MISSION / LOITER are unavailable and the estimator has no position source at
+# all if the vision feed stops. OFFBOARD works. Outdoor real flight (P11) needs
+# its own profile; this one is for the vision-based gates.
+# ---------------------------------------------------------------------------
+
+# Bit 3 (yaw) only: clears HPOS+VEL so flags.gps goes false, which is the one
+# condition under which EKF2 resets its horizontal frame to vision instead of
+# estimating a bias (EKF/ev_pos_control.cpp:204-215). Kept non-zero so the GNSS
+# origin still initialises and /state/gnss_origin stays alive.
+param set-default EKF2_GPS_CTRL 8
+
+# Same for the vertical frame (EKF/ev_height_control.cpp:194-200).
+param set-default EKF2_HGT_REF 3

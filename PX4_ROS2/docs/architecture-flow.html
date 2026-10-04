@@ -1,0 +1,1302 @@
+<title>Bản đồ luồng PX4–ROS2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Serif:ital,wght@0,400;1,400&display=swap">
+
+<style>
+/* ============ tokens: light (bare :root = complete palette) ============ */
+:root{
+  --ink:#101519; --ink2:#39444E; --muted:#6C7885;
+  --paper:#EDF0F3; --surface:#FFFFFF; --surface2:#F5F8FA; --surface3:#E7ECF1;
+  --line:#C6D0D9; --line-soft:#DEE5EB;
+  --accent:#1D5B8C; --accent-soft:#E2EDF6; --accent-line:#7FA9C9;
+  --metal:#0A6F6F; --metal-soft:#DCEFEE; --metal-line:#6FB3B0;
+  --alarm:#A6342A; --alarm-soft:#F8E4E0; --alarm-line:#D2907F;
+  --amber:#8A5A0B; --amber-soft:#F7EBD6;
+  --shadow:0 1px 2px rgba(16,21,25,.05), 0 8px 24px -16px rgba(16,21,25,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#E5EAEF; --ink2:#B2BDC7; --muted:#7F8D9A;
+    --paper:#0C1116; --surface:#141B21; --surface2:#1A222A; --surface3:#212B34;
+    --line:#2D3943; --line-soft:#232D36;
+    --accent:#74AEDC; --accent-soft:#14303F; --accent-line:#3C6B8C;
+    --metal:#43BDB3; --metal-soft:#0D2E2C; --metal-line:#2B7873;
+    --alarm:#E58272; --alarm-soft:#331915; --alarm-line:#8C4A3D;
+    --amber:#D7A75A; --amber-soft:#2C2314;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#E5EAEF; --ink2:#B2BDC7; --muted:#7F8D9A;
+  --paper:#0C1116; --surface:#141B21; --surface2:#1A222A; --surface3:#212B34;
+  --line:#2D3943; --line-soft:#232D36;
+  --accent:#74AEDC; --accent-soft:#14303F; --accent-line:#3C6B8C;
+  --metal:#43BDB3; --metal-soft:#0D2E2C; --metal-line:#2B7873;
+  --alarm:#E58272; --alarm-soft:#331915; --alarm-line:#8C4A3D;
+  --amber:#D7A75A; --amber-soft:#2C2314;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+}
+
+/* ============ base ============ */
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-size:16px; line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px; margin:0 auto; padding:0 24px 96px}
+.prose{max-width:70ch}
+h1,h2,h3{text-wrap:balance; margin:0}
+a{color:var(--accent)}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+/* ============ masthead ============ */
+header.mast{
+  border-bottom:1px solid var(--line);
+  padding:56px 0 30px; margin-bottom:44px;
+}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; font-weight:500;
+  letter-spacing:.16em; text-transform:uppercase; color:var(--metal); margin-bottom:16px;
+}
+h1{font-size:clamp(30px,5vw,50px); font-weight:700; letter-spacing:-.02em; line-height:1.08}
+.lede{margin-top:18px; font-size:18px; color:var(--ink2); max-width:62ch}
+.meta{
+  margin-top:26px; display:flex; flex-wrap:wrap; gap:10px 26px;
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted);
+}
+.meta b{color:var(--ink); font-weight:500}
+
+/* ============ sections ============ */
+section{margin-top:64px; scroll-margin-top:24px}
+.sec-head{display:flex; gap:16px; align-items:baseline; margin-bottom:8px}
+.sec-num{
+  font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600;
+  color:var(--accent); letter-spacing:.06em; padding-top:6px; flex:none;
+}
+h2{font-size:clamp(21px,2.6vw,28px); font-weight:600; letter-spacing:-.012em}
+h3{font-size:16.5px; font-weight:600; margin:32px 0 10px; letter-spacing:-.005em}
+p{margin:14px 0}
+.sec-head + p{margin-top:6px}
+ul,ol{margin:14px 0; padding-left:22px}
+li{margin:7px 0}
+li::marker{color:var(--muted)}
+
+/* ============ figures ============ */
+figure{
+  margin:34px 0 0; background:var(--surface); border:1px solid var(--line);
+  border-radius:3px; box-shadow:var(--shadow); overflow:hidden;
+}
+.fig-scroll{overflow-x:auto; padding:26px 24px 8px}
+figure svg{display:block; width:100%; min-width:660px; height:auto}
+figcaption{
+  border-top:1px solid var(--line-soft); background:var(--surface2);
+  padding:13px 24px; font-size:13.5px; color:var(--ink2); line-height:1.55;
+}
+figcaption b{color:var(--ink); font-weight:600}
+
+/* ============ svg drawing classes ============ */
+.dg .bx{fill:var(--surface); stroke:var(--line); stroke-width:1.25}
+.dg .bx-a{fill:var(--accent-soft); stroke:var(--accent-line); stroke-width:1.25}
+.dg .bx-m{fill:var(--metal-soft); stroke:var(--metal-line); stroke-width:1.25}
+.dg .bx-s{fill:var(--alarm-soft); stroke:var(--alarm-line); stroke-width:1.25}
+.dg .bx-n{fill:var(--surface2); stroke:var(--line); stroke-width:1.25}
+.dg .bx-g{fill:none; stroke:var(--line); stroke-width:1; stroke-dasharray:4 4}
+.dg .ttl{fill:var(--ink); font:600 13px "IBM Plex Sans",sans-serif}
+.dg .ttl-s{fill:var(--ink); font:600 11.5px "IBM Plex Sans",sans-serif}
+.dg .sub{fill:var(--muted); font:400 10.5px "IBM Plex Sans",sans-serif}
+.dg .pkg{fill:var(--accent); font:500 10px "IBM Plex Mono",monospace}
+.dg .pkg-m{fill:var(--metal); font:500 10px "IBM Plex Mono",monospace}
+.dg .pkg-s{fill:var(--alarm); font:500 10px "IBM Plex Mono",monospace}
+.dg .tp{fill:var(--ink2); font:400 9.5px "IBM Plex Mono",monospace}
+.dg .tp-q{fill:var(--muted); font:400 9.5px "IBM Plex Mono",monospace}
+.dg .note{fill:var(--muted); font:italic 400 10.5px "IBM Plex Serif",serif}
+.dg .num{fill:var(--surface); font:600 9.5px "IBM Plex Mono",monospace}
+.dg .ln{fill:none; stroke:var(--accent); stroke-width:1.5}
+.dg .ln-w{fill:none; stroke:var(--accent); stroke-width:2.4}
+.dg .ln-m{fill:none; stroke:var(--metal); stroke-width:1.8}
+.dg .ln-s{fill:none; stroke:var(--alarm); stroke-width:1.6}
+.dg .ln-d{fill:none; stroke:var(--muted); stroke-width:1.2; stroke-dasharray:5 4}
+.dg .ln-ds{fill:none; stroke:var(--alarm); stroke-width:1.3; stroke-dasharray:5 4}
+.dg .rule{stroke:var(--line-soft); stroke-width:1}
+.dg .mk-a{fill:var(--accent)} .dg .mk-m{fill:var(--metal)}
+.dg .mk-s{fill:var(--alarm)} .dg .mk-g{fill:var(--muted)}
+.dg .dot-a{fill:var(--accent)} .dg .dot-s{fill:var(--alarm)}
+.dg .band{fill:var(--surface3)}
+
+/* ============ callouts ============ */
+.rules{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin-top:26px}
+.rule-card{
+  background:var(--surface); border:1px solid var(--line); border-radius:3px;
+  padding:18px 20px; box-shadow:var(--shadow);
+}
+.rule-card .tag{
+  font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:600; letter-spacing:.09em;
+  color:var(--accent); text-transform:uppercase;
+}
+.rule-card h4{margin:8px 0 8px; font-size:15.5px; font-weight:600; line-height:1.35}
+.rule-card p{margin:0; font-size:13.5px; color:var(--ink2); line-height:1.55}
+
+.aside{
+  margin:30px 0 0; padding:18px 22px; border-left:3px solid var(--metal);
+  background:var(--surface2); border-radius:0 3px 3px 0;
+}
+.aside p{margin:0; font-family:"IBM Plex Serif",Georgia,serif; font-size:15px; color:var(--ink2); line-height:1.6}
+.aside p + p{margin-top:12px}
+.aside .who{
+  display:block; font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:600;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--metal); margin-bottom:9px;
+}
+.warn{border-left-color:var(--alarm)}
+.warn .who{color:var(--alarm)}
+
+/* ============ tables ============ */
+.tbl-scroll{overflow-x:auto; margin-top:26px; border:1px solid var(--line); border-radius:3px; background:var(--surface)}
+table{border-collapse:collapse; width:100%; min-width:640px; font-size:13.5px}
+th,td{text-align:left; padding:11px 16px; border-bottom:1px solid var(--line-soft); vertical-align:top}
+thead th{
+  background:var(--surface2); font-family:"IBM Plex Mono",monospace; font-size:10.5px;
+  font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--muted);
+  border-bottom:1px solid var(--line);
+}
+tbody tr:last-child td{border-bottom:none}
+td code{font-size:12px; color:var(--accent); white-space:nowrap}
+td.num-col{font-variant-numeric:tabular-nums}
+
+/* ============ legend ============ */
+.legend{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px 28px; margin-top:24px}
+.leg-item{display:flex; gap:12px; align-items:flex-start; font-size:13.5px; color:var(--ink2)}
+.leg-item svg{flex:none; margin-top:3px}
+.leg-item b{color:var(--ink); font-weight:600}
+
+/* ============ footer ============ */
+footer{
+  margin-top:80px; padding-top:26px; border-top:1px solid var(--line);
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted); line-height:1.9;
+}
+footer b{color:var(--ink2); font-weight:500}
+
+@media (max-width:640px){
+  .wrap{padding:0 16px 64px}
+  .fig-scroll{padding:18px 14px 6px}
+  figcaption{padding:12px 16px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">PX4 · ROS2 · Gazebo — tài liệu giảng</div>
+  <h1>Bản đồ luồng PX4–ROS2</h1>
+  <p class="lede">Dữ liệu đi vào từ đâu, biến thành quyết định ở chỗ nào, và lệnh quay lại động cơ bằng đường nào — mười hai package, một vòng lặp.</p>
+  <div class="meta">
+    <span><b>12</b> package thiết kế · <b>10</b> đã hiện thực</span>
+    <span><b>Nguồn:</b> đọc thẳng từ mã nguồn, không phải từ bản thiết kế</span>
+    <span><b>Cập nhật:</b> 2026-08-21</span>
+  </div>
+</header>
+
+<!-- ══════════════════════════════ 0. CÁCH ĐỌC ══════════════════════════════ -->
+<section id="doc">
+  <div class="sec-head"><span class="sec-num">00</span><h2>Cách đọc mọi sơ đồ trong trang này</h2></div>
+  <div class="prose">
+    <p>Toàn bộ hệ thống là các <b>node ROS2</b> nói chuyện với nhau qua ba kiểu kênh. Mọi mũi tên dưới đây đều là một trong ba kiểu đó, và <b>nhãn trên mũi tên chính là tên topic thật</b> — bạn gõ <code>ros2 topic echo &lt;tên đó&gt;</code> là thấy dữ liệu chạy.</p>
+  </div>
+
+  <div class="legend">
+    <div class="leg-item">
+      <svg width="46" height="14" viewBox="0 0 46 14" class="dg" role="img" aria-label="Nét liền: topic">
+        <defs><marker id="lg1" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0,0 7,3.5 0,7" class="mk-a"/></marker></defs>
+        <line x1="2" y1="7" x2="38" y2="7" class="ln" marker-end="url(#lg1)"/>
+      </svg>
+      <div><b>Topic</b> — phát liên tục, ai đăng ký thì nhận. Không ai chờ ai.</div>
+    </div>
+    <div class="leg-item">
+      <svg width="46" height="14" viewBox="0 0 46 14" class="dg" role="img" aria-label="Nét đứt: giám sát">
+        <defs><marker id="lg2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0,0 7,3.5 0,7" class="mk-g"/></marker></defs>
+        <line x1="2" y1="7" x2="38" y2="7" class="ln-d" marker-end="url(#lg2)"/>
+      </svg>
+      <div><b>Nét đứt</b> — quan sát / cố vấn. Không nằm trên đường lệnh.</div>
+    </div>
+    <div class="leg-item">
+      <svg width="46" height="14" viewBox="0 0 46 14" class="dg" role="img" aria-label="Nét đỏ: đường an toàn">
+        <defs><marker id="lg3" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0,0 7,3.5 0,7" class="mk-s"/></marker></defs>
+        <line x1="2" y1="7" x2="38" y2="7" class="ln-s" marker-end="url(#lg3)"/>
+      </svg>
+      <div><b>Đỏ</b> — đường an toàn. Ưu tiên cao nhất, cắt được mọi lệnh khác.</div>
+    </div>
+    <div class="leg-item">
+      <svg width="46" height="18" viewBox="0 0 46 18" class="dg" role="img" aria-label="Hộp xanh mòng két: ranh giới phần cứng">
+        <rect x="2" y="2" width="38" height="14" rx="2" class="bx-m"/>
+      </svg>
+      <div><b>Hộp xanh mòng két</b> — chạm phần cứng / <code>px4_msgs</code>.</div>
+    </div>
+  </div>
+
+  <div class="aside">
+    <span class="who">Ba kiểu kênh, ba mục đích khác nhau</span>
+    <p><b>Topic</b> cho dòng dữ liệu chảy mãi (vị trí, ảnh, setpoint). <b>Service</b> cho việc ngắn có trả lời ngay (arm, đổi chế độ bay). <b>Action</b> cho việc dài có tiến độ và huỷ được (cất cánh, bay tới điểm, hạ cánh). Chọn nhầm kiểu là lỗi thiết kế: một cú <em>hạ cánh</em> gói vào service sẽ khoá node gọi nó suốt 30 giây và không huỷ được giữa chừng.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 1. VÒNG MỘT NHỊP ══════════════════════════════ -->
+<section id="loop">
+  <div class="sec-head"><span class="sec-num">01</span><h2>Trước hết: đây chỉ là một vòng lặp</h2></div>
+  <div class="prose">
+    <p>Bỏ hết tên package đi, cả hệ thống là <b>một vòng lặp chạy khoảng 20–50 lần mỗi giây</b>. Mọi thứ còn lại trong trang này chỉ là chi tiết của sáu ô dưới đây.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 900 216" class="dg" role="img" aria-label="Vòng lặp sáu bước: thế giới, cảm biến, ước lượng, hiểu, quyết định, hành động, rồi quay lại thế giới">
+        <defs>
+          <marker id="d1a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-a"/></marker>
+          <marker id="d1g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-g"/></marker>
+        </defs>
+
+        <!-- boxes -->
+        <rect x="30"  y="30" width="118" height="92" rx="3" class="bx-m"/>
+        <text x="89"  y="54"  class="ttl-s" text-anchor="middle">THẾ GIỚI</text>
+        <text x="89"  y="72"  class="sub" text-anchor="middle">vật lý, gió, mặt đất</text>
+        <text x="89"  y="97"  class="pkg-m" text-anchor="middle">Gazebo</text>
+        <text x="89"  y="110" class="pkg-m" text-anchor="middle">hoặc drone thật</text>
+
+        <rect x="178" y="30" width="118" height="92" rx="3" class="bx"/>
+        <text x="237" y="54"  class="ttl-s" text-anchor="middle">CẢM BIẾN</text>
+        <text x="237" y="72"  class="sub" text-anchor="middle">ảnh, IMU, GPS, lidar</text>
+        <text x="237" y="97"  class="pkg" text-anchor="middle">uav_sim_gz</text>
+        <text x="237" y="110" class="pkg" text-anchor="middle">/ driver thật</text>
+
+        <rect x="326" y="30" width="118" height="92" rx="3" class="bx"/>
+        <text x="385" y="54"  class="ttl-s" text-anchor="middle">ƯỚC LƯỢNG</text>
+        <text x="385" y="72"  class="sub" text-anchor="middle">tôi đang ở đâu?</text>
+        <text x="385" y="97"  class="pkg" text-anchor="middle">uav_localization</text>
+
+        <rect x="474" y="30" width="118" height="92" rx="3" class="bx"/>
+        <text x="533" y="54"  class="ttl-s" text-anchor="middle">HIỂU</text>
+        <text x="533" y="72"  class="sub" text-anchor="middle">xung quanh có gì?</text>
+        <text x="533" y="97"  class="pkg" text-anchor="middle">uav_perception</text>
+        <text x="533" y="110" class="pkg" text-anchor="middle">uav_world_model</text>
+
+        <rect x="622" y="30" width="118" height="92" rx="3" class="bx"/>
+        <text x="681" y="54"  class="ttl-s" text-anchor="middle">QUYẾT ĐỊNH</text>
+        <text x="681" y="72"  class="sub" text-anchor="middle">bay thế nào?</text>
+        <text x="681" y="97"  class="pkg" text-anchor="middle">uav_navigation</text>
+        <text x="681" y="110" class="pkg" text-anchor="middle">uav_mission (P9)</text>
+
+        <rect x="770" y="30" width="118" height="92" rx="3" class="bx-m"/>
+        <text x="829" y="54"  class="ttl-s" text-anchor="middle">HÀNH ĐỘNG</text>
+        <text x="829" y="72"  class="sub" text-anchor="middle">setpoint → động cơ</text>
+        <text x="829" y="97"  class="pkg-m" text-anchor="middle">uav_px4_backend</text>
+        <text x="829" y="110" class="pkg-m" text-anchor="middle">PX4</text>
+
+        <!-- arrows -->
+        <line x1="150" y1="76" x2="174" y2="76" class="ln" marker-end="url(#d1a)"/>
+        <line x1="298" y1="76" x2="322" y2="76" class="ln" marker-end="url(#d1a)"/>
+        <line x1="446" y1="76" x2="470" y2="76" class="ln" marker-end="url(#d1a)"/>
+        <line x1="594" y1="76" x2="618" y2="76" class="ln" marker-end="url(#d1a)"/>
+        <line x1="742" y1="76" x2="766" y2="76" class="ln" marker-end="url(#d1a)"/>
+
+        <!-- return -->
+        <polyline points="829,122 829,170 89,170 89,126" class="ln-d" marker-end="url(#d1g)"/>
+        <text x="459" y="164" class="note" text-anchor="middle">drone chuyển động → thế giới đổi → cảm biến đọc lại</text>
+        <text x="459" y="196" class="sub" text-anchor="middle">Vòng này quay ~20–50 lần/giây. Đứt một mắt xích ở đâu, drone mù ở đó.</text>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 1 — Vòng cảm nhận · quyết định · hành động.</b> Sáu ô, một chiều. Hai ô đầu và ô cuối chạm phần cứng; bốn ô giữa là phần mềm thuần ROS2 và <b>không đổi một dòng nào</b> khi chuyển từ mô phỏng sang drone thật.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════ 2. BẢN ĐỒ ĐẦY ĐỦ ══════════════════════════════ -->
+<section id="map">
+  <div class="sec-head"><span class="sec-num">02</span><h2>Bản đồ package đầy đủ</h2></div>
+  <div class="prose">
+    <p>Giờ mở từng ô ra. Đọc theo hai chiều: <b>dữ liệu chảy xuống</b> (trái sang phải rồi xuống), <b>lệnh chảy ngược lên</b> theo đường bên phải để về lại PX4. Chỗ hai chiều gặp nhau — ô <code>uav_control_authority</code> — là nút thắt cố ý của toàn hệ.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 1150 960" class="dg" role="img" aria-label="Bản đồ đầy đủ mười package: Gazebo và PX4 ở trên, dữ liệu chảy xuống qua sim_gz, backend, perception, localization, world_model, navigation, tới control_authority, rồi lệnh chảy ngược lên backend về PX4; uav_safety giám sát ở cột phải">
+        <defs>
+          <marker id="d2a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-a"/></marker>
+          <marker id="d2m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-m"/></marker>
+          <marker id="d2s" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-s"/></marker>
+          <marker id="d2g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-g"/></marker>
+        </defs>
+
+        <!-- ─── PLANT ─── -->
+        <rect x="40" y="20" width="900" height="88" rx="3" class="bx-g"/>
+        <rect x="56" y="34" width="414" height="60" rx="2" class="bx-m"/>
+        <text x="263" y="58" class="ttl" text-anchor="middle">Gazebo Harmonic</text>
+        <text x="263" y="78" class="sub" text-anchor="middle">vật lý · render cảm biến · nguồn /clock</text>
+        <rect x="510" y="34" width="414" height="60" rx="2" class="bx-m"/>
+        <text x="717" y="58" class="ttl" text-anchor="middle">PX4 v1.15 — flight stack</text>
+        <text x="717" y="78" class="sub" text-anchor="middle">EKF2 · điều khiển · failsafe lõi · SITL hoặc FC thật</text>
+        <text x="490" y="70" class="pkg-m" text-anchor="middle">⇄</text>
+        <text x="948" y="30" class="tp-q">tầng “không phải của ta”</text>
+
+        <!-- ─── ROW 1 ─── -->
+        <rect x="40" y="148" width="480" height="96" rx="3" class="bx-m"/>
+        <text x="56" y="172" class="ttl">uav_sim_gz</text>
+        <text x="56" y="192" class="sub">Cầu Gazebo → ROS2. Đóng vai driver cảm biến của thế giới ảo.</text>
+        <text x="56" y="212" class="sub">World, model drone, cấu hình sensor, và nguồn duy nhất của /clock.</text>
+        <rect x="404" y="158" width="106" height="18" rx="9" class="bx-s"/>
+        <text x="457" y="171" class="pkg-s" text-anchor="middle">CHỈ CÓ TRONG SIM</text>
+        <text x="56" y="232" class="tp-q">bản thật: thay bằng driver phần cứng, tên topic giữ nguyên</text>
+
+        <rect x="560" y="148" width="380" height="96" rx="3" class="bx-m"/>
+        <text x="576" y="172" class="ttl">uav_px4_backend</text>
+        <text x="576" y="192" class="sub">5 node — người phiên dịch hai chiều với autopilot.</text>
+        <text x="576" y="212" class="sub">Đổi frame ENU/FLU ⇄ NED/FRD · giữ nhịp offboard ≥ 2 Hz.</text>
+        <rect x="754" y="222" width="172" height="17" rx="8" class="bx-s"/>
+        <text x="840" y="234" class="pkg-s" text-anchor="middle">DUY NHẤT được dùng px4_msgs</text>
+
+        <!-- ─── ROW 2 ─── -->
+        <rect x="40" y="300" width="360" height="118" rx="3" class="bx"/>
+        <text x="56" y="324" class="ttl">uav_perception</text>
+        <text x="56" y="343" class="sub">5 node — nhìn và mô tả môi trường</text>
+        <text x="56" y="362" class="tp">marker_detector · obstacle_extractor</text>
+        <text x="56" y="377" class="tp">target_tracker · object_detector</text>
+        <text x="56" y="392" class="tp">camera_health</text>
+        <text x="56" y="409" class="tp-q">cố ý KHÔNG có node driver camera</text>
+
+        <rect x="440" y="300" width="320" height="118" rx="3" class="bx"/>
+        <text x="456" y="324" class="ttl">uav_localization</text>
+        <text x="456" y="343" class="sub">6 node — “tôi đang ở đâu?”</text>
+        <text x="456" y="362" class="tp">gps · vio · optical_flow · rangefinder</text>
+        <text x="456" y="377" class="tp">localization_mux · localization_health</text>
+        <text x="456" y="399" class="tp-q">mux CHỌN một nguồn, không trộn</text>
+
+        <!-- ─── ROW 3 ─── -->
+        <rect x="40" y="460" width="600" height="94" rx="3" class="bx"/>
+        <text x="56" y="484" class="ttl">uav_world_model</text>
+        <text x="56" y="503" class="sub">Đổi quan sát từ frame camera sang frame map/odom, rồi ghi nhớ.</text>
+        <text x="56" y="522" class="sub">Đây là “thế giới drone TIN LÀ CÓ” — chạy cả trên phần cứng thật.</text>
+        <text x="56" y="542" class="tp-q">điểm nối cho RL về sau: nơi sinh observation</text>
+
+        <!-- ─── ROW 4 ─── -->
+        <rect x="40" y="596" width="720" height="124" rx="3" class="bx"/>
+        <text x="56" y="620" class="ttl">uav_navigation</text>
+        <text x="56" y="639" class="sub">Cổng action cho mọi việc bay dài: Takeoff · GotoPose · HoldPosition</text>
+        <text x="56" y="656" class="sub">FollowPath · TrackTarget · Land · Recover</text>
+        <text x="56" y="678" class="tp">navigator_action_server_node — người ra quyết định cuối</text>
+        <text x="56" y="694" class="tp-q">route_planner + local_planner chỉ là CỐ VẤN, không nằm trên đường lệnh</text>
+        <text x="56" y="712" class="tp-q">P9 uav_mission (Behavior Tree) sẽ gọi các action này — chưa có</text>
+
+        <!-- ─── ROW 5 ─── -->
+        <rect x="40" y="762" width="720" height="94" rx="3" class="bx-a"/>
+        <text x="56" y="786" class="ttl">uav_control_authority</text>
+        <text x="56" y="805" class="sub">Trọng tài. Bốn nguồn cùng muốn lái, chỉ MỘT được ghi ra dây.</text>
+        <text x="56" y="824" class="sub">Ưu tiên: SAFETY &gt; OPERATOR &gt; MISSION &gt; TEST.</text>
+        <text x="56" y="844" class="tp-q">nút thắt cố ý — không có nó thì hai node có thể lái ngược nhau</text>
+
+        <!-- ─── SAFETY ─── -->
+        <rect x="970" y="300" width="160" height="556" rx="3" class="bx-s"/>
+        <text x="1050" y="326" class="ttl" text-anchor="middle">uav_safety</text>
+        <text x="1050" y="348" class="sub" text-anchor="middle">Giám sát cấp hệ</text>
+        <text x="1050" y="366" class="sub" text-anchor="middle">thống. KHÔNG thay</text>
+        <text x="1050" y="384" class="sub" text-anchor="middle">failsafe lõi PX4.</text>
+        <line x1="990" y1="404" x2="1110" y2="404" class="rule"/>
+        <text x="1050" y="428" class="pkg-s" text-anchor="middle">3 mức hành động</text>
+        <text x="1050" y="452" class="tp" text-anchor="middle">REPORT</text>
+        <text x="1050" y="468" class="tp-q" text-anchor="middle">chỉ báo</text>
+        <text x="1050" y="494" class="tp" text-anchor="middle">HOLD</text>
+        <text x="1050" y="510" class="tp-q" text-anchor="middle">đóng băng tại</text>
+        <text x="1050" y="524" class="tp-q" text-anchor="middle">pose tin được</text>
+        <text x="1050" y="550" class="tp" text-anchor="middle">INHIBIT</text>
+        <text x="1050" y="566" class="tp-q" text-anchor="middle">im lặng có chủ ý</text>
+        <text x="1050" y="580" class="tp-q" text-anchor="middle">→ trả quyền pilot</text>
+        <line x1="990" y1="602" x2="1110" y2="602" class="rule"/>
+        <text x="1050" y="628" class="sub" text-anchor="middle">Mất định vị:</text>
+        <text x="1050" y="646" class="pkg-s" text-anchor="middle">KHÔNG auto-land</text>
+        <text x="1050" y="662" class="pkg-s" text-anchor="middle">KHÔNG bay mù</text>
+        <text x="1050" y="686" class="tp-q" text-anchor="middle">không bao giờ phát</text>
+        <text x="1050" y="700" class="tp-q" text-anchor="middle">setpoint trên một</text>
+        <text x="1050" y="714" class="tp-q" text-anchor="middle">pose không tin được</text>
+        <line x1="990" y1="736" x2="1110" y2="736" class="rule"/>
+        <text x="1050" y="762" class="sub" text-anchor="middle">Một node duy nhất</text>
+        <text x="1050" y="780" class="sub" text-anchor="middle">+ thư viện ROS-free.</text>
+        <text x="1050" y="804" class="tp-q" text-anchor="middle">0 chặng trễ trên</text>
+        <text x="1050" y="818" class="tp-q" text-anchor="middle">đường cứu mạng</text>
+
+        <!-- ─── ARROWS: dữ liệu xuống ─── -->
+        <line x1="250" y1="108" x2="250" y2="144" class="ln-m" marker-end="url(#d2m)"/>
+        <text x="258" y="132" class="tp">ảnh · depth · lidar · odometry · /clock</text>
+
+        <line x1="700" y1="108" x2="700" y2="144" class="ln-m" marker-end="url(#d2m)"/>
+        <text x="708" y="132" class="tp">/fmu/out/*</text>
+
+        <line x1="760" y1="148" x2="760" y2="112" class="ln-m" marker-end="url(#d2m)"/>
+        <text x="768" y="132" class="tp">/fmu/in/* — setpoint · arm · mode</text>
+
+        <line x1="160" y1="244" x2="160" y2="296" class="ln" marker-end="url(#d2a)"/>
+        <text x="168" y="264" class="tp">perception/{front,down}/image_raw</text>
+        <text x="168" y="279" class="tp">· depth_image · camera_info</text>
+
+        <line x1="480" y1="244" x2="480" y2="296" class="ln" marker-end="url(#d2a)"/>
+        <text x="488" y="264" class="tp">localization/range_scan_raw</text>
+        <text x="488" y="279" class="tp">localization/vio_odometry_raw</text>
+
+        <line x1="700" y1="244" x2="700" y2="296" class="ln" marker-end="url(#d2a)"/>
+        <text x="708" y="264" class="tp">/state/odometry_raw</text>
+        <text x="708" y="279" class="tp">/state/vehicle · gnss_fix</text>
+
+        <line x1="200" y1="418" x2="200" y2="456" class="ln" marker-end="url(#d2a)"/>
+        <text x="208" y="434" class="tp">/perception/markers · obstacles_local</text>
+        <text x="208" y="449" class="tp">· target_track</text>
+
+        <line x1="520" y1="418" x2="520" y2="456" class="ln" marker-end="url(#d2a)"/>
+        <text x="528" y="441" class="tp">/state/odometry_fused</text>
+
+        <line x1="300" y1="554" x2="300" y2="592" class="ln" marker-end="url(#d2a)"/>
+        <text x="308" y="570" class="tp">/world/obstacle_map_local</text>
+        <text x="308" y="585" class="tp">/world/target_state</text>
+
+        <line x1="690" y1="418" x2="690" y2="592" class="ln-d" marker-end="url(#d2g)"/>
+        <text x="698" y="500" class="tp-q" transform="rotate(-90 698 500)" text-anchor="middle">/state/odometry_fused — planner đọc THẲNG</text>
+
+        <line x1="300" y1="720" x2="300" y2="758" class="ln" marker-end="url(#d2a)"/>
+        <text x="308" y="742" class="tp">/control/cmd_mission</text>
+
+        <!-- ─── ARROW: lệnh lên ─── -->
+        <polyline points="760,810 850,810 850,262 704,262 704,248" class="ln-w" marker-end="url(#d2a)"/>
+        <text x="842" y="540" class="tp" transform="rotate(-90 842 540)" text-anchor="middle">/control/command_selected — một người ghi duy nhất</text>
+
+        <!-- ─── SAFETY wiring ─── -->
+        <polyline points="760,830 920,830 920,600 966,600" class="ln-ds" marker-end="url(#d2s)"/>
+        <text x="928" y="700" class="tp-q" transform="rotate(-90 928 700)" text-anchor="middle">nghe 12 nguồn khắp hệ — xem sơ đồ 6</text>
+
+        <polyline points="1010,856 1010,886 300,886 300,860" class="ln-s" marker-end="url(#d2s)"/>
+        <text x="655" y="880" class="tp" text-anchor="middle">/control/cmd_safety — pose đóng băng (HOLD)</text>
+
+        <polyline points="1080,856 1080,912 180,912 180,860" class="ln-s" marker-end="url(#d2s)"/>
+        <text x="630" y="906" class="tp" text-anchor="middle">srv /control/set_authority — giành chốt SAFETY (INHIBIT)</text>
+
+        <text x="575" y="944" class="note" text-anchor="middle">Hai mũi tên đỏ là toàn bộ quyền lực của lớp an toàn: nó chỉ có thể ĐÓNG BĂNG hoặc LÀM IM LẶNG — không tự bay.</text>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 2 — Bản đồ đầy đủ.</b> Hai ô xanh mòng két trên cùng là thứ ta không viết (Gazebo, PX4). <code>uav_sim_gz</code> biến mất khi bay thật; <code>uav_px4_backend</code> thì không. Mũi tên đậm đi lên bên phải là <b>đường lệnh duy nhất</b> — mọi thứ muốn lái drone đều phải chui qua nó.</figcaption>
+  </figure>
+
+  <div class="aside warn">
+    <span class="who">Câu hỏi hay hỏi khi giảng</span>
+    <p><em>“Sao <code>uav_navigation</code> không gửi thẳng lệnh cho PX4 cho nhanh?”</em> — Vì lúc đó sẽ có <b>hai</b> node cùng có thể ghi setpoint: navigation và safety. Khi cả hai cùng phát, PX4 nhận cái đến sau, tức là kết quả phụ thuộc thứ tự gói tin trên mạng. Đặt trọng tài vào giữa biến chuyện “ai đến sau thắng” thành “ai ưu tiên cao thắng”, và biến nó thành thứ <b>viết được test</b>.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 3. BA LUẬT ══════════════════════════════ -->
+<section id="rules">
+  <div class="sec-head"><span class="sec-num">03</span><h2>Ba luật khiến sơ đồ có đúng hình dạng đó</h2></div>
+  <div class="prose">
+    <p>Sơ đồ 2 trông rắc rối, nhưng gần như mọi mũi tên đều bị ép vào chỗ của nó bởi đúng ba luật. Nắm ba luật này là đọc được toàn bộ kiến trúc mà không cần nhớ tên topic.</p>
+  </div>
+
+  <div class="rules">
+    <div class="rule-card">
+      <div class="tag">Luật 1 — cô lập</div>
+      <h4>Chỉ <code>uav_px4_backend</code> được chạm <code>px4_msgs</code></h4>
+      <p>Cả hệ có 10 package, chỉ 1 biết PX4 tồn tại. Khi PX4 đổi API ở bản sau, đúng một package phải sửa. Cũng nhờ vậy mà đổi sang autopilot khác chỉ là viết lại một package, không phải viết lại cả hệ.</p>
+    </div>
+    <div class="rule-card">
+      <div class="tag">Luật 2 — một nguồn sự thật</div>
+      <h4>Planner chỉ đọc <code>/state/odometry_fused</code></h4>
+      <p>Có 4 nguồn định vị (GPS, VIO, optical flow, rangefinder). Nếu planner tự chọn nguồn, hai node có thể tin hai vị trí khác nhau <em>cùng lúc</em>. Việc chọn nguồn bị dồn vào đúng một node — <code>localization_mux</code> — và mọi người khác đọc kết quả của nó.</p>
+    </div>
+    <div class="rule-card">
+      <div class="tag">Luật 3 — một người ghi</div>
+      <h4><code>/control/command_selected</code> chỉ có một publisher</h4>
+      <p>Đó là <code>control_authority_manager</code>. Mọi ý muốn lái drone đều phải xếp hàng ở bốn kênh <code>cmd_*</code> và chờ trọng tài. Đây là chỗ mà “an toàn” chuyển từ lời hứa thành cơ chế.</p>
+    </div>
+  </div>
+
+  <div class="aside">
+    <span class="who">Luật thứ tư, ít ai để ý</span>
+    <p><b>Sim và thật dùng CHUNG bộ node, chỉ khác file launch.</b> Không có <code>if (đang_mô_phỏng)</code> nào trong mã. Nhờ vậy, thứ bạn kiểm chứng trong Gazebo đúng là thứ sẽ chạy trên drone — chứ không phải một phiên bản họ hàng của nó. Cầu <code>uav_sim_gz</code> phát ra <b>đúng tên topic mà driver thật sẽ dùng</b>, nên phần dưới cầu không phân biệt được mình đang ở đâu.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 4. ĐỊNH VỊ ══════════════════════════════ -->
+<section id="loc">
+  <div class="sec-head"><span class="sec-num">04</span><h2>Mở ô “tôi đang ở đâu” — <code>uav_localization</code></h2></div>
+  <div class="prose">
+    <p>Bốn nguồn định vị, mỗi nguồn có điểm mù riêng: GPS chết trong nhà, VIO chết khi tường trắng trơn không có đặc trưng, optical flow chỉ cho <em>vận tốc</em> chứ không cho vị trí, rangefinder chỉ đo được xuống đất. Node <code>localization_mux</code> làm đúng một việc, và làm nó rất bảo thủ.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 1060 470" class="dg" role="img" aria-label="Bốn nguồn định vị vào localization_mux, mux chọn một nguồn và phát odometry_fused, kèm nhánh phản hồi VIO về EKF2 của PX4">
+        <defs>
+          <marker id="d3a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-a"/></marker>
+          <marker id="d3g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-g"/></marker>
+          <marker id="d3m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-m"/></marker>
+        </defs>
+
+        <text x="40" y="24" class="pkg">NGUỒN THÔ</text>
+        <text x="420" y="24" class="pkg">CHỌN</text>
+        <text x="740" y="24" class="pkg">SỰ THẬT DUY NHẤT</text>
+
+        <!-- sources -->
+        <rect x="40" y="40" width="250" height="66" rx="3" class="bx"/>
+        <text x="56" y="62" class="ttl-s">gps_adapter_node</text>
+        <text x="56" y="80" class="tp-q">← /state/gnss_fix (từ PX4)</text>
+        <text x="56" y="96" class="tp">→ localization/gps_odometry + _status</text>
+
+        <rect x="40" y="126" width="250" height="66" rx="3" class="bx"/>
+        <text x="56" y="148" class="ttl-s">vio_adapter_node</text>
+        <text x="56" y="166" class="tp-q">← localization/vio_odometry_raw</text>
+        <text x="56" y="182" class="tp">→ localization/vio_odometry + _status</text>
+
+        <rect x="40" y="212" width="250" height="66" rx="3" class="bx-n"/>
+        <text x="56" y="234" class="ttl-s">optical_flow_adapter_node</text>
+        <text x="56" y="252" class="tp-q">← ảnh camera dưới + range</text>
+        <text x="56" y="268" class="tp">→ localization/flow_velocity</text>
+
+        <rect x="40" y="298" width="250" height="66" rx="3" class="bx-n"/>
+        <text x="56" y="320" class="ttl-s">rangefinder_adapter_node</text>
+        <text x="56" y="338" class="tp-q">← localization/range_scan_raw</text>
+        <text x="56" y="354" class="tp">→ localization/range</text>
+
+        <!-- mux -->
+        <rect x="380" y="86" width="250" height="192" rx="3" class="bx-a"/>
+        <text x="505" y="112" class="ttl" text-anchor="middle">localization_mux_node</text>
+        <line x1="400" y1="126" x2="610" y2="126" class="rule"/>
+        <text x="505" y="148" class="pkg" text-anchor="middle">CHỌN 1 nguồn — KHÔNG trộn</text>
+        <text x="396" y="172" class="sub">· một timer duy nhất, không so</text>
+        <text x="406" y="187" class="sub">hai nguồn ở hai thời điểm</text>
+        <text x="396" y="208" class="sub">· có biên trễ khi đổi nguồn để</text>
+        <text x="406" y="223" class="sub">không nhấp nháy qua lại</text>
+        <text x="396" y="244" class="sub">· bù liên tục khi chuyển, tránh</text>
+        <text x="406" y="259" class="sub">nhảy vị trí đột ngột</text>
+
+        <!-- outputs -->
+        <rect x="720" y="96" width="300" height="60" rx="3" class="bx-a"/>
+        <text x="736" y="120" class="ttl-s">/state/odometry_fused</text>
+        <text x="736" y="140" class="tp-q">mọi planner, mission và safety đọc CHỖ NÀY</text>
+
+        <rect x="720" y="176" width="300" height="52" rx="3" class="bx"/>
+        <text x="736" y="198" class="ttl-s">/state/localization_status</text>
+        <text x="736" y="216" class="tp-q">không pose nào đi ra mà thiếu độ tin cậy</text>
+
+        <rect x="720" y="248" width="300" height="52" rx="3" class="bx"/>
+        <text x="736" y="270" class="ttl-s">/state/estimator_source</text>
+        <text x="736" y="288" class="tp-q">đang tin ai — “gps” / “vio” / “none”</text>
+
+        <rect x="720" y="320" width="300" height="60" rx="3" class="bx-n"/>
+        <text x="736" y="344" class="ttl-s">localization_health_node</text>
+        <text x="736" y="362" class="tp-q">nhịp, dropout, nhảy pose → /diagnostics/localization</text>
+
+        <!-- arrows in -->
+        <polyline points="290,73 335,73 335,140 376,140" class="ln" marker-end="url(#d3a)"/>
+        <line x1="290" y1="159" x2="376" y2="159" class="ln" marker-end="url(#d3a)"/>
+        <polyline points="290,245 320,245 320,206" class="ln-d" marker-end="url(#d3g)"/>
+        <text x="300" y="200" class="tp-q">vận tốc, không phải vị trí</text>
+        <polyline points="290,331 340,331 340,262" class="ln-d" marker-end="url(#d3g)"/>
+        <polyline points="165,298 165,290 200,290" class="ln-d"/>
+        <line x1="200" y1="290" x2="200" y2="284" class="ln-d" marker-end="url(#d3g)"/>
+
+        <!-- arrows out -->
+        <polyline points="630,126 675,126 716,126" class="ln-w" marker-end="url(#d3a)"/>
+        <polyline points="630,182 675,182 675,202 716,202" class="ln" marker-end="url(#d3a)"/>
+        <polyline points="630,238 660,238 660,274 716,274" class="ln" marker-end="url(#d3a)"/>
+        <polyline points="870,156 870,316" class="ln-d" marker-end="url(#d3g)"/>
+
+        <!-- feedback to PX4 -->
+        <rect x="380" y="330" width="250" height="66" rx="3" class="bx-m"/>
+        <text x="396" y="352" class="ttl-s">px4_external_odometry_node</text>
+        <text x="396" y="370" class="tp-q">đẩy VIO vào EKF2 của PX4 qua</text>
+        <text x="396" y="386" class="tp">/fmu/in/vehicle_visual_odometry</text>
+        <polyline points="290,159 310,159 310,363 376,363" class="ln-m" marker-end="url(#d3m)"/>
+
+        <text x="40" y="428" class="note">Vòng kín đáng nhớ: VIO → backend → EKF2 của PX4 → /state/odometry_raw → quay lại làm đầu vào cho chính lớp định vị.</text>
+        <text x="40" y="450" class="note">Đây là lý do mốc thời gian gửi vào PX4 phải quy đổi đúng — EKF2 xét vision THEO DẤU THỜI GIAN và vứt mẫu quá hạn trong im lặng.</text>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 3 — Định vị.</b> Chỉ <b>GPS và VIO</b> mới là ứng viên để mux chọn; optical flow phát <em>vận tốc</em> và rangefinder phát <em>khoảng cách</em> nên chúng là tín hiệu hỗ trợ, không phải nguồn vị trí. Từ chỗ này trở đi, cả hệ chỉ biết đúng một topic vị trí.</figcaption>
+  </figure>
+
+  <div class="aside warn">
+    <span class="who">Điểm giảng quan trọng nhất của phần này</span>
+    <p><b>Mux CHỌN, không TRỘN.</b> Nhiều người mặc định “hợp nhất cảm biến” nghĩa là lấy trung bình có trọng số. Ở đây thì không: đầu ra là <em>nguồn thắng</em>, cộng thêm phần bù cho mượt lúc chuyển. Hệ quả thực tế: nếu VIO đang thắng thì nhiễu GPS <b>hoàn toàn không</b> ảnh hưởng tới <code>odometry_fused</code> — một điều rất dễ hiểu nhầm khi đọc kết quả thí nghiệm.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 5. PERCEPTION → WORLD MODEL ══════════════════════════════ -->
+<section id="percep">
+  <div class="sec-head"><span class="sec-num">05</span><h2>Từ ảnh tới hiểu biết — <code>uav_perception</code> → <code>uav_world_model</code></h2></div>
+  <div class="prose">
+    <p>Hai package này hay bị gộp làm một khi giảng, nhưng chúng trả lời hai câu khác hẳn nhau. Perception trả lời <em>“trong khung ảnh NÀY có gì”</em> — câu trả lời sống được vài chục mili-giây và tính theo frame camera. World model trả lời <em>“trong thế giới có gì, ở toạ độ nào”</em> — câu trả lời tồn tại qua thời gian và tính theo frame map.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 1100 470" class="dg" role="img" aria-label="Luồng từ ảnh camera qua năm node perception tới world_model, world_model đổi frame và phát các topic /world/*">
+        <defs>
+          <marker id="d4a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-a"/></marker>
+          <marker id="d4g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-g"/></marker>
+        </defs>
+
+        <text x="30" y="22" class="pkg">LUỒNG ẢNH (từ cầu sim / driver thật)</text>
+        <text x="330" y="22" class="pkg">uav_perception — “khung này có gì”</text>
+        <text x="700" y="22" class="pkg">uav_world_model — “thế giới có gì, ở đâu”</text>
+
+        <!-- image sources -->
+        <rect x="30" y="40" width="230" height="46" rx="3" class="bx-m"/>
+        <text x="44" y="60" class="tp">perception/down/image_raw</text>
+        <text x="44" y="77" class="tp-q">camera nhìn xuống — 15 Hz</text>
+
+        <rect x="30" y="104" width="230" height="46" rx="3" class="bx-m"/>
+        <text x="44" y="124" class="tp">perception/front/image_raw</text>
+        <text x="44" y="141" class="tp-q">camera trước — 15 Hz</text>
+
+        <rect x="30" y="168" width="230" height="46" rx="3" class="bx-m"/>
+        <text x="44" y="188" class="tp">perception/front/depth_image</text>
+        <text x="44" y="205" class="tp-q">ảnh độ sâu</text>
+
+        <rect x="30" y="232" width="230" height="46" rx="3" class="bx-m"/>
+        <text x="44" y="252" class="tp">perception/*/camera_info</text>
+        <text x="44" y="269" class="tp-q">nội tham số — thiếu nó, PnP vô nghĩa</text>
+
+        <!-- perception nodes -->
+        <rect x="320" y="40" width="290" height="52" rx="3" class="bx"/>
+        <text x="334" y="61" class="ttl-s">marker_detector_node</text>
+        <text x="334" y="80" class="tp">→ /perception/markers &nbsp;<tspan class="tp-q">ArUco + solvePnP</tspan></text>
+
+        <rect x="320" y="110" width="290" height="52" rx="3" class="bx"/>
+        <text x="334" y="131" class="ttl-s">obstacle_extractor_node</text>
+        <text x="334" y="150" class="tp">→ /perception/obstacles_local</text>
+
+        <rect x="320" y="180" width="290" height="52" rx="3" class="bx"/>
+        <text x="334" y="201" class="ttl-s">target_tracker_node</text>
+        <text x="334" y="220" class="tp">→ /perception/target_track &nbsp;<tspan class="tp-q">giữ ID</tspan></text>
+
+        <rect x="320" y="250" width="290" height="52" rx="3" class="bx-n"/>
+        <text x="334" y="271" class="ttl-s">object_detector_node</text>
+        <text x="334" y="290" class="tp-q">→ /perception/detections — khung DNN, chưa tuning</text>
+
+        <rect x="320" y="320" width="290" height="52" rx="3" class="bx-n"/>
+        <text x="334" y="341" class="ttl-s">camera_health_node</text>
+        <text x="334" y="360" class="tp-q">→ /state/camera_health · /diagnostics/perception</text>
+
+        <!-- world model -->
+        <rect x="670" y="60" width="230" height="252" rx="3" class="bx-a"/>
+        <text x="785" y="86" class="ttl" text-anchor="middle">world_model_node</text>
+        <line x1="686" y1="100" x2="884" y2="100" class="rule"/>
+        <text x="686" y="124" class="sub">Việc cốt lõi:</text>
+        <text x="686" y="146" class="pkg">frame camera → frame map</text>
+        <text x="686" y="170" class="sub">Cần biết drone đang ở đâu</text>
+        <text x="686" y="186" class="sub">và quay hướng nào tại đúng</text>
+        <text x="686" y="202" class="sub">thời điểm chụp bức ảnh đó.</text>
+        <line x1="686" y1="220" x2="884" y2="220" class="rule"/>
+        <text x="686" y="244" class="sub">Nhớ lại được: vật cản vừa</text>
+        <text x="686" y="260" class="sub">khuất khỏi khung hình thì</text>
+        <text x="686" y="276" class="sub">vẫn còn trên bản đồ.</text>
+        <text x="686" y="300" class="tp-q">chạy cả trên phần cứng thật</text>
+
+        <!-- world outputs -->
+        <rect x="940" y="60" width="140" height="46" rx="3" class="bx"/>
+        <text x="952" y="80" class="tp">/world/</text>
+        <text x="952" y="96" class="tp">obstacle_map_local</text>
+
+        <rect x="940" y="118" width="140" height="46" rx="3" class="bx"/>
+        <text x="952" y="138" class="tp">/world/</text>
+        <text x="952" y="154" class="tp">target_state</text>
+
+        <rect x="940" y="176" width="140" height="46" rx="3" class="bx"/>
+        <text x="952" y="196" class="tp">/world/</text>
+        <text x="952" y="212" class="tp">semantic_landmarks</text>
+
+        <rect x="940" y="234" width="140" height="46" rx="3" class="bx"/>
+        <text x="952" y="254" class="tp">/world/</text>
+        <text x="952" y="270" class="tp">mission_reference</text>
+
+        <!-- arrows sources -> nodes -->
+        <polyline points="260,63 290,63 290,66 316,66" class="ln" marker-end="url(#d4a)"/>
+        <polyline points="260,127 292,127 292,136 316,136" class="ln" marker-end="url(#d4a)"/>
+        <polyline points="260,191 296,191 296,140 316,140" class="ln" marker-end="url(#d4a)"/>
+        <polyline points="260,255 300,255 300,276 316,276" class="ln-d" marker-end="url(#d4g)"/>
+        <polyline points="260,255 306,255 306,346 316,346" class="ln-d" marker-end="url(#d4g)"/>
+
+        <!-- obstacle -> tracker -->
+        <polyline points="465,162 465,176" class="ln" marker-end="url(#d4a)"/>
+        <text x="474" y="174" class="tp-q">vật cản → mục tiêu được bám</text>
+
+        <!-- nodes -> world model -->
+        <polyline points="610,66 640,66 640,120 666,120" class="ln" marker-end="url(#d4a)"/>
+        <polyline points="610,136 648,136 648,152 666,152" class="ln" marker-end="url(#d4a)"/>
+        <polyline points="610,206 656,206 656,184 666,184" class="ln" marker-end="url(#d4a)"/>
+
+        <!-- odometry into world model -->
+        <polyline points="785,392 785,316" class="ln-w" marker-end="url(#d4a)"/>
+        <rect x="660" y="392" width="250" height="42" rx="3" class="bx-a"/>
+        <text x="674" y="418" class="tp">/state/odometry_fused</text>
+        <text x="920" y="418" class="tp-q">← không có nó thì không đổi frame được</text>
+
+        <!-- world -> outputs -->
+        <line x1="900" y1="83" x2="936" y2="83" class="ln" marker-end="url(#d4a)"/>
+        <line x1="900" y1="141" x2="936" y2="141" class="ln" marker-end="url(#d4a)"/>
+        <line x1="900" y1="199" x2="936" y2="199" class="ln" marker-end="url(#d4a)"/>
+        <line x1="900" y1="257" x2="936" y2="257" class="ln" marker-end="url(#d4a)"/>
+
+        <text x="940" y="300" class="note">Planner đọc</text>
+        <text x="940" y="318" class="note">các topic /world/*,</text>
+        <text x="940" y="336" class="note">KHÔNG đọc</text>
+        <text x="940" y="354" class="note">/perception/* thô.</text>
+
+        <text x="30" y="458" class="note">Ranh giới đáng nhớ: perception nói bằng pixel và giây hiện tại; world model nói bằng mét và bản đồ. Trộn hai thứ này là nguồn của lớp lỗi khó tìm nhất.</text>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 4 — Nhận thức và mô hình thế giới.</b> Chú ý ba điều: <code>target_tracker</code> ăn đầu ra của <code>obstacle_extractor</code> chứ không ăn ảnh; <code>world_model</code> <b>bắt buộc</b> cần <code>odometry_fused</code> để đổi frame; và không có node driver camera nào ở đây — cầu mô phỏng (hoặc driver thật ở P11) đã phát đúng tên topic rồi.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════ 6. NAVIGATION ══════════════════════════════ -->
+<section id="nav">
+  <div class="sec-head"><span class="sec-num">06</span><h2>Ai thực sự ra quyết định — <code>uav_navigation</code></h2></div>
+  <div class="prose">
+    <p>Đây là chỗ dễ vẽ sai nhất trong mọi tài liệu kiến trúc UAV. Trực giác nói: <em>route planner sinh đường → local planner né vật cản → gửi lệnh xuống</em>, một dây chuyền. Trong dự án này thì <b>không phải vậy</b>. Hai planner là <b>cố vấn</b>; <code>navigator_action_server_node</code> mới là người cầm bút ký.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 1060 470" class="dg" role="img" aria-label="navigator_action_server ở trung tâm nhận bảy action, hỏi ý route_planner và local_planner rồi tự phát cmd_mission">
+        <defs>
+          <marker id="d5a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-a"/></marker>
+          <marker id="d5g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-g"/></marker>
+          <marker id="d5m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-m"/></marker>
+        </defs>
+
+        <!-- actions in -->
+        <rect x="30" y="40" width="220" height="192" rx="3" class="bx"/>
+        <text x="44" y="62" class="ttl-s">7 action server</text>
+        <text x="44" y="80" class="tp-q">ai đó gọi từ ngoài vào</text>
+        <text x="44" y="106" class="tp">Takeoff</text>
+        <text x="44" y="124" class="tp">GotoPose</text>
+        <text x="44" y="142" class="tp">HoldPosition</text>
+        <text x="44" y="160" class="tp">FollowPath</text>
+        <text x="44" y="178" class="tp">TrackTarget</text>
+        <text x="44" y="196" class="tp">Land</text>
+        <text x="44" y="214" class="tp">Recover</text>
+
+        <rect x="30" y="252" width="220" height="66" rx="3" class="bx-n"/>
+        <text x="44" y="274" class="ttl-s">Ai gọi?</text>
+        <text x="44" y="292" class="tp-q">Hiện tại: script kiểm thử.</text>
+        <text x="44" y="308" class="tp-q">Về sau: uav_mission (P9, Behavior Tree).</text>
+
+        <!-- navigator -->
+        <rect x="330" y="40" width="300" height="278" rx="3" class="bx-a"/>
+        <text x="480" y="66" class="ttl" text-anchor="middle">navigator_action_server_node</text>
+        <line x1="346" y1="80" x2="614" y2="80" class="rule"/>
+        <text x="480" y="102" class="pkg" text-anchor="middle">NGƯỜI RA QUYẾT ĐỊNH CUỐI</text>
+        <text x="346" y="128" class="sub">Kiểm tra tiền điều kiện trước khi bay:</text>
+        <text x="356" y="146" class="tp-q">· pose còn tươi không?</text>
+        <text x="356" y="162" class="tp-q">· localization đang OK hay degraded?</text>
+        <text x="356" y="178" class="tp-q">· offboard đã ACTIVE chưa?</text>
+        <text x="356" y="194" class="tp-q">· vật cản có chặn không?</text>
+        <line x1="346" y1="210" x2="614" y2="210" class="rule"/>
+        <text x="346" y="232" class="sub">Sinh quỹ đạo B-spline mượt, rồi tự</text>
+        <text x="346" y="248" class="sub">phát setpoint từng nhịp lên dây.</text>
+        <text x="346" y="272" class="sub">Giữ client của 3 service backend:</text>
+        <text x="356" y="290" class="tp">arm · disarm · set_mode</text>
+        <text x="346" y="310" class="tp-q">có “đóng băng lớp 1” riêng khi pose xấu</text>
+
+        <!-- advisors -->
+        <rect x="30" y="356" width="270" height="76" rx="3" class="bx-n"/>
+        <text x="44" y="378" class="ttl-s">route_planner_node</text>
+        <text x="44" y="396" class="tp-q">Lập tuyến: waypoint, né khu cấm.</text>
+        <text x="44" y="414" class="tp">← /planning/route_goal</text>
+        <text x="44" y="428" class="tp">→ /planning/route</text>
+
+        <rect x="700" y="356" width="270" height="76" rx="3" class="bx-n"/>
+        <text x="714" y="378" class="ttl-s">local_planner_node</text>
+        <text x="714" y="396" class="tp-q">Soi quỹ đạo sắp bay có đâm vào gì không.</text>
+        <text x="714" y="414" class="tp">← /planning/trajectory + obstacle_map</text>
+        <text x="714" y="428" class="tp">→ /planning/avoidance</text>
+
+        <text x="500" y="400" class="pkg-s" text-anchor="middle">CỐ VẤN</text>
+        <text x="500" y="418" class="tp-q" text-anchor="middle">không nằm trên đường lệnh —</text>
+        <text x="500" y="432" class="tp-q" text-anchor="middle">tắt cả hai, drone vẫn bay được</text>
+
+        <!-- outputs -->
+        <rect x="700" y="60" width="270" height="60" rx="3" class="bx-a"/>
+        <text x="714" y="84" class="ttl-s">/control/cmd_mission</text>
+        <text x="714" y="104" class="tp-q">ControlCommand, source = MISSION, ~20 Hz</text>
+
+        <rect x="700" y="140" width="270" height="60" rx="3" class="bx"/>
+        <text x="714" y="164" class="ttl-s">/planning/trajectory</text>
+        <text x="714" y="184" class="tp-q">quỹ đạo dự định — cho cố vấn và safety soi</text>
+
+        <rect x="700" y="220" width="270" height="76" rx="3" class="bx-m"/>
+        <text x="714" y="244" class="ttl-s">Đầu vào nó phải có</text>
+        <text x="714" y="262" class="tp">/state/odometry_fused</text>
+        <text x="714" y="278" class="tp">/backend/offboard_status</text>
+        <text x="714" y="292" class="tp">/state/vehicle · localization_status</text>
+
+        <!-- arrows -->
+        <line x1="250" y1="136" x2="326" y2="136" class="ln-w" marker-end="url(#d5a)"/>
+        <line x1="630" y1="90" x2="696" y2="90" class="ln-w" marker-end="url(#d5a)"/>
+        <line x1="630" y1="170" x2="696" y2="170" class="ln" marker-end="url(#d5a)"/>
+        <polyline points="696,256 660,256 660,240 634,240" class="ln-m" marker-end="url(#d5m)"/>
+
+        <polyline points="380,318 380,338 200,338 200,352" class="ln-d" marker-end="url(#d5g)"/>
+        <polyline points="240,356 240,344 420,344 420,322" class="ln-d" marker-end="url(#d5g)"/>
+        <polyline points="560,318 560,338 780,338 780,352" class="ln-d" marker-end="url(#d5g)"/>
+        <polyline points="880,356 880,344 600,344 600,322" class="ln-d" marker-end="url(#d5g)"/>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 5 — Điều hướng.</b> Mũi tên đậm là đường lệnh; mũi tên đứt là vòng hỏi–đáp với cố vấn. <b>Phép thử để nhớ:</b> tắt cả <code>route_planner</code> lẫn <code>local_planner</code> đi, drone vẫn cất cánh và bay tới điểm — chỉ là bay “ngây thơ”, không né gì. Tắt <code>navigator</code> thì không còn gì bay cả.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════ 7. TRỌNG TÀI + AN TOÀN ══════════════════════════════ -->
+<section id="auth">
+  <div class="sec-head"><span class="sec-num">07</span><h2>Nút thắt: trọng tài quyền và lớp an toàn</h2></div>
+  <div class="prose">
+    <p>Phần này đáng dành nhiều thời gian nhất khi giảng, vì nó là chỗ duy nhất mà “an toàn” không còn là một lời hứa trong tài liệu mà thành một cơ chế có thể chỉ tay vào.</p>
+    <p>Bốn nguồn có thể muốn lái drone cùng lúc. Trọng tài xếp hạng chúng và chỉ cho <b>một</b> nguồn đi tiếp. Lớp an toàn có hai cần gạt, và điều đáng chú ý là <b>cả hai đều mang tính TRỪ</b> — nó chỉ đóng băng hoặc làm im lặng, chứ không bao giờ tự nghĩ ra một đường bay mới.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 1060 560" class="dg" role="img" aria-label="Bốn kênh lệnh vào control_authority_manager theo thứ tự ưu tiên, ra một topic command_selected duy nhất; uav_safety tác động bằng hai cần gạt HOLD và INHIBIT">
+        <defs>
+          <marker id="d6a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-a"/></marker>
+          <marker id="d6s" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-s"/></marker>
+          <marker id="d6g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-g"/></marker>
+        </defs>
+
+        <text x="30" y="24" class="pkg">BỐN KÊNH — ai cũng được nói</text>
+        <text x="400" y="24" class="pkg">TRỌNG TÀI — chỉ một được nghe</text>
+        <text x="770" y="24" class="pkg">RA DÂY</text>
+
+        <!-- channels -->
+        <rect x="30" y="40" width="290" height="54" rx="3" class="bx-s"/>
+        <text x="44" y="62" class="tp">/control/cmd_safety</text>
+        <text x="44" y="80" class="tp-q">← uav_safety</text>
+        <text x="306" y="62" class="pkg-s" text-anchor="end">4</text>
+        <text x="306" y="80" class="tp-q" text-anchor="end">cao nhất</text>
+
+        <rect x="30" y="106" width="290" height="54" rx="3" class="bx"/>
+        <text x="44" y="128" class="tp">/control/cmd_operator</text>
+        <text x="44" y="146" class="tp-q">← người điều khiển giành quyền</text>
+        <text x="306" y="128" class="pkg" text-anchor="end">3</text>
+
+        <rect x="30" y="172" width="290" height="54" rx="3" class="bx"/>
+        <text x="44" y="194" class="tp">/control/cmd_mission</text>
+        <text x="44" y="212" class="tp-q">← uav_navigation (đường bay bình thường)</text>
+        <text x="306" y="194" class="pkg" text-anchor="end">2</text>
+
+        <rect x="30" y="238" width="290" height="54" rx="3" class="bx-n"/>
+        <text x="44" y="260" class="tp">/control/cmd_test</text>
+        <text x="44" y="278" class="tp-q">← script thí nghiệm</text>
+        <text x="306" y="260" class="tp-q" text-anchor="end">1</text>
+
+        <!-- arbiter -->
+        <rect x="390" y="40" width="290" height="252" rx="3" class="bx-a"/>
+        <text x="535" y="66" class="ttl" text-anchor="middle">control_authority_manager_node</text>
+        <line x1="406" y1="80" x2="664" y2="80" class="rule"/>
+        <text x="406" y="104" class="sub">Ba việc, mỗi nhịp:</text>
+        <text x="406" y="128" class="tp">1 · loại lệnh CŨ</text>
+        <text x="418" y="144" class="tp-q">nguồn im lặng = mất lượt, tự động</text>
+        <text x="406" y="170" class="tp">2 · so ƯU TIÊN</text>
+        <text x="418" y="186" class="tp-q">SAFETY &gt; OPERATOR &gt; MISSION &gt; TEST</text>
+        <text x="406" y="212" class="tp">3 · tôn trọng CHỐT</text>
+        <text x="418" y="228" class="tp-q">chốt SAFETY đã cấp thì KHÔNG tự hết hạn</text>
+        <text x="418" y="243" class="tp-q">— chỉ clear_safety_latch mới mở được</text>
+        <line x1="406" y1="258" x2="664" y2="258" class="rule"/>
+        <text x="535" y="280" class="pkg" text-anchor="middle">publisher DUY NHẤT của command_selected</text>
+
+        <!-- outputs -->
+        <rect x="750" y="60" width="280" height="66" rx="3" class="bx-a"/>
+        <text x="764" y="84" class="ttl-s">/control/command_selected</text>
+        <text x="764" y="104" class="tp-q">→ px4_command_gateway → /fmu/in/*</text>
+        <text x="764" y="120" class="tp-q">im lặng ở đây = PX4 rơi vào failsafe lõi sau 0,5 s</text>
+
+        <rect x="750" y="146" width="280" height="54" rx="3" class="bx"/>
+        <text x="764" y="168" class="ttl-s">/control/authority</text>
+        <text x="764" y="187" class="tp-q">ai đang cầm lái — để log và để safety đối chiếu</text>
+
+        <rect x="750" y="220" width="280" height="54" rx="3" class="bx-n"/>
+        <text x="764" y="242" class="ttl-s">/diagnostics/control_authority</text>
+        <text x="764" y="261" class="tp-q">trạng thái chốt — safety đọc để tự kiểm chứng</text>
+
+        <!-- arrows in -->
+        <line x1="320" y1="67" x2="386" y2="82" class="ln-s" marker-end="url(#d6s)"/>
+        <line x1="320" y1="133" x2="386" y2="128" class="ln" marker-end="url(#d6a)"/>
+        <line x1="320" y1="199" x2="386" y2="176" class="ln" marker-end="url(#d6a)"/>
+        <line x1="320" y1="265" x2="386" y2="222" class="ln-d" marker-end="url(#d6g)"/>
+
+        <!-- arrows out -->
+        <line x1="680" y1="93" x2="746" y2="93" class="ln-w" marker-end="url(#d6a)"/>
+        <line x1="680" y1="160" x2="746" y2="173" class="ln" marker-end="url(#d6a)"/>
+        <line x1="680" y1="220" x2="746" y2="247" class="ln" marker-end="url(#d6a)"/>
+
+        <!-- safety -->
+        <rect x="30" y="356" width="1000" height="176" rx="3" class="bx-s"/>
+        <text x="48" y="382" class="ttl">uav_safety — safety_supervisor_node</text>
+        <text x="48" y="402" class="sub">Nghe 12 nguồn: localization_status · odometry_fused · diagnostics/localization · obstacle_map · health_px4 · state/vehicle · offboard_status · command_selected · cmd_mission · diagnostics/control_authority · camera_health · planning/trajectory</text>
+        <line x1="48" y1="416" x2="1012" y2="416" class="rule"/>
+
+        <rect x="48" y="432" width="300" height="84" rx="3" class="bx"/>
+        <text x="62" y="454" class="ttl-s">REPORT</text>
+        <text x="62" y="472" class="tp-q">Chỉ công bố vi phạm, không đụng vào lệnh.</text>
+        <text x="62" y="492" class="tp">→ /safety/state · /safety/violations</text>
+        <text x="62" y="508" class="tp-q">dùng cho cảnh báo mà con người phải quyết</text>
+
+        <rect x="378" y="432" width="300" height="84" rx="3" class="bx"/>
+        <text x="392" y="454" class="ttl-s">HOLD — cần gạt 1</text>
+        <text x="392" y="472" class="tp-q">Đóng băng pose tại vị trí tin được, phát lại mỗi nhịp.</text>
+        <text x="392" y="492" class="tp">→ /control/cmd_safety (ưu tiên 4)</text>
+        <text x="392" y="508" class="tp-q">ví dụ: vật cản quá gần</text>
+
+        <rect x="708" y="432" width="304" height="84" rx="3" class="bx"/>
+        <text x="722" y="454" class="ttl-s">INHIBIT — cần gạt 2</text>
+        <text x="722" y="472" class="tp-q">Giành chốt rồi IM LẶNG có chủ ý. Không phát gì cả.</text>
+        <text x="722" y="492" class="tp">→ srv /control/set_authority</text>
+        <text x="722" y="508" class="tp-q">im lặng → PX4 failsafe lõi + trả quyền pilot</text>
+
+        <!-- safety wiring -->
+        <polyline points="198,432 198,300 175,300 175,98" class="ln-s" marker-end="url(#d6s)"/>
+        <text x="206" y="330" class="tp-q">chiếm kênh ưu tiên cao nhất</text>
+        <polyline points="528,432 528,310 700,310 700,296" class="ln-s" marker-end="url(#d6s)"/>
+        <polyline points="860,432 860,330 620,330 620,296" class="ln-s" marker-end="url(#d6s)"/>
+        <text x="700" y="326" class="tp-q" text-anchor="middle">gọi thẳng vào trọng tài</text>
+
+        <polyline points="890,274 890,300 950,300 950,352" class="ln-d" marker-end="url(#d6g)"/>
+        <text x="958" y="326" class="tp-q">tự kiểm: chốt có thật không?</text>
+
+        <text x="30" y="552" class="note">Chú ý điều KHÔNG có ở đây: không có cần gạt nào tên là “tự hạ cánh” hay “tự bay về”. Đó là việc của mission, qua navigator — không phải của safety.</text>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 6 — Trọng tài và an toàn.</b> Lớp an toàn <b>không có khả năng bay</b>. Nó chỉ có thể đóng băng drone tại một điểm nó tin, hoặc rút lui trong im lặng để PX4 và người lái tiếp quản. Thiết kế này là câu trả lời cho câu hỏi <em>“nếu chính lớp an toàn cũng đang tin một vị trí sai thì sao?”</em></figcaption>
+  </figure>
+
+  <div class="aside warn">
+    <span class="who">Vì sao “im lặng” lại là một hành động an toàn</span>
+    <p>Trực giác nói im lặng là bỏ mặc drone. Thực tế ngược lại: <code>px4_command_gateway</code> ngừng nhận lệnh mới trong 0,5 giây là <b>ngừng phát setpoint</b>, và PX4 mất nguồn offboard sẽ tự kích failsafe lõi của nó — thứ đã được kiểm chứng qua hàng triệu giờ bay và <em>không</em> phụ thuộc vào lớp định vị của ta. Nói cách khác, INHIBIT là <b>chủ động giao lại quyền cho tầng đáng tin hơn</b>, chứ không phải buông tay.</p>
+    <p>Điều này chỉ đúng khi có một quy tắc kèm theo: <b>chốt SAFETY đã cấp thì không bao giờ tự hết hạn.</b> Nếu nó hết hạn theo thời gian, drone sẽ lặng lẽ quay lại nhận lệnh từ chính nguồn vừa bị đánh giá là không tin được.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 8. SEQUENCE ══════════════════════════════ -->
+<section id="seq">
+  <div class="sec-head"><span class="sec-num">08</span><h2>Một lệnh đi hết vòng: <code>GotoPose</code></h2></div>
+  <div class="prose">
+    <p>Sơ đồ đẹp nhất để giảng không phải bản đồ tĩnh, mà là <b>lần theo một lệnh duy nhất</b> từ lúc ai đó gọi cho tới lúc động cơ đổi vòng quay. Dưới đây là mười hai bước thật, theo đúng thứ tự mã nguồn thực thi.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 1030 660" class="dg" role="img" aria-label="Sơ đồ tuần tự mười hai bước của lệnh GotoPose qua sáu thành phần, từ lúc gọi action tới lúc action báo thành công">
+        <defs>
+          <marker id="d7a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-a"/></marker>
+          <marker id="d7m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-m"/></marker>
+          <marker id="d7g" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-g"/></marker>
+        </defs>
+
+        <!-- actor headers -->
+        <rect x="8"   y="18" width="150" height="44" rx="3" class="bx-n"/>
+        <text x="83"  y="38" class="ttl-s" text-anchor="middle">Người gọi</text>
+        <text x="83"  y="54" class="tp-q" text-anchor="middle">test / P9 mission</text>
+
+        <rect x="178" y="18" width="150" height="44" rx="3" class="bx-a"/>
+        <text x="253" y="38" class="ttl-s" text-anchor="middle">navigation</text>
+        <text x="253" y="54" class="tp-q" text-anchor="middle">navigator</text>
+
+        <rect x="348" y="18" width="150" height="44" rx="3" class="bx-a"/>
+        <text x="423" y="38" class="ttl-s" text-anchor="middle">authority</text>
+        <text x="423" y="54" class="tp-q" text-anchor="middle">trọng tài</text>
+
+        <rect x="518" y="18" width="150" height="44" rx="3" class="bx-m"/>
+        <text x="593" y="38" class="ttl-s" text-anchor="middle">px4_backend</text>
+        <text x="593" y="54" class="tp-q" text-anchor="middle">gateway + session</text>
+
+        <rect x="688" y="18" width="150" height="44" rx="3" class="bx-m"/>
+        <text x="763" y="38" class="ttl-s" text-anchor="middle">PX4 + Gazebo</text>
+        <text x="763" y="54" class="tp-q" text-anchor="middle">EKF2 · điều khiển</text>
+
+        <rect x="858" y="18" width="150" height="44" rx="3" class="bx-a"/>
+        <text x="933" y="38" class="ttl-s" text-anchor="middle">localization</text>
+        <text x="933" y="54" class="tp-q" text-anchor="middle">mux</text>
+
+        <!-- lifelines -->
+        <line x1="83"  y1="62" x2="83"  y2="616" class="rule" stroke-dasharray="3 4"/>
+        <line x1="253" y1="62" x2="253" y2="616" class="rule" stroke-dasharray="3 4"/>
+        <line x1="423" y1="62" x2="423" y2="616" class="rule" stroke-dasharray="3 4"/>
+        <line x1="593" y1="62" x2="593" y2="616" class="rule" stroke-dasharray="3 4"/>
+        <line x1="763" y1="62" x2="763" y2="616" class="rule" stroke-dasharray="3 4"/>
+        <line x1="933" y1="62" x2="933" y2="616" class="rule" stroke-dasharray="3 4"/>
+
+        <!-- 1 -->
+        <line x1="83" y1="96" x2="247" y2="96" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="83" cy="96" r="9" class="dot-a"/><text x="83" y="99.5" class="num" text-anchor="middle">1</text>
+        <text x="100" y="90" class="tp">action GotoPose — goal: toạ độ đích + yaw</text>
+
+        <!-- 2 self -->
+        <polyline points="253,124 313,124 313,148 259,148" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="253" cy="124" r="9" class="dot-a"/><text x="253" y="127.5" class="num" text-anchor="middle">2</text>
+        <text x="322" y="128" class="tp-q">kiểm tiền điều kiện: pose tươi? localization OK?</text>
+        <text x="322" y="144" class="tp-q">offboard ACTIVE? đã armed? — sai một cái là TỪ CHỐI ngay</text>
+
+        <!-- 3 self trajectory -->
+        <polyline points="253,180 313,180 313,200 259,200" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="253" cy="180" r="9" class="dot-a"/><text x="253" y="183.5" class="num" text-anchor="middle">3</text>
+        <text x="322" y="184" class="tp-q">sinh quỹ đạo B-spline, phát /planning/trajectory</text>
+        <text x="322" y="200" class="tp-q">cho cố vấn và safety soi trước khi bay</text>
+
+        <!-- 4 -->
+        <line x1="253" y1="232" x2="417" y2="232" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="253" cy="232" r="9" class="dot-a"/><text x="253" y="235.5" class="num" text-anchor="middle">4</text>
+        <text x="268" y="226" class="tp">/control/cmd_mission @ ~20 Hz</text>
+        <text x="268" y="248" class="tp-q">ControlCommand, source = MISSION</text>
+
+        <!-- 5 self -->
+        <polyline points="423,276 483,276 483,296 429,296" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="423" cy="276" r="9" class="dot-a"/><text x="423" y="279.5" class="num" text-anchor="middle">5</text>
+        <text x="492" y="280" class="tp-q">có ai ưu tiên cao hơn đang nói không?</text>
+        <text x="492" y="296" class="tp-q">chốt SAFETY có đang giữ không?</text>
+
+        <!-- 6 -->
+        <line x1="423" y1="328" x2="587" y2="328" class="ln-w" marker-end="url(#d7a)"/>
+        <circle cx="423" cy="328" r="9" class="dot-a"/><text x="423" y="331.5" class="num" text-anchor="middle">6</text>
+        <text x="438" y="322" class="tp">/control/command_selected</text>
+
+        <!-- 7 self -->
+        <polyline points="593,356 653,356 653,392 599,392" class="ln-m" marker-end="url(#d7m)"/>
+        <circle cx="593" cy="356" r="9" class="dot-a"/><text x="593" y="359.5" class="num" text-anchor="middle">7</text>
+        <text x="662" y="360" class="tp-q">đổi ENU/FLU → NED/FRD</text>
+        <text x="662" y="376" class="tp-q">trục KHÔNG điều khiển phải điền NaN,</text>
+        <text x="662" y="392" class="tp-q">điền 0 nghĩa là “bay về gốc toạ độ”</text>
+
+        <!-- 8 -->
+        <line x1="593" y1="424" x2="757" y2="424" class="ln-m" marker-end="url(#d7m)"/>
+        <circle cx="593" cy="424" r="9" class="dot-a"/><text x="593" y="427.5" class="num" text-anchor="middle">8</text>
+        <text x="608" y="418" class="tp">/fmu/in/offboard_control_mode</text>
+        <text x="608" y="440" class="tp">+ /fmu/in/trajectory_setpoint</text>
+        <text x="608" y="456" class="tp-q">phải đi thành CẶP, ≥ 2 Hz, không bao giờ tách rời</text>
+
+        <!-- 9 self -->
+        <polyline points="763,484 823,484 823,504 769,504" class="ln-m" marker-end="url(#d7m)"/>
+        <circle cx="763" cy="484" r="9" class="dot-a"/><text x="763" y="487.5" class="num" text-anchor="middle">9</text>
+        <text x="832" y="488" class="tp-q">EKF2 + cascade controller</text>
+        <text x="832" y="504" class="tp-q">→ vòng quay động cơ</text>
+
+        <!-- 10 -->
+        <line x1="763" y1="534" x2="927" y2="534" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="763" cy="534" r="9" class="dot-a"/><text x="763" y="537.5" class="num" text-anchor="middle">10</text>
+        <text x="778" y="528" class="tp">odometry qua cầu → vio_odometry_raw</text>
+
+        <!-- 11 -->
+        <line x1="927" y1="570" x2="259" y2="570" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="933" cy="570" r="9" class="dot-a"/><text x="933" y="573.5" class="num" text-anchor="middle">11</text>
+        <text x="300" y="564" class="tp">/state/odometry_fused — navigator thấy mình đã tới đâu</text>
+
+        <!-- 12 -->
+        <line x1="247" y1="604" x2="89" y2="604" class="ln" marker-end="url(#d7a)"/>
+        <circle cx="253" cy="604" r="9" class="dot-a"/><text x="253" y="607.5" class="num" text-anchor="middle">12</text>
+        <text x="130" y="598" class="tp">feedback → SUCCEEDED</text>
+
+        <text x="1020" y="620" class="note" text-anchor="end">Bước 4→11 lặp lại ~20 lần mỗi giây cho tới khi tới nơi.</text>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 7 — Vòng đời một lệnh.</b> Hai bước dễ bị bỏ qua nhất khi giảng là <b>bước 2</b> (navigator từ chối goal khi tiền điều kiện sai — thà không bay còn hơn bay mù) và <b>bước 7</b> (điền NaN, không điền 0). Cả hai đều là thứ chỉ lộ ra khi bay thật.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════ 9. HAI KỊCH BẢN ══════════════════════════════ -->
+<section id="scen">
+  <div class="sec-head"><span class="sec-num">09</span><h2>Hai kịch bản hỏng — sơ đồ đọc ngược lại</h2></div>
+  <div class="prose">
+    <p>Kiến trúc chỉ chứng minh được giá trị khi có gì đó hỏng. Hai kịch bản dưới đây dùng đúng những mũi tên đã vẽ ở trên, chỉ khác chiều đọc.</p>
+  </div>
+
+  <figure>
+    <div class="fig-scroll">
+      <svg viewBox="0 0 1040 400" class="dg" role="img" aria-label="Hai kịch bản: vật cản quá gần dẫn tới HOLD đóng băng pose; lệnh bay trên pose không tin được dẫn tới INHIBIT im lặng và trả quyền cho PX4">
+        <defs>
+          <marker id="d8s" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><polygon points="0,0.5 8,4 0,7.5" class="mk-s"/></marker>
+        </defs>
+
+        <!-- LEFT: HOLD -->
+        <rect x="20" y="20" width="480" height="360" rx="3" class="bx-g"/>
+        <text x="40" y="48" class="ttl">Kịch bản A — vật cản quá gần</text>
+        <text x="40" y="68" class="sub">Định vị vẫn tốt. Ta vẫn biết mình ở đâu.</text>
+
+        <rect x="40" y="88" width="440" height="42" rx="3" class="bx"/>
+        <text x="54" y="104" class="tp">obstacle_extractor → /perception/obstacles_local</text>
+        <text x="54" y="121" class="tp-q">rồi world_model đổi sang frame map → /world/obstacle_map_local</text>
+
+        <line x1="260" y1="130" x2="260" y2="150" class="ln-s" marker-end="url(#d8s)"/>
+
+        <rect x="40" y="154" width="440" height="42" rx="3" class="bx-s"/>
+        <text x="54" y="170" class="tp">safety: OBSTACLE_TOO_CLOSE → chọn HOLD</text>
+        <text x="54" y="187" class="tp-q">đóng băng pose HIỆN TẠI, lấy từ odometry_fused còn tươi</text>
+
+        <line x1="260" y1="196" x2="260" y2="216" class="ln-s" marker-end="url(#d8s)"/>
+
+        <rect x="40" y="220" width="440" height="42" rx="3" class="bx-s"/>
+        <text x="54" y="236" class="tp">phát /control/cmd_safety — ưu tiên 4, restamp mỗi nhịp</text>
+        <text x="54" y="253" class="tp-q">+ xin chốt SAFETY ở trọng tài</text>
+
+        <line x1="260" y1="262" x2="260" y2="282" class="ln-s" marker-end="url(#d8s)"/>
+
+        <rect x="40" y="286" width="440" height="42" rx="3" class="bx-a"/>
+        <text x="54" y="302" class="tp">trọng tài: cmd_mission bị gạt, cmd_safety thắng</text>
+        <text x="54" y="319" class="tp-q">command_selected = pose đóng băng → drone treo tại chỗ</text>
+
+        <text x="40" y="352" class="note">Kết quả: drone đứng yên ở một điểm ta TIN.</text>
+        <text x="40" y="370" class="note">Nếu pose mất tươi giữa chừng → chuyển thẳng sang kịch bản B, một chiều.</text>
+
+        <!-- RIGHT: INHIBIT -->
+        <rect x="530" y="20" width="490" height="360" rx="3" class="bx-g"/>
+        <text x="550" y="48" class="ttl">Kịch bản B — lệnh bay trên pose không tin được</text>
+        <text x="550" y="68" class="sub">Định vị hỏng. Ta KHÔNG biết mình ở đâu.</text>
+
+        <rect x="550" y="88" width="450" height="42" rx="3" class="bx"/>
+        <text x="564" y="104" class="tp">localization_status xuống BAD, nhưng setpoint vẫn đang chạy</text>
+        <text x="564" y="121" class="tp-q">ai đó vẫn đang lái dựa trên một vị trí đã sai</text>
+
+        <line x1="775" y1="130" x2="775" y2="150" class="ln-s" marker-end="url(#d8s)"/>
+
+        <rect x="550" y="154" width="450" height="42" rx="3" class="bx-s"/>
+        <text x="564" y="170" class="tp">safety: BLIND_COMMAND → chọn INHIBIT</text>
+        <text x="564" y="187" class="tp-q">KHÔNG đóng băng — vì pose để đóng băng cũng không tin được</text>
+
+        <line x1="775" y1="196" x2="775" y2="216" class="ln-s" marker-end="url(#d8s)"/>
+
+        <rect x="550" y="220" width="450" height="42" rx="3" class="bx-s"/>
+        <text x="564" y="236" class="tp">gọi srv /control/set_authority → giành chốt SAFETY</text>
+        <text x="564" y="253" class="tp-q">rồi KHÔNG phát gì cả. Im lặng là hành động.</text>
+
+        <line x1="775" y1="262" x2="775" y2="282" class="ln-s" marker-end="url(#d8s)"/>
+
+        <rect x="550" y="286" width="450" height="42" rx="3" class="bx-m"/>
+        <text x="564" y="302" class="tp">command_selected im → gateway ngừng phát sau 0,5 s</text>
+        <text x="564" y="319" class="tp-q">→ PX4 mất offboard → failsafe LÕI + trả quyền cho pilot</text>
+
+        <text x="550" y="352" class="note">Kết quả: quyền về tay tầng đáng tin hơn ta.</text>
+        <text x="550" y="370" class="note">Không auto-land, không bay mù, không đoán vị trí.</text>
+      </svg>
+    </div>
+    <figcaption><b>Sơ đồ 8 — Hai kịch bản, hai cần gạt.</b> Điều phân biệt chúng chỉ có một câu hỏi: <b>ta còn tin vị trí của mình không?</b> Còn tin → đóng băng tại đó. Không còn tin → rút lui và giao quyền. Không có nhánh thứ ba nào tên là “cứ thử bay xem sao”.</figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════ 10. SIM vs REAL ══════════════════════════════ -->
+<section id="simreal">
+  <div class="sec-head"><span class="sec-num">10</span><h2>Cái gì đổi khi bay thật</h2></div>
+  <div class="prose">
+    <p>Câu hỏi này luôn được hỏi, và câu trả lời ngắn hơn người ta tưởng: <b>gần như không đổi gì</b>. Đó chính là mục đích của cách chia package ở trên.</p>
+  </div>
+
+  <div class="tbl-scroll">
+    <table>
+      <thead>
+        <tr><th>Tầng</th><th>Trong mô phỏng</th><th>Trên drone thật</th><th>Mã có đổi không?</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Thế giới + động lực học</b></td>
+          <td>Gazebo Harmonic</td>
+          <td>Không khí, trọng lực, gió thật</td>
+          <td>Không phải mã của ta</td>
+        </tr>
+        <tr>
+          <td><b>Nguồn cảm biến</b></td>
+          <td><code>uav_sim_gz</code> — cầu Gazebo→ROS</td>
+          <td>Driver camera / lidar / GPS thật (P11)</td>
+          <td><b>Thay cả package</b>, nhưng tên topic giữ nguyên</td>
+        </tr>
+        <tr>
+          <td><b>Autopilot</b></td>
+          <td>PX4 SITL</td>
+          <td>PX4 trên flight controller</td>
+          <td>Không đổi — vẫn <code>uav_px4_backend</code></td>
+        </tr>
+        <tr>
+          <td><b>Định vị · nhận thức · world model</b></td>
+          <td colspan="2" style="text-align:center">cùng một bộ node, cùng một mã</td>
+          <td>Không đổi</td>
+        </tr>
+        <tr>
+          <td><b>Điều hướng · trọng tài · an toàn</b></td>
+          <td colspan="2" style="text-align:center">cùng một bộ node, cùng một mã</td>
+          <td>Không đổi</td>
+        </tr>
+        <tr>
+          <td><b>Khởi động</b></td>
+          <td><code>sim.launch.py</code></td>
+          <td><code>real.launch.py</code></td>
+          <td>Khác <b>tham số</b>, không khác node</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="aside warn">
+    <span class="who">Nhưng đừng đọc bảng này thành lời hứa</span>
+    <p>Bảng trên nói <em>mã</em> không đổi. Nó <b>không</b> nói hành vi không đổi. Tỉ lệ chuyển giao từ mô phỏng sang thực tế khác nhau rất lớn theo tầng: <b>logic điều khiển ~90–95%</b>, <b>động lực học và tuning trung bình</b>, <b>định vị và thị giác thì thấp</b> — vì ảnh render không có nhiễu cảm biến thật, không có rung khung, không có ánh sáng ngược. Mô phỏng ở đây là <b>bộ lọc bug</b>, không phải chứng chỉ bay được.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 11. TRA TOPIC ══════════════════════════════ -->
+<section id="ref">
+  <div class="sec-head"><span class="sec-num">11</span><h2>Bảng tra nhanh — topic nào của ai</h2></div>
+  <div class="prose">
+    <p>Mọi topic đều nằm dưới tiền tố <code>/uav/&lt;id&gt;/</code> (mặc định <code>uav0</code>), trừ <code>/fmu/*</code> của PX4 và <code>/clock</code>. Cột <em>Ai đọc</em> là chỗ hay dùng nhất khi gỡ lỗi: mất một topic thì biết ngay ai sẽ mù.</p>
+  </div>
+
+  <div class="tbl-scroll">
+    <table>
+      <thead>
+        <tr><th>Topic</th><th>Ai phát</th><th>Ai đọc</th><th>Ý nghĩa</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>/state/odometry_raw</code></td><td>px4_backend</td><td>localization</td><td>Vị trí theo EKF2 của PX4 — chưa qua mux</td></tr>
+        <tr><td><code>/state/odometry_fused</code></td><td>localization mux</td><td>navigation · world_model · safety</td><td><b>Vị trí chính thức của toàn hệ</b></td></tr>
+        <tr><td><code>/state/localization_status</code></td><td>localization mux</td><td>navigation · safety · backend</td><td>Pose này tin được tới mức nào</td></tr>
+        <tr><td><code>/state/vehicle</code></td><td>px4_backend</td><td>navigation · safety</td><td>Armed chưa, chế độ gì, failsafe chưa</td></tr>
+        <tr><td><code>/backend/offboard_status</code></td><td>px4_backend</td><td>navigation · safety</td><td>Offboard đã ACTIVE chưa, nhịp bao nhiêu</td></tr>
+        <tr><td><code>/perception/obstacles_local</code></td><td>perception</td><td>world_model · target_tracker</td><td>Vật cản theo frame camera</td></tr>
+        <tr><td><code>/world/obstacle_map_local</code></td><td>world_model</td><td>navigation · safety</td><td>Vật cản theo frame map — <b>planner đọc cái này</b></td></tr>
+        <tr><td><code>/planning/trajectory</code></td><td>navigation</td><td>local_planner · safety</td><td>Quỹ đạo dự định, để soi trước</td></tr>
+        <tr><td><code>/control/cmd_mission</code></td><td>navigation</td><td>control_authority</td><td>Lệnh bình thường, ưu tiên 2</td></tr>
+        <tr><td><code>/control/cmd_safety</code></td><td>safety</td><td>control_authority</td><td>Lệnh cứu, ưu tiên 4 — cao nhất</td></tr>
+        <tr><td><code>/control/command_selected</code></td><td><b>chỉ</b> control_authority</td><td>px4_backend · safety</td><td>Lệnh đã thắng — đường duy nhất xuống PX4</td></tr>
+        <tr><td><code>/safety/state</code></td><td>safety</td><td>người vận hành · log</td><td>Mức OK/WARNING/ERROR/EMERGENCY + mã vi phạm</td></tr>
+        <tr><td><code>/fmu/in/trajectory_setpoint</code></td><td>px4_backend</td><td>PX4</td><td>Điểm bay tới, hệ NED — luôn đi kèm offboard_control_mode</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 12. TỰ KIỂM ══════════════════════════════ -->
+<section id="quiz">
+  <div class="sec-head"><span class="sec-num">12</span><h2>Sáu câu để biết người nghe đã hiểu chưa</h2></div>
+  <div class="prose">
+    <p>Nếu trả lời được sáu câu này mà không cần mở lại sơ đồ, tức là đã nắm kiến trúc chứ không chỉ nhớ tên package.</p>
+    <ol>
+      <li><b>Tôi thêm một cảm biến GPS thứ hai.</b> Phải sửa mấy package? <span class="mono" style="color:var(--muted)">(gợi ý: nghĩ về sơ đồ 3)</span></li>
+      <li><b>Node <code>local_planner</code> chết giữa lúc bay.</b> Drone rơi không? Vì sao? <span class="mono" style="color:var(--muted)">(sơ đồ 5)</span></li>
+      <li><b>PX4 nâng lên bản mới, đổi tên một trường trong message.</b> Bao nhiêu package phải sửa?</li>
+      <li><b>Hai node cùng phát lệnh trái ngược nhau cùng lúc.</b> Chuyện gì xảy ra, và ai quyết định?</li>
+      <li><b>Camera dưới đứng hình nhưng vẫn phát topic.</b> Ai phát hiện, bằng cách nào?</li>
+      <li><b>Định vị hỏng giữa lúc bay.</b> Vì sao hệ thống <em>không</em> tự hạ cánh — và đó là quyết định đúng hay sai?</li>
+    </ol>
+  </div>
+
+  <div class="aside">
+    <span class="who">Đáp án câu 6 — câu quan trọng nhất</span>
+    <p>Tự hạ cánh nghe có vẻ an toàn, nhưng hạ cánh là một <b>chuyển động có điều khiển</b>, và mọi chuyển động có điều khiển đều cần biết mình đang ở đâu. Nếu định vị đã hỏng, lệnh “hạ xuống 2 mét” có thể là hạ vào mái nhà, vào người, hoặc bay ngang 5 mét rồi mới xuống. Hệ thống chọn <b>giao quyền</b> thay vì <b>đoán</b> — cho PX4 với cảm biến khí áp và người lái với đôi mắt. Đó là câu trả lời đúng, và nó chỉ đúng vì kiến trúc đã đặt sẵn một đường để rút lui.</p>
+  </div>
+</section>
+
+<footer>
+  <b>Nguồn của sơ đồ:</b> đọc trực tiếp từ mã nguồn — mọi tên topic trong trang này được trích từ lời gọi <code>create_publisher</code> / <code>create_subscription</code> thật, không phải từ bản thiết kế.<br>
+  <b>Tài liệu liên quan:</b> CLAUDE.md (bức tranh tổng) · docs/package-status.md (trạng thái &amp; bẫy từng package) · docs/interface-contract-v0.1.md (hợp đồng msg/srv/action) · docs/ops-playbook.md (bẫy công cụ)<br>
+  <b>Nguyên tắc tối cao:</b> đây là dự án bay thật. Mọi thứ trong sơ đồ này tồn tại để một lỗi phần mềm không trở thành một tai nạn.
+</footer>
+
+</div>
